@@ -42,6 +42,7 @@ import { userSecretsRouter } from "./user-secrets-router";
 import { marketplaceRouter } from "./marketplace-router";
 
 export const appRouter = router({
+  files: filesRouter,
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
