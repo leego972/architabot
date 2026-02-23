@@ -40,6 +40,7 @@ import { blogRouter } from "./blog-router";
 import { advertisingRouter } from "./advertising-router";
 import { userSecretsRouter } from "./user-secrets-router";
 import { marketplaceRouter } from "./marketplace-router";
+import { filesRouter } from "./api/files";
 
 export const appRouter = router({
   files: filesRouter,
