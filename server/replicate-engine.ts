@@ -32,7 +32,7 @@ import {
 } from "./sandbox-engine";
 import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
 import { storagePut } from "./storage";
-import { scrapeProductCatalog, type CatalogResult, type ScrapedProduct } from "./product-scraper";
+import { scrapeProductCatalog, type CatalogResult, type ScrapedProduct, type SiteType } from "./product-scraper";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -646,24 +646,110 @@ export async function researchTarget(
     // Store image buffers reference for the build phase
     (research as any).catalogImageBuffers = catalogResult.downloadedImages.map(i => ({
       localPath: i.localPath,
-      productName: i.productName,
+      associatedName: i.associatedName,
       originalUrl: i.originalUrl,
       contentType: i.contentType,
       size: i.imageBuffer.length,
     }));
+
+    // Store all content types from the universal scraper
+    (research as any).siteType = catalogResult.siteType;
+    (research as any).siteMetadata = catalogResult.siteMetadata;
+
+    // Real estate listings
+    if (catalogResult.listings.length > 0) {
+      (research as any).catalogListings = catalogResult.listings.map(l => ({
+        title: l.title,
+        description: l.description?.substring(0, 300),
+        price: l.price,
+        priceType: l.priceType,
+        address: l.address,
+        city: l.city,
+        state: l.state,
+        zip: l.zip,
+        bedrooms: l.bedrooms,
+        bathrooms: l.bathrooms,
+        sqft: l.sqft,
+        lotSize: l.lotSize,
+        yearBuilt: l.yearBuilt,
+        propertyType: l.propertyType,
+        listingType: l.listingType,
+        mlsNumber: l.mlsNumber,
+        agent: l.agent,
+        images: l.images.slice(0, 5),
+        url: l.url,
+        amenities: l.amenities?.slice(0, 15),
+      }));
+    }
+
+    // Restaurant menu items
+    if (catalogResult.menuItems.length > 0) {
+      (research as any).catalogMenuItems = catalogResult.menuItems.map(m => ({
+        name: m.name,
+        description: m.description?.substring(0, 200),
+        price: m.price,
+        category: m.category,
+        image: m.image,
+        dietary: m.dietary,
+        spicy: m.spicy,
+      }));
+    }
+
+    // Job listings
+    if (catalogResult.jobs.length > 0) {
+      (research as any).catalogJobs = catalogResult.jobs.map(j => ({
+        title: j.title,
+        company: j.company,
+        location: j.location,
+        salary: j.salary,
+        type: j.type,
+        description: j.description?.substring(0, 300),
+        url: j.url,
+        postedDate: j.postedDate,
+      }));
+    }
+
+    // Articles / blog posts
+    if (catalogResult.articles.length > 0) {
+      (research as any).catalogArticles = catalogResult.articles.map(a => ({
+        title: a.title,
+        author: a.author,
+        date: a.date,
+        excerpt: a.excerpt?.substring(0, 300),
+        image: a.image,
+        category: a.category,
+        url: a.url,
+        tags: a.tags?.slice(0, 5),
+      }));
+    }
   }
 
-  const totalProducts = catalogResult?.totalProductsFound || 0;
+  const totalItems = catalogResult?.totalProductsFound || 0;
   const totalCatalogImages = catalogResult?.downloadedImages.length || 0;
+  const detectedType = catalogResult?.siteType || "generic";
+  const listingCount = catalogResult?.listings.length || 0;
+  const menuCount = catalogResult?.menuItems.length || 0;
+  const jobCount = catalogResult?.jobs.length || 0;
+  const articleCount = catalogResult?.articles.length || 0;
+  const productCount = catalogResult?.products.length || 0;
+
+  // Build a human-readable content summary
+  const contentParts: string[] = [];
+  if (productCount > 0) contentParts.push(`${productCount} products`);
+  if (listingCount > 0) contentParts.push(`${listingCount} listings`);
+  if (menuCount > 0) contentParts.push(`${menuCount} menu items`);
+  if (jobCount > 0) contentParts.push(`${jobCount} jobs`);
+  if (articleCount > 0) contentParts.push(`${articleCount} articles`);
+  const contentSummary = contentParts.length > 0 ? contentParts.join(", ") : "no catalog items";
 
   // Update the project with research data
-  await updateProjectStatus(projectId, "research_complete", `Research complete: ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length + totalCatalogImages} images, ${totalProducts} products`, {
+  await updateProjectStatus(projectId, "research_complete", `Research complete [${detectedType.toUpperCase()}]: ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length + totalCatalogImages} images, ${contentSummary}`, {
     targetUrl,
     targetDescription: research.description,
     researchData: research,
   });
 
-  appendBuildLog(projectId, { step: 0, status: "success", message: `Research complete: ${research.appName} — ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length + totalCatalogImages} images, ${totalProducts} products, complexity: ${research.estimatedComplexity}`, timestamp: new Date().toISOString() });
+  appendBuildLog(projectId, { step: 0, status: "success", message: `Research complete: ${research.appName} [${detectedType.toUpperCase()}] — ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length + totalCatalogImages} images, ${contentSummary}, complexity: ${research.estimatedComplexity}`, timestamp: new Date().toISOString() });
 
   return research;
 }
@@ -1246,13 +1332,56 @@ async function generateFileContents(
     ? `\n\nSUBPAGES FOUND:\n${(research as any).subpageUrls.map((p: any) => `- ${p.title}: ${p.url}`).join("\n")}`
     : "";
 
-  // Include deep catalog data if available
+  // Include deep catalog data if available — all content types
   const catalogProducts = (research as any).catalogProducts || [];
-  const catalogInfo = catalogProducts.length > 0
-    ? `\n\n═══ FULL PRODUCT CATALOG (${catalogProducts.length} products) ═══\nYou MUST include ALL of these products in the database seed data and product listing pages.\n${catalogProducts.slice(0, 200).map((p: any, i: number) => 
+  const catalogListings = (research as any).catalogListings || [];
+  const catalogMenuItems = (research as any).catalogMenuItems || [];
+  const catalogJobs = (research as any).catalogJobs || [];
+  const catalogArticles = (research as any).catalogArticles || [];
+  const detectedSiteType = (research as any).siteType || "generic";
+  const siteMetadataInfo = (research as any).siteMetadata;
+
+  let catalogInfo = "";
+
+  // Site metadata
+  if (siteMetadataInfo) {
+    catalogInfo += `\n\n═══ SITE METADATA ═══\nSite Type: ${detectedSiteType.toUpperCase()}\nTitle: ${siteMetadataInfo.title || "N/A"}\nDescription: ${siteMetadataInfo.description || "N/A"}\nPhone: ${siteMetadataInfo.phone || "N/A"}\nEmail: ${siteMetadataInfo.email || "N/A"}\nAddress: ${siteMetadataInfo.address || "N/A"}\nHours: ${siteMetadataInfo.hours || "N/A"}\nSocial: ${(siteMetadataInfo.socialLinks || []).join(", ") || "N/A"}`;
+  }
+
+  // Products (retail)
+  if (catalogProducts.length > 0) {
+    catalogInfo += `\n\n═══ FULL PRODUCT CATALOG (${catalogProducts.length} products) ═══\nYou MUST include ALL of these products in the database seed data and product listing pages.\n${catalogProducts.slice(0, 200).map((p: any, i: number) => 
       `${i + 1}. "${p.name}" | Price: ${p.price} ${p.currency} | Category: ${p.category || "General"} | Brand: ${p.brand || ""} | Images: ${(p.images || []).slice(0, 2).join(", ") || "use placeholder"} | Sizes: ${(p.sizes || []).join(", ") || "N/A"} | Colors: ${(p.colors || []).join(", ") || "N/A"} | SKU: ${p.sku || ""}`
-    ).join("\n")}\n\n═══ PRODUCT CATEGORIES ═══\n${((research as any).catalogCategories || []).map((c: any) => `- ${c.name} (${c.productCount} products): ${c.url}`).join("\n") || "No categories extracted"}`
-    : "";
+    ).join("\n")}\n\n═══ PRODUCT CATEGORIES ═══\n${((research as any).catalogCategories || []).map((c: any) => `- ${c.name} (${c.productCount} products): ${c.url}`).join("\n") || "No categories extracted"}`;
+  }
+
+  // Real estate listings
+  if (catalogListings.length > 0) {
+    catalogInfo += `\n\n═══ PROPERTY LISTINGS (${catalogListings.length} listings) ═══\nYou MUST include ALL of these listings in the database seed data and listing pages. Include BOTH for-sale and for-rent properties.\n${catalogListings.slice(0, 200).map((l: any, i: number) => 
+      `${i + 1}. "${l.title}" | Price: ${l.price} (${l.listingType || "sale"}) | Type: ${l.propertyType || "house"} | Beds: ${l.bedrooms || "?"} | Baths: ${l.bathrooms || "?"} | SqFt: ${l.sqft || "?"} | Address: ${[l.address, l.city, l.state, l.zip].filter(Boolean).join(", ")} | Agent: ${l.agent || "N/A"} | Images: ${(l.images || []).slice(0, 2).join(", ") || "use placeholder"} | Amenities: ${(l.amenities || []).slice(0, 5).join(", ") || "N/A"}`
+    ).join("\n")}`;
+  }
+
+  // Restaurant menu items
+  if (catalogMenuItems.length > 0) {
+    catalogInfo += `\n\n═══ FULL MENU (${catalogMenuItems.length} items) ═══\nYou MUST include ALL of these menu items in the database seed data and menu pages.\n${catalogMenuItems.slice(0, 200).map((m: any, i: number) => 
+      `${i + 1}. "${m.name}" | Price: ${m.price} | Category: ${m.category || "General"} | Description: ${m.description || ""} | Dietary: ${(m.dietary || []).join(", ") || "none"} | ${m.spicy ? "SPICY" : ""} | Image: ${m.image || "use placeholder"}`
+    ).join("\n")}`;
+  }
+
+  // Job listings
+  if (catalogJobs.length > 0) {
+    catalogInfo += `\n\n═══ JOB LISTINGS (${catalogJobs.length} jobs) ═══\nYou MUST include ALL of these job listings in the database seed data and job board pages.\n${catalogJobs.slice(0, 200).map((j: any, i: number) => 
+      `${i + 1}. "${j.title}" | Company: ${j.company} | Location: ${j.location} | Salary: ${j.salary || "Not specified"} | Type: ${j.type || "Full-time"} | Posted: ${j.postedDate || "Recent"}`
+    ).join("\n")}`;
+  }
+
+  // Articles / blog posts
+  if (catalogArticles.length > 0) {
+    catalogInfo += `\n\n═══ ARTICLES / BLOG POSTS (${catalogArticles.length} articles) ═══\nYou MUST include ALL of these articles in the database seed data and blog/news pages.\n${catalogArticles.slice(0, 100).map((a: any, i: number) => 
+      `${i + 1}. "${a.title}" | Author: ${a.author || "Staff"} | Date: ${a.date || "Recent"} | Category: ${a.category || "General"} | Excerpt: ${a.excerpt?.substring(0, 150) || ""} | Image: ${a.image || "use placeholder"}`
+    ).join("\n")}`;
+  }
 
   const response = await invokeLLM({
     systemTag: "chat",
@@ -1264,8 +1393,12 @@ async function generateFileContents(
 CRITICAL RULES:
 - Return a JSON array of objects with "path" and "content" fields
 - Each file must be COMPLETE, WORKING code — NO placeholders, NO TODOs, NO "add more here"
-- Include ALL products/menu items with their EXACT names, descriptions, prices, and image references from the original site
+- Include ALL content from the original site: products, property listings, menu items, job listings, articles — with their EXACT names, descriptions, prices, images, and details
 - Include ALL pages found during research — not just the homepage
+- For real estate: include BOTH for-sale and for-rent listings with full property details (beds, baths, sqft, photos, amenities)
+- For restaurants: include the FULL menu with categories, prices, descriptions, dietary info
+- For retail: include ALL products with sizes, colors, prices, images, categories
+- For job boards: include ALL job listings with company, salary, location, type
 - Use the exact branding provided (colors, name, tagline) — this replaces the original branding
 - Wire up the payment system with the USER's Stripe keys (not the original site's)
 - Reference downloaded images from /public/images/ directory

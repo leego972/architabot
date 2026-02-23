@@ -34,6 +34,13 @@ import {
   Github,
   Upload,
   Key,
+  Info,
+  ShieldCheck,
+  ShoppingCart,
+  Image,
+  Monitor,
+  Home,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -388,8 +395,103 @@ function NewProjectForm({ onCreated }: { onCreated: (id: number) => void }) {
     });
   };
 
+  const [showLimitations, setShowLimitations] = useState(false);
+
   return (
     <div className="space-y-6">
+      {/* What to Expect */}
+      <Card className="border-blue-500/30 bg-blue-500/5">
+        <CardHeader className="cursor-pointer pb-3" onClick={() => setShowLimitations(!showLimitations)}>
+          <CardTitle className="flex items-center justify-between text-base">
+            <span className="flex items-center gap-2">
+              <Info className="h-5 w-5 text-blue-400" />
+              What to Expect from Clone
+            </span>
+            {showLimitations ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          </CardTitle>
+          {!showLimitations && (
+            <CardDescription className="text-xs mt-1">Tap to learn what the clone tool can and cannot replicate</CardDescription>
+          )}
+        </CardHeader>
+
+        {showLimitations && (
+          <CardContent className="space-y-4 pt-0">
+            {/* What You Get */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-emerald-400 flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4" /> What You Get
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  { icon: Monitor, text: "Full visual design — layout, navigation, styling, responsive UI" },
+                  { icon: ShoppingCart, text: "Product catalog — names, prices, sizes, colors, images (up to 500 products)" },
+                  { icon: Home, text: "Property listings — for-sale & rentals with beds, baths, sqft, photos, amenities" },
+                  { icon: FileText, text: "Menus, jobs, articles — full restaurant menus, job boards, blog posts" },
+                  { icon: Image, text: "All images — product photos, property photos, content images (up to 300)" },
+                  { icon: Database, text: "Working database — pre-populated with ALL scraped content" },
+                  { icon: CreditCard, text: "Stripe checkout — real payment processing with your Stripe keys" },
+                  { icon: Github, text: "GitHub repo — complete source code pushed to your account" },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground bg-emerald-500/5 rounded-md p-2">
+                    <item.icon className="h-3.5 w-3.5 mt-0.5 text-emerald-400 shrink-0" />
+                    <span>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Current Limitations */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-amber-400 flex items-center gap-1.5">
+                <AlertCircle className="h-4 w-4" /> Current Limitations
+              </h4>
+              <div className="space-y-1.5">
+                {[
+                  "Backend services are not cloned — search engines, recommendation algorithms, real-time bidding, and proprietary APIs cannot be replicated. The clone generates a new backend with equivalent functionality where possible.",
+                  "Large marketplaces (eBay, Amazon, Etsy) have billions of listings — the scraper captures up to 500 representative products, not the full catalog. The value is the marketplace architecture, which you populate with your own content.",
+                  "Dynamic/JavaScript-heavy content may not be fully captured — content loaded via API calls after page load may be missed. Static HTML content is reliably extracted.",
+                  "Rate limiting — some sites aggressively block scrapers. If a site blocks requests, fewer products and pages will be captured.",
+                  "User accounts and authentication from the original site are not transferred — the clone generates a fresh auth system for your site.",
+                ].map((text, i) => (
+                  <p key={i} className="text-xs text-muted-foreground pl-4 border-l-2 border-amber-500/30">{text}</p>
+                ))}
+              </div>
+            </div>
+
+            {/* Best Results */}
+            <div className="space-y-2">
+              <h4 className="text-sm font-semibold text-purple-400 flex items-center gap-1.5">
+                <Zap className="h-4 w-4" /> Best Results With
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <div className="bg-purple-500/5 rounded-md p-2">
+                  <span className="font-medium text-purple-300">Retail / E-commerce</span> (100–2,000 products) — near-complete catalog with images, sizes, colors, prices
+                </div>
+                <div className="bg-purple-500/5 rounded-md p-2">
+                  <span className="font-medium text-purple-300">Real estate sites</span> — full property listings (sales + rentals) with photos, beds, baths, sqft, amenities
+                </div>
+                <div className="bg-purple-500/5 rounded-md p-2">
+                  <span className="font-medium text-purple-300">Restaurants</span> — complete menus with categories, prices, dietary info, and food photos
+                </div>
+                <div className="bg-purple-500/5 rounded-md p-2">
+                  <span className="font-medium text-purple-300">Job boards</span> — all job listings with company, salary, location, and type
+                </div>
+                <div className="bg-purple-500/5 rounded-md p-2">
+                  <span className="font-medium text-purple-300">News / Blog sites</span> — articles with authors, dates, categories, and featured images
+                </div>
+                <div className="bg-purple-500/5 rounded-md p-2">
+                  <span className="font-medium text-purple-300">Brand websites & SaaS</span> — complete UI replication with working backend
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground/70 italic border-t border-border/30 pt-3">
+              After cloning, you can use the AI Chat to add any missing functionality, connect external APIs, or customize the site further.
+            </p>
+          </CardContent>
+        )}
+      </Card>
+
       {/* Step 1: Target */}
       <Card className="border-border/50 bg-card/50">
         <CardHeader>
@@ -1450,24 +1552,66 @@ function ResearchResults({ research }: { research: NonNullable<Project["research
             </div>
           </div>
 
-          {/* Catalog Stats */}
+          {/* Content Scraping Stats */}
           {(research as any).catalogStats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <div className="text-center">
-                <p className="text-lg font-bold text-emerald-400">{(research as any).catalogStats.totalProducts}</p>
-                <p className="text-xs text-muted-foreground">Products Scraped</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-blue-400">{(research as any).catalogStats.downloadedImages}</p>
-                <p className="text-xs text-muted-foreground">Product Images</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-amber-400">{(research as any).catalogStats.pagesScraped}</p>
-                <p className="text-xs text-muted-foreground">Pages Scraped</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-purple-400">{((research as any).catalogCategories || []).length}</p>
-                <p className="text-xs text-muted-foreground">Categories</p>
+            <div className="space-y-2">
+              {/* Site type badge */}
+              {(research as any).siteType && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 uppercase">
+                    {(research as any).siteType} site detected
+                  </span>
+                </div>
+              )}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                {/* Always show pages and images */}
+                <div className="text-center">
+                  <p className="text-lg font-bold text-amber-400">{(research as any).catalogStats.pagesScraped}</p>
+                  <p className="text-xs text-muted-foreground">Pages Scraped</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-blue-400">{(research as any).catalogStats.downloadedImages}</p>
+                  <p className="text-xs text-muted-foreground">Images Downloaded</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-purple-400">{((research as any).catalogCategories || []).length}</p>
+                  <p className="text-xs text-muted-foreground">Categories</p>
+                </div>
+                {/* Show products if any */}
+                {((research as any).catalogProducts || []).length > 0 && (
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-emerald-400">{(research as any).catalogProducts.length}</p>
+                    <p className="text-xs text-muted-foreground">Products</p>
+                  </div>
+                )}
+                {/* Show listings if any */}
+                {((research as any).catalogListings || []).length > 0 && (
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-emerald-400">{(research as any).catalogListings.length}</p>
+                    <p className="text-xs text-muted-foreground">Property Listings</p>
+                  </div>
+                )}
+                {/* Show menu items if any */}
+                {((research as any).catalogMenuItems || []).length > 0 && (
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-orange-400">{(research as any).catalogMenuItems.length}</p>
+                    <p className="text-xs text-muted-foreground">Menu Items</p>
+                  </div>
+                )}
+                {/* Show jobs if any */}
+                {((research as any).catalogJobs || []).length > 0 && (
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-cyan-400">{(research as any).catalogJobs.length}</p>
+                    <p className="text-xs text-muted-foreground">Job Listings</p>
+                  </div>
+                )}
+                {/* Show articles if any */}
+                {((research as any).catalogArticles || []).length > 0 && (
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-pink-400">{(research as any).catalogArticles.length}</p>
+                    <p className="text-xs text-muted-foreground">Articles</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
