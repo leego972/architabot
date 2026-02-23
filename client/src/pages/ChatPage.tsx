@@ -628,10 +628,10 @@ function ConversationSidebar({
       <div className="p-3 border-b border-border/50 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Conversations</h3>
         <div className="flex items-center gap-1">
-          <button onClick={onNew} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" title="New conversation">
+          <button onClick={onNew} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" title="New conversation" aria-label="New conversation">
             <Plus className="h-4 w-4" />
           </button>
-          <button onClick={onToggle} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" title="Collapse sidebar">
+          <button onClick={onToggle} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" title="Collapse sidebar" aria-label="Collapse sidebar">
             <PanelLeftClose className="h-4 w-4" />
           </button>
         </div>
@@ -815,10 +815,10 @@ function MobileConversationDrawer({
         <div className="p-4 border-b border-border/50 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Conversations</h3>
           <div className="flex items-center gap-2">
-            <button onClick={() => { onNew(); onClose(); }} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={() => { onNew(); onClose(); }} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" aria-label="New conversation">
               <Plus className="h-4 w-4" />
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors">
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" aria-label="Close sidebar">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -1783,6 +1783,7 @@ export default function ChatPage() {
               <button
                 onClick={() => setMobileDrawerOpen(true)}
                 className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                aria-label="Open conversations"
               >
                 <Menu className="h-5 w-5" />
               </button>
@@ -1830,6 +1831,7 @@ export default function ChatPage() {
                 onClick={handleNewConversation}
                 className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
                 title="New conversation"
+                aria-label="New conversation"
               >
                 <Plus className="h-4.5 w-4.5" />
               </button>
@@ -1989,6 +1991,7 @@ export default function ChatPage() {
                               onClick={() => isSpeaking ? stopSpeaking() : speakText(msg.content)}
                               className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
                               title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+                              aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
                             >
                               {isSpeaking ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
                               <span className="hidden sm:inline">{isSpeaking ? 'Stop' : 'Speak'}</span>
@@ -2031,6 +2034,7 @@ export default function ChatPage() {
                           <button
                             onClick={() => setShowStreamPanel(!showStreamPanel)}
                             className="text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label={showStreamPanel ? 'Hide activity details' : 'Show activity details'}
                           >
                             {showStreamPanel ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                           </button>
@@ -2093,6 +2097,7 @@ export default function ChatPage() {
                       <button
                         onClick={handleRegenerate}
                         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg border border-border/50 hover:bg-accent/50 transition-colors"
+                        aria-label="Regenerate response"
                       >
                         <RotateCcw className="h-3 w-3" />
                         Regenerate response
@@ -2115,7 +2120,7 @@ export default function ChatPage() {
               <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
               <span className="text-sm text-red-400 font-medium">Recording... {formatDuration(recordingDuration)}</span>
               <div className="flex-1" />
-              <Button onClick={stopRecording} size="sm" variant="ghost" className="h-8 px-3 text-red-400 hover:text-red-300 hover:bg-red-500/20">
+              <Button onClick={stopRecording} size="sm" variant="ghost" className="h-8 px-3 text-red-400 hover:text-red-300 hover:bg-red-500/20" aria-label="Stop recording">
                 <Square className="h-3.5 w-3.5 mr-1.5 fill-current" />
                 Stop
               </Button>
@@ -2136,7 +2141,7 @@ export default function ChatPage() {
               <Volume2 className="h-4 w-4 text-blue-400 animate-pulse" />
               <span className="text-sm text-blue-400 font-medium">Titan is speaking...</span>
               <div className="flex-1" />
-              <Button onClick={stopSpeaking} size="sm" variant="ghost" className="h-8 px-3 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20">
+              <Button onClick={stopSpeaking} size="sm" variant="ghost" className="h-8 px-3 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20" aria-label="Stop speaking">
                 <VolumeX className="h-3.5 w-3.5 mr-1.5" />
                 Stop
               </Button>
@@ -2161,6 +2166,7 @@ export default function ChatPage() {
                   <button
                     onClick={() => setSelectedFiles(selectedFiles.filter((_, i) => i !== index))}
                     className="text-muted-foreground hover:text-red-500 transition-colors ml-1"
+                    aria-label="Remove file"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -2229,6 +2235,7 @@ export default function ChatPage() {
                       : 'text-muted-foreground hover:text-primary hover:bg-primary/10 border border-border/50 hover:border-primary/50'
                   } disabled:opacity-50 disabled:pointer-events-none`}
                   title={isRecording ? 'Stop recording' : 'Voice input'}
+                  aria-label={isRecording ? 'Stop recording' : 'Start voice recording'}
                 >
                   {isRecording ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-4 w-4" />}
                 </button>
@@ -2248,6 +2255,7 @@ export default function ChatPage() {
                       : 'text-muted-foreground hover:text-primary hover:bg-primary/10 border border-border/50 hover:border-primary/50'
                   }`}
                   title={voiceMode ? 'Voice mode ON — click to disable' : 'Enable voice mode (auto-speak responses)'}
+                  aria-label={voiceMode ? 'Disable voice mode' : 'Enable voice mode'}
                 >
                   {voiceMode ? <Headphones className="h-4 w-4" /> : <HeadphoneOff className="h-4 w-4" />}
                 </button>
@@ -2258,6 +2266,7 @@ export default function ChatPage() {
                     isMobile ? 'h-9 w-9' : 'h-10 w-10'
                   }`}
                   title="Upload files"
+                  aria-label="Upload files"
                 >
                   <Paperclip className="h-4 w-4" />
                 </button>

@@ -167,6 +167,36 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Core React runtime — cached long-term
+          'vendor-react': ['react', 'react-dom'],
+          // UI library — large but shared across all pages
+          'vendor-radix': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-popover',
+            '@radix-ui/react-select',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-tooltip',
+            '@radix-ui/react-accordion',
+            '@radix-ui/react-switch',
+            '@radix-ui/react-checkbox',
+            '@radix-ui/react-scroll-area',
+          ],
+          // Icons — very large, split out for caching
+          'vendor-icons': ['lucide-react'],
+          // Heavy optional deps — only loaded by specific pages
+          'vendor-charts': ['recharts'],
+          'vendor-editor': ['@monaco-editor/react'],
+          'vendor-motion': ['framer-motion'],
+          'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+          // Utilities
+          'vendor-utils': ['date-fns', 'zod', 'wouter', 'streamdown'],
+        },
+      },
+    },
   },
   server: {
     host: true,

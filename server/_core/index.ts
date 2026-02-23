@@ -26,6 +26,10 @@ import { registerBinancePayWebhook } from "../binance-pay-webhook";
 import { registerSeoRoutes, startScheduledSeo } from "../seo-engine";
 import { registerChatStreamRoutes } from "../chat-stream";
 import { registerMarketplaceFileRoutes } from "../marketplace-files";
+import rateLimit from "express-rate-limit";
+import { createLogger } from "./logger";
+
+const log = createLogger('Startup');
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -61,6 +65,40 @@ async function startServer() {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
     next();
   });
+
+  // ── Rate Limiting ─────────────────────────────────────────────
+  // General API rate limit: 200 requests per minute per IP
+  const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Please slow down and try again shortly.' },
+    skip: (req) => req.path === '/api/health',
+  });
+  app.use('/api/', apiLimiter);
+
+  // Stricter limit for auth endpoints: 20 per minute per IP
+  const authLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many authentication attempts. Please wait a moment.' },
+  });
+  app.use('/api/auth/', authLimiter);
+  app.use('/api/email-auth/', authLimiter);
+  app.use('/api/social-auth/', authLimiter);
+
+  // Chat streaming limit: 30 per minute per IP (prevents abuse of AI credits)
+  const chatLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Chat rate limit reached. Please wait before sending more messages.' },
+  });
+  app.use('/api/chat/', chatLimiter);
 
   // Stripe webhook MUST be registered BEFORE express.json() for raw body access
   registerStripeWebhook(app);
@@ -123,18 +161,18 @@ async function startServer() {
     });
     // Step 1: Try Drizzle migrations (may fail if journal is out of sync)
     try {
-      console.log("[Startup] Running database migrations...");
+      log.info('Running database migrations...');
       const migrationDb = drizzle(pool);
       const __filename = fileURLToPath(import.meta.url);
       const __dirname = path.dirname(__filename);
       const migrationsFolder = process.env.NODE_ENV === "production"
         ? path.resolve(__dirname, "..", "drizzle")
         : path.resolve(__dirname, "..", "..", "drizzle");
-      console.log(`[Startup] Migrations folder: ${migrationsFolder}`);
+      log.debug('Migrations folder', { path: migrationsFolder });
       await migrate(migrationDb, { migrationsFolder });
-      console.log("[Startup] Database migrations completed successfully");
+      log.info('Database migrations completed');
     } catch (migErr: any) {
-      console.warn("[Startup] Drizzle migration warning (continuing with raw SQL):", migErr.message?.substring(0, 200));
+      log.warn('Drizzle migration warning (continuing with raw SQL)', { error: migErr.message?.substring(0, 200) });
     }
     // Step 2: Always run raw SQL to ensure columns and tables exist (idempotent)
     try {
@@ -173,11 +211,11 @@ async function startServer() {
       for (const sql of missingColumns) {
         try {
           await pool.promise().query(sql);
-          console.log(`[Startup] Added column: ${sql.split('\`')[3]}`);
+          log.debug('Added column', { column: sql.split('\`')[3] });
         } catch (e: any) {
           // Column already exists - ignore
           if (!e.message?.includes('Duplicate column')) {
-            console.warn(`[Startup] Column fix warning: ${e.message}`);
+            log.warn('Column fix warning', { error: e.message });
           }
         }
       }
@@ -186,9 +224,9 @@ async function startServer() {
         await pool.promise().query(
           "ALTER TABLE `crowdfundingCampaigns` MODIFY COLUMN `source` enum('internal','kickstarter','indiegogo','gofundme','other') DEFAULT 'internal' NOT NULL"
         );
-        console.log("[Startup] Ensured source column is ENUM type");
+        log.debug('Ensured source column is ENUM type');
       } catch (e: any) {
-        console.warn(`[Startup] Source column fix: ${e.message?.substring(0, 100)}`);
+        log.warn('Source column fix', { error: e.message?.substring(0, 100) });
       }
 
       // Create marketplace tables if they don't exist
@@ -205,24 +243,24 @@ async function startServer() {
         try {
           await pool.promise().query(ddl);
         } catch (e: any) {
-          console.warn(`[Startup] Table creation warning: ${e.message?.substring(0, 100)}`);
+          log.warn('Table creation warning', { error: e.message?.substring(0, 100) });
         }
       }
-      console.log("[Startup] All tables ensured");
+      log.info('All tables ensured');
     } catch (err: any) {
-      console.error("[Startup] Raw SQL migration failed:", err.message);
+      log.error('Raw SQL migration failed', { error: err.message });
     }
     // Always close the migration pool
     try { await pool.promise().end(); } catch (_) {}
   } else {
-    console.warn("[Startup] No DATABASE_URL - skipping migrations");
+    log.warn('No DATABASE_URL - skipping migrations');
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    log.info(`Port ${preferredPort} busy, using ${port} instead`);
   }
 
   // Set server timeout to 10 minutes for long builder tasks
@@ -231,7 +269,7 @@ async function startServer() {
   server.headersTimeout = 630_000; // slightly longer than keepAlive
 
   server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+    log.info(`Server running on http://localhost:${port}/`);
 
     // ─── Scheduled Monthly Credit Refill ──────────────────────────
     // Run once on startup (catches any missed refills) and then every 24 hours.
@@ -262,7 +300,7 @@ async function startServer() {
           await db.update(users).set({ role: "admin" }).where(
             inArray(users.email, ENV.ownerEmails)
           ).catch(() => {});
-          console.log(`[Startup] Admin auto-promotion: owner emails [${ENV.ownerEmails.join(", ")}] updated`);
+          log.info('Admin auto-promotion', { emails: ENV.ownerEmails });
         }
 
         // Promote by OWNER_OPEN_ID
@@ -272,7 +310,7 @@ async function startServer() {
           ).catch(() => {});
         }
       } catch (err) {
-        console.error("[Startup] Admin auto-promotion failed:", err);
+        log.error('Admin auto-promotion failed', { error: String(err) });
       }
     }, 3000);
 
@@ -282,10 +320,10 @@ async function startServer() {
       try {
         const { seedAffiliatePrograms } = await import("../affiliate-engine.js");
         const count = await seedAffiliatePrograms();
-        if (count > 0) console.log(`[Startup] Auto-seeded ${count} affiliate programs`);
-        else console.log("[Startup] Affiliate programs already seeded");
+        if (count > 0) log.info(`Auto-seeded ${count} affiliate programs`);
+        else log.debug('Affiliate programs already seeded');
       } catch (err) {
-        console.error("[Startup] Affiliate seed failed:", err);
+        log.error('Affiliate seed failed', { error: String(err) });
       }
     }, 5000);
 
@@ -297,7 +335,7 @@ async function startServer() {
         const { releases } = await import("../../drizzle/schema.js");
         const { sql } = await import("drizzle-orm");
         const db = await getDb();
-        if (!db) { console.log('[Startup] Release seed skipped: DB not available'); return; }
+        if (!db) { log.warn('Release seed skipped: DB not available'); return; }
         const existing = await db.select({ count: sql<number>`count(*)` }).from(releases);
         if (existing[0].count === 0) {
           await db.insert(releases).values({
@@ -330,12 +368,12 @@ async function startServer() {
             isPrerelease: 0,
             downloadCount: 0,
           });
-          console.log("[Startup] Auto-seeded v7.1.0 release (upload binaries via admin panel)");
+          log.info('Auto-seeded v7.1.0 release');
         } else {
-          console.log(`[Startup] Releases already exist (${existing[0].count} found)`);
+          log.debug(`Releases already exist (${existing[0].count} found)`);
         }
       } catch (err) {
-        console.error("[Startup] Release seed failed:", err);
+        log.error('Release seed failed', { error: String(err) });
       }
     }, 6000);
 
@@ -345,10 +383,10 @@ async function startServer() {
       try {
         const { seedBlogPosts } = await import("../blog-seed.js");
         const count = await seedBlogPosts();
-        if (count > 0) console.log(`[Startup] Auto-seeded ${count} blog posts`);
-        else console.log("[Startup] Blog posts already seeded");
+        if (count > 0) log.info(`Auto-seeded ${count} blog posts`);
+        else log.debug('Blog posts already seeded');
       } catch (err) {
-        console.error("[Startup] Blog seed failed:", err);
+        log.error('Blog seed failed', { error: String(err) });
       }
     }, 8000);
 
@@ -374,24 +412,24 @@ function scheduleMonthlyRefill() {
   // Run after a short delay on startup to let DB connections settle
   setTimeout(async () => {
     try {
-      console.log("[Cron] Running startup credit refill check...");
+      log.info('Running startup credit refill check...');
       const result = await processAllMonthlyRefills();
-      console.log(`[Cron] Startup refill: ${result.processed} checked, ${result.refilled} refilled, ${result.errors} errors`);
+      log.info('Startup refill complete', { processed: result.processed, refilled: result.refilled, errors: result.errors });
     } catch (err: any) {
-      console.error("[Cron] Startup refill failed:", err.message);
+      log.error('Startup refill failed', { error: err.message });
     }
   }, 30_000); // 30 second delay — give DB connections time to settle
 
   // Then run every 24 hours
   setInterval(async () => {
     try {
-      console.log("[Cron] Running scheduled credit refill...");
+      log.info('Running scheduled credit refill...');
       const result = await processAllMonthlyRefills();
-      console.log(`[Cron] Scheduled refill: ${result.processed} checked, ${result.refilled} refilled, ${result.errors} errors`);
+      log.info('Scheduled refill complete', { processed: result.processed, refilled: result.refilled, errors: result.errors });
     } catch (err: any) {
-      console.error("[Cron] Scheduled refill failed:", err.message);
+      log.error('Scheduled refill failed', { error: err.message });
     }
   }, TWENTY_FOUR_HOURS);
 }
 
-startServer().catch(console.error);
+startServer().catch((err) => log.error('Server startup failed', { error: String(err) }));

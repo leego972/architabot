@@ -205,7 +205,7 @@ function startServer() {
     if (fs.existsSync(publicDir)) app.use(express.static(publicDir));
 
     // ── Health ──
-    app.get("/api/health", (_, res) => res.json({ status: "ok", mode: "desktop", version: "7.0.0" }));
+    app.get("/api/health", (_, res) => res.json({ status: "ok", mode: "desktop", version: "8.0.0" }));
 
     // ── Mode: Get/Set online/offline ──
     app.get("/api/desktop/mode", (_, res) => {

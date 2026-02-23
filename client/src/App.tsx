@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FetcherLayout from "./components/FetcherLayout";
+import RouteErrorBoundary from "./components/RouteErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { lazy, Suspense } from "react";
 
@@ -107,80 +108,85 @@ function PageLoader() {
   );
 }
 
+/** Wrap a lazy page in a per-route error boundary */
+function Guarded({ name, children }: { name: string; children: React.ReactNode }) {
+  return <RouteErrorBoundary pageName={name}>{children}</RouteErrorBoundary>;
+}
+
 function DashboardRouter() {
   return (
     <FetcherLayout>
       <Suspense fallback={<PageLoader />}>
         <Switch>
           {/* Main Dashboard - Builder Chat */}
-          <Route path="/dashboard" component={ChatPage} />
+          <Route path="/dashboard">{() => <Guarded name="Builder Chat"><ChatPage /></Guarded>}</Route>
 
           {/* Developer Tools */}
-          <Route path="/replicate" component={ReplicatePage} />
-          <Route path="/sandbox" component={SandboxPage} />
-          <Route path="/fetcher/smart-fetch" component={SmartFetchPage} />
-          <Route path="/fetcher/new" component={FetcherNew} />
-          <Route path="/fetcher/jobs" component={FetcherJobs} />
-          <Route path="/fetcher/jobs/:id" component={FetcherJobDetail} />
-          <Route path="/marketplace" component={MarketplacePage} />
-          <Route path="/marketplace/:rest*" component={MarketplacePage} />
-          <Route path="/project-files" component={ProjectFilesViewer} />
-          <Route path="/project-files/:projectId" component={ProjectFilesViewer} />
+          <Route path="/replicate">{() => <Guarded name="Clone Website"><ReplicatePage /></Guarded>}</Route>
+          <Route path="/sandbox">{() => <Guarded name="Sandbox"><SandboxPage /></Guarded>}</Route>
+          <Route path="/fetcher/smart-fetch">{() => <Guarded name="Smart Fetch"><SmartFetchPage /></Guarded>}</Route>
+          <Route path="/fetcher/new">{() => <Guarded name="New Fetch"><FetcherNew /></Guarded>}</Route>
+          <Route path="/fetcher/jobs">{() => <Guarded name="Jobs"><FetcherJobs /></Guarded>}</Route>
+          <Route path="/fetcher/jobs/:id">{(params) => <Guarded name="Job Detail"><FetcherJobDetail {...(params as any)} /></Guarded>}</Route>
+          <Route path="/marketplace">{() => <Guarded name="Marketplace"><MarketplacePage /></Guarded>}</Route>
+          <Route path="/marketplace/:rest*">{() => <Guarded name="Marketplace"><MarketplacePage /></Guarded>}</Route>
+          <Route path="/project-files">{() => <Guarded name="Project Files"><ProjectFilesViewer /></Guarded>}</Route>
+          <Route path="/project-files/:projectId">{(params) => <Guarded name="Project Files"><ProjectFilesViewer {...(params as any)} /></Guarded>}</Route>
 
           {/* Security */}
-          <Route path="/fetcher/totp-vault" component={TotpVaultPage} />
-          <Route path="/fetcher/watchdog" component={WatchdogPage} />
-          <Route path="/fetcher/provider-health" component={ProviderHealthPage} />
-          <Route path="/fetcher/health-trends" component={HealthTrendsPage} />
-          <Route path="/fetcher/leak-scanner" component={LeakScannerPage} />
-          <Route path="/fetcher/credential-health" component={CredentialHealthPage} />
+          <Route path="/fetcher/totp-vault">{() => <Guarded name="TOTP Vault"><TotpVaultPage /></Guarded>}</Route>
+          <Route path="/fetcher/watchdog">{() => <Guarded name="Watchdog"><WatchdogPage /></Guarded>}</Route>
+          <Route path="/fetcher/provider-health">{() => <Guarded name="Provider Health"><ProviderHealthPage /></Guarded>}</Route>
+          <Route path="/fetcher/health-trends">{() => <Guarded name="Health Trends"><HealthTrendsPage /></Guarded>}</Route>
+          <Route path="/fetcher/leak-scanner">{() => <Guarded name="Leak Scanner"><LeakScannerPage /></Guarded>}</Route>
+          <Route path="/fetcher/credential-health">{() => <Guarded name="Credential Health"><CredentialHealthPage /></Guarded>}</Route>
 
           {/* Business & Funding */}
-          <Route path="/grants" component={GrantsPage} />
-          <Route path="/grants/:id" component={GrantDetailPage} />
-          <Route path="/grant-applications" component={GrantApplicationsPage} />
-          <Route path="/companies" component={CompaniesPage} />
-          <Route path="/business-plans" component={BusinessPlanPage} />
-          <Route path="/crowdfunding" component={CrowdfundingPage} />
-          <Route path="/crowdfunding/:rest*" component={CrowdfundingPage} />
-          <Route path="/referrals" component={ReferralsPage} />
-          <Route path="/advertising" component={AdvertisingDashboard} />
-          <Route path="/affiliate" component={AffiliateDashboard} />
-          <Route path="/seo" component={SeoDashboard} />
-          <Route path="/blog-admin" component={BlogAdmin} />
-          <Route path="/marketing" component={MarketingPage} />
+          <Route path="/grants">{() => <Guarded name="Grants"><GrantsPage /></Guarded>}</Route>
+          <Route path="/grants/:id">{(params) => <Guarded name="Grant Detail"><GrantDetailPage {...(params as any)} /></Guarded>}</Route>
+          <Route path="/grant-applications">{() => <Guarded name="Grant Applications"><GrantApplicationsPage /></Guarded>}</Route>
+          <Route path="/companies">{() => <Guarded name="Companies"><CompaniesPage /></Guarded>}</Route>
+          <Route path="/business-plans">{() => <Guarded name="Business Plans"><BusinessPlanPage /></Guarded>}</Route>
+          <Route path="/crowdfunding">{() => <Guarded name="Crowdfunding"><CrowdfundingPage /></Guarded>}</Route>
+          <Route path="/crowdfunding/:rest*">{() => <Guarded name="Crowdfunding"><CrowdfundingPage /></Guarded>}</Route>
+          <Route path="/referrals">{() => <Guarded name="Referrals"><ReferralsPage /></Guarded>}</Route>
+          <Route path="/advertising">{() => <Guarded name="Advertising"><AdvertisingDashboard /></Guarded>}</Route>
+          <Route path="/affiliate">{() => <Guarded name="Affiliate"><AffiliateDashboard /></Guarded>}</Route>
+          <Route path="/seo">{() => <Guarded name="SEO"><SeoDashboard /></Guarded>}</Route>
+          <Route path="/blog-admin">{() => <Guarded name="Blog Admin"><BlogAdmin /></Guarded>}</Route>
+          <Route path="/marketing">{() => <Guarded name="Marketing"><MarketingPage /></Guarded>}</Route>
 
           {/* Account & Settings */}
-          <Route path="/dashboard/subscription" component={SubscriptionPage} />
-          <Route path="/dashboard/credits" component={CreditsPage} />
-          <Route path="/fetcher/credentials" component={FetcherCredentials} />
-          <Route path="/fetcher/api-access" component={ApiAccessPage} />
-          <Route path="/fetcher/team" component={TeamManagementPage} />
-          <Route path="/fetcher/team-vault" component={TeamVaultPage} />
-          <Route path="/fetcher/settings" component={FetcherSettings} />
-          <Route path="/fetcher/killswitch" component={FetcherKillSwitch} />
-          <Route path="/fetcher/account" component={AccountSettingsPage} />
+          <Route path="/dashboard/subscription">{() => <Guarded name="Subscription"><SubscriptionPage /></Guarded>}</Route>
+          <Route path="/dashboard/credits">{() => <Guarded name="Credits"><CreditsPage /></Guarded>}</Route>
+          <Route path="/fetcher/credentials">{() => <Guarded name="Credentials"><FetcherCredentials /></Guarded>}</Route>
+          <Route path="/fetcher/api-access">{() => <Guarded name="API Access"><ApiAccessPage /></Guarded>}</Route>
+          <Route path="/fetcher/team">{() => <Guarded name="Team"><TeamManagementPage /></Guarded>}</Route>
+          <Route path="/fetcher/team-vault">{() => <Guarded name="Team Vault"><TeamVaultPage /></Guarded>}</Route>
+          <Route path="/fetcher/settings">{() => <Guarded name="Settings"><FetcherSettings /></Guarded>}</Route>
+          <Route path="/fetcher/killswitch">{() => <Guarded name="Kill Switch"><FetcherKillSwitch /></Guarded>}</Route>
+          <Route path="/fetcher/account">{() => <Guarded name="Account"><AccountSettingsPage /></Guarded>}</Route>
 
           {/* Automation */}
-          <Route path="/fetcher/export" component={FetcherExport} />
-          <Route path="/fetcher/import" component={ImportPage} />
-          <Route path="/fetcher/bulk-sync" component={BulkSyncPage} />
-          <Route path="/fetcher/auto-sync" component={AutoSyncPage} />
-          <Route path="/fetcher/onboarding" component={ProviderOnboardingPage} />
-          <Route path="/fetcher/history" component={CredentialHistoryPage} />
-          <Route path="/fetcher/audit-logs" component={AuditLogsPage} />
+          <Route path="/fetcher/export">{() => <Guarded name="Export"><FetcherExport /></Guarded>}</Route>
+          <Route path="/fetcher/import">{() => <Guarded name="Import"><ImportPage /></Guarded>}</Route>
+          <Route path="/fetcher/bulk-sync">{() => <Guarded name="Bulk Sync"><BulkSyncPage /></Guarded>}</Route>
+          <Route path="/fetcher/auto-sync">{() => <Guarded name="Auto Sync"><AutoSyncPage /></Guarded>}</Route>
+          <Route path="/fetcher/onboarding">{() => <Guarded name="Onboarding"><ProviderOnboardingPage /></Guarded>}</Route>
+          <Route path="/fetcher/history">{() => <Guarded name="History"><CredentialHistoryPage /></Guarded>}</Route>
+          <Route path="/fetcher/audit-logs">{() => <Guarded name="Audit Logs"><AuditLogsPage /></Guarded>}</Route>
 
           {/* Developer API */}
-          <Route path="/fetcher/developer-docs" component={DeveloperDocsPage} />
-          <Route path="/fetcher/webhooks" component={WebhooksPage} />
-          <Route path="/fetcher/notifications" component={NotificationChannelsPage} />
-          <Route path="/fetcher/api-analytics" component={ApiAnalyticsPage} />
-          <Route path="/fetcher/cli" component={CliToolPage} />
+          <Route path="/fetcher/developer-docs">{() => <Guarded name="Developer Docs"><DeveloperDocsPage /></Guarded>}</Route>
+          <Route path="/fetcher/webhooks">{() => <Guarded name="Webhooks"><WebhooksPage /></Guarded>}</Route>
+          <Route path="/fetcher/notifications">{() => <Guarded name="Notifications"><NotificationChannelsPage /></Guarded>}</Route>
+          <Route path="/fetcher/api-analytics">{() => <Guarded name="API Analytics"><ApiAnalyticsPage /></Guarded>}</Route>
+          <Route path="/fetcher/cli">{() => <Guarded name="CLI Tool"><CliToolPage /></Guarded>}</Route>
 
           {/* Admin */}
-          <Route path="/fetcher/releases" component={ReleaseManagementPage} />
-          <Route path="/fetcher/admin" component={AdminPanel} />
-          <Route path="/fetcher/self-improvement" component={SelfImprovementDashboard} />
+          <Route path="/fetcher/releases">{() => <Guarded name="Releases"><ReleaseManagementPage /></Guarded>}</Route>
+          <Route path="/fetcher/admin">{() => <Guarded name="Admin Panel"><AdminPanel /></Guarded>}</Route>
+          <Route path="/fetcher/self-improvement">{() => <Guarded name="Self Improvement"><SelfImprovementDashboard /></Guarded>}</Route>
 
           <Route component={NotFound} />
         </Switch>
