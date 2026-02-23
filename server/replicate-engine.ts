@@ -26,6 +26,9 @@ import {
   createSandbox,
   executeCommand,
   writeFile as sandboxWriteFile,
+  listFiles,
+  readFile,
+  persistWorkspace,
 } from "./sandbox-engine";
 import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
 import { storagePut } from "./storage";
@@ -92,6 +95,7 @@ export async function createProject(
     priority?: "mvp" | "full";
     branding?: BrandConfig;
     stripe?: StripeConfig;
+    githubPat?: string;
   }
 ): Promise<ReplicateProject> {
   const db = await getDb();
@@ -112,6 +116,7 @@ export async function createProject(
       stripePublishableKey: options?.stripe?.publishableKey,
       stripeSecretKey: options?.stripe?.secretKey,
       stripePriceIds: options?.stripe?.priceIds,
+      githubPat: options?.githubPat,
       buildLog: [],
     })
     .$returningId();
@@ -947,13 +952,70 @@ export async function executeBuild(
     // Non-critical — continue
   }
 
+  // Persist workspace to S3 so files survive server restarts
+  appendBuildLog(projectId, {
+    step: plan.buildSteps.length + 2,
+    status: "running",
+    message: "Persisting project files to cloud storage...",
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    await persistWorkspace(sandboxId, userId);
+
+    // Also index all built files into the sandboxFiles table for the Project Files viewer
+    const builtFiles = await listFiles(sandboxId, userId, "/");
+    const db = await getDb();
+    if (db && builtFiles.length > 0) {
+      const { sandboxFiles } = await import("../drizzle/schema");
+      for (const file of builtFiles) {
+        if (file.type === "file") {
+          try {
+            const content = await readFile(sandboxId, userId, file.path);
+            if (content !== null) {
+              const s3Key = `projects/${userId}/${projectId}/${file.path.replace(/^\//, "")}`;
+              await storagePut(s3Key, Buffer.from(content, "utf-8"), "text/plain");
+              await db.insert(sandboxFiles).values({
+                sandboxId,
+                filePath: file.path,
+                s3Key,
+                fileSize: Buffer.byteLength(content, "utf-8"),
+                content: content.length <= 65535 ? content : null,
+              });
+            }
+          } catch {
+            // Non-critical — continue indexing other files
+          }
+        }
+      }
+    }
+
+    appendBuildLog(projectId, {
+      step: plan.buildSteps.length + 2,
+      status: "success",
+      message: `Persisted ${builtFiles.length} files to cloud storage`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    appendBuildLog(projectId, {
+      step: plan.buildSteps.length + 2,
+      status: "error",
+      message: `Persistence warning: ${err.message}`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Store output file list on the project
+  const outputFileList = plan.fileStructure.map(f => f.path);
+
   // Mark build complete
   await updateProjectStatus(projectId, "build_complete", "Build complete! All steps executed.", {
     currentStep: plan.buildSteps.length,
+    outputFiles: outputFileList,
   });
 
   appendBuildLog(projectId, {
-    step: plan.buildSteps.length + 2,
+    step: plan.buildSteps.length + 3,
     status: "success",
     message: "Build complete! Project is ready.",
     timestamp: new Date().toISOString(),
@@ -1167,14 +1229,10 @@ export async function pushToGithub(
   const plan = project.buildPlan;
   if (!plan) throw new Error("No build plan found");
 
-  // Get user's GitHub PAT from secrets
-  const db = getDb();
-  const secrets = await db.query.userSecrets.findFirst({
-    where: (s: any, { eq: eqOp }: any) => eqOp(s.userId, userId),
-  });
-  const githubToken = secrets?.githubToken;
+  // Use the per-project GitHub PAT stored during clone creation
+  const githubToken = project.githubPat;
   if (!githubToken) {
-    throw new Error("GitHub Personal Access Token not found. Please add it in Account Settings.");
+    throw new Error("GitHub Personal Access Token not found for this project. Please recreate the clone with a valid PAT.");
   }
 
   await updateProjectStatus(projectId, "pushing", `Pushing to GitHub: ${repoName}...`);

@@ -1204,6 +1204,9 @@ export const replicateProjects = mysqlTable("replicate_projects", {
   stripePublishableKey: text("stripePublishableKey"),
   stripeSecretKey: text("stripeSecretKey"),
   stripePriceIds: json("stripePriceIds").$type<string[]>(),
+  // GitHub PAT for this specific clone project
+  githubPat: text("githubPat"),
+  githubRepoUrl: text("githubRepoUrl"),
   // Build status
   status: mysqlEnum("status", [
     "researching",
@@ -1212,6 +1215,11 @@ export const replicateProjects = mysqlTable("replicate_projects", {
     "plan_complete",
     "building",
     "build_complete",
+    "branded",
+    "pushing",
+    "pushed",
+    "deploying",
+    "deployed",
     "testing",
     "complete",
     "error",

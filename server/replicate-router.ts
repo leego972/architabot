@@ -146,6 +146,7 @@ export const replicateRouter = router({
           publishableKey: input.stripePublishableKey,
           secretKey: input.stripeSecretKey,
         },
+        githubPat: input.githubPat,
       });
       return project;
     }),

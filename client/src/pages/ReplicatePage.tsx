@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import AffiliateRecommendations from "@/components/AffiliateRecommendations";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -92,6 +92,11 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
   plan_complete: { label: "Plan Ready", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", icon: CheckCircle2 },
   building: { label: "Building", color: "bg-purple-500/20 text-purple-400 border-purple-500/30", icon: Hammer },
   build_complete: { label: "Build Complete", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", icon: CheckCircle2 },
+  branded: { label: "Branded", color: "bg-pink-500/20 text-pink-400 border-pink-500/30", icon: Palette },
+  pushing: { label: "Pushing to GitHub", color: "bg-orange-500/20 text-orange-400 border-orange-500/30", icon: Upload },
+  pushed: { label: "Pushed to GitHub", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", icon: Github },
+  deploying: { label: "Deploying", color: "bg-blue-500/20 text-blue-400 border-blue-500/30", icon: Zap },
+  deployed: { label: "Deployed", color: "bg-green-500/20 text-green-400 border-green-500/30", icon: Globe },
   testing: { label: "Testing", color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30", icon: Zap },
   complete: { label: "Complete", color: "bg-green-500/20 text-green-400 border-green-500/30", icon: CheckCircle2 },
   error: { label: "Error", color: "bg-red-500/20 text-red-400 border-red-500/30", icon: XCircle },
@@ -956,6 +961,25 @@ function ProjectDetail({
   // Auto-detect recommended platform based on complexity
   const complexity = project.researchData?.estimatedComplexity?.toLowerCase() || "standard";
   const recommendedPlatform = (complexity === "simple" || complexity === "standard") ? "vercel" : "railway";
+
+  // ── Auto-trigger pipeline: research → plan → build ──
+  // Automatically advances through each stage without manual button clicks
+  const autoTriggeredRef = React.useRef<string>("");
+  React.useEffect(() => {
+    const key = `${project.id}-${project.status}`;
+    if (autoTriggeredRef.current === key || isBusy) return;
+
+    if (project.status === "researching" && !project.researchData) {
+      autoTriggeredRef.current = key;
+      researchMutation.mutate({ projectId: project.id });
+    } else if (project.status === "research_complete" && !project.buildPlan) {
+      autoTriggeredRef.current = key;
+      planMutation.mutate({ projectId: project.id });
+    } else if (project.status === "plan_complete") {
+      autoTriggeredRef.current = key;
+      buildMutation.mutate({ projectId: project.id });
+    }
+  }, [project.id, project.status, isBusy]);
 
   return (
     <div className="space-y-6">
