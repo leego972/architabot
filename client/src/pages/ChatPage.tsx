@@ -1150,12 +1150,29 @@ export default function ChatPage() {
         return;
       }
       const utterance = new SpeechSynthesisUtterance(chunks[chunkIdx]);
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
-      // Try to find a good English voice
+      utterance.rate = 0.95; // Measured, unhurried pace
+      utterance.pitch = 0.85; // Deep, authoritative tone
+      // Select a deep British English male voice — prioritise en-GB voices
       const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v => v.name.includes('Google') && v.lang.startsWith('en'))
-        || voices.find(v => v.name.includes('Samantha'))
+      const preferred =
+        // Chrome: Google UK English Male is the ideal deep British voice
+        voices.find(v => v.name === 'Google UK English Male')
+        // Edge/Windows: Microsoft Ryan (en-GB male, deep)
+        || voices.find(v => v.name.includes('Ryan') && v.lang.startsWith('en-GB'))
+        // Edge: Microsoft George (en-GB male)
+        || voices.find(v => v.name.includes('George') && v.lang.startsWith('en-GB'))
+        // macOS: Daniel is the classic deep British male voice
+        || voices.find(v => v.name === 'Daniel' && v.lang.startsWith('en-GB'))
+        // macOS Ventura+: "Daniel (Enhanced)" or similar
+        || voices.find(v => v.name.includes('Daniel') && v.lang.startsWith('en-GB'))
+        // Any en-GB male voice
+        || voices.find(v => v.lang === 'en-GB' && v.localService)
+        || voices.find(v => v.lang === 'en-GB')
+        // Fallback: Google UK English Female (still British)
+        || voices.find(v => v.name === 'Google UK English Female')
+        // Fallback: any British-sounding voice
+        || voices.find(v => v.lang.startsWith('en-GB'))
+        // Last resort: any English voice
         || voices.find(v => v.lang.startsWith('en') && v.localService)
         || voices.find(v => v.lang.startsWith('en'));
       if (preferred) utterance.voice = preferred;

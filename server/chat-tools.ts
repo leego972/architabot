@@ -865,7 +865,7 @@ const navigateToPage: Tool = {
   function: {
     name: "navigate_to_page",
     description:
-      "Navigate the user to a specific page within the Archibald Titan app. Use this when the user asks about a feature, wants to set something up, or needs to go somewhere. Returns a clickable link the user can follow. Available pages: dashboard (Titan Assistant chat), fetcher/new (New Fetch Job), fetcher/jobs (Job History), fetcher/credentials (Stored Credentials), fetcher/export (CSV Export), fetcher/api-access (API Keys), fetcher/smart-fetch (Smart Fetch AI), fetcher/watchdog (Expiry Watchdog), fetcher/provider-health (Provider Health), fetcher/health-trends (Health Trends), fetcher/leak-scanner (Leak Scanner), fetcher/bulk-sync (Bulk Sync), fetcher/auto-sync (Auto-Sync Schedules), fetcher/onboarding (Provider Onboarding), fetcher/team (Team Management), fetcher/team-vault (Team Vault), fetcher/history (Credential History), fetcher/audit-logs (Audit Logs), fetcher/developer-docs (API Documentation), fetcher/webhooks (Webhooks), fetcher/api-analytics (API Analytics), fetcher/account (Account Settings & 2FA Setup), fetcher/settings (Fetcher Settings), fetcher/killswitch (Kill Switch), fetcher/releases (Release Management - admin), fetcher/admin (Admin Panel - admin), fetcher/self-improvement (Self-Improvement Dashboard - admin), pricing (Pricing & Plans), contact (Contact Support), sandbox (Sandbox Terminal), replicate (Website Replicate).",
+      "Navigate the user to a specific page within the Archibald Titan app. Use this when the user asks about a feature, wants to set something up, or needs to go somewhere. Returns a clickable link. Available pages: CORE: dashboard, dashboard/credits, dashboard/subscription, project-files, sandbox, pricing, contact. FETCHER: fetcher/new, fetcher/jobs, fetcher/credentials, fetcher/export, fetcher/import, fetcher/api-access, fetcher/smart-fetch, fetcher/cli, fetcher/watchdog, fetcher/provider-health, fetcher/health-trends, fetcher/credential-health, fetcher/leak-scanner, fetcher/bulk-sync, fetcher/auto-sync, fetcher/onboarding, fetcher/team, fetcher/team-vault, fetcher/totp-vault, fetcher/notifications, fetcher/history, fetcher/audit-logs, fetcher/developer-docs, fetcher/webhooks, fetcher/api-analytics, fetcher/account, fetcher/settings, fetcher/killswitch, fetcher/releases, fetcher/admin, fetcher/self-improvement. BUSINESS: marketplace, replicate, companies, business-plans, grants, grant-applications, crowdfunding, referrals, affiliate. MARKETING: blog, blog-admin, seo, marketing, advertising.",
     parameters: {
       type: "object",
       properties: {
@@ -1686,6 +1686,20 @@ export const TITAN_TOOLS: Tool[] = [
   selfTypeCheck,
   selfRunTests,
   selfMultiFileModify,
+  // Advanced Builder Tools
+  selfDependencyAudit,
+  selfGrepCodebase,
+  selfGitDiff,
+  selfEnvCheck,
+  selfDbSchemaInspect,
+  selfCodeStats,
+  selfDeploymentCheck,
+  selfSaveCheckpoint,
+  selfListCheckpoints,
+  selfRollbackToCheckpoint,
+  selfAnalyzeFile,
+  selfFindDeadCode,
+  selfApiMap,
 ];
 
 // Focused tool subset for build/research requests — fewer tools = less model confusion

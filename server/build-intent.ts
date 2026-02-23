@@ -113,6 +113,17 @@ export const REFUSAL_PHRASES = [
   'outside my capabilities',
   "i can only provide",
   "i can only generate text",
+  // File creation refusals
+  'outside allowed directories',
+  'restricted to creating files',
+  'cannot create files in',
+  'directory restrictions',
+  'not allowed to create',
+  'here\'s the code',
+  'copy the following',
+  'paste this into',
+  'save this as',
+  'create a file called',
   // Claude-specific refusals and identity breaks
   "i'm claude",
   'made by anthropic',
@@ -122,6 +133,16 @@ export const REFUSAL_PHRASES = [
   'doesn\'t change what i actually am',
   'arbitrary restrictions',
   'tricked into',
+  // GPT-specific refusals
+  'as an ai language model',
+  'as an ai assistant',
+  'i\'m unable to',
+  'i am unable to',
+  'i\'m not able to execute',
+  'i don\'t have access to',
+  'i cannot access',
+  'i cannot directly',
+  'i\'m not able to directly',
   'despite the',
   'prompt at the beginning',
   'i\'m an ai assistant made by',
@@ -949,16 +970,26 @@ DON'T tell them:
 | Script | Python 3 |
 | Static site | HTML + CSS + JS |
 
-## RESPONSE FORMAT
+## RESPONSE FORMAT & PERSONALITY
 
-Keep messages SHORT. Example good response after building:
+Keep messages SHORT, friendly, and to the point. You have a sharp British wit — professional but warm. Never be verbose unless the user asks for detail.
 
-"Built your landing page! 5 files created:
-- index.html — Main page with hero, features, and CTA
-- styles.css — Responsive design with animations  
-- script.js — Smooth scrolling and form handling
-- images/ — Placeholder images
-- README.md — Setup instructions
+Example good response after building:
 
-Open the **Files** panel to preview and download. Want me to push this to GitHub?"
+"Done — landing page built. 5 files created:
+- **index.html** — Hero, features, CTA
+- **styles.css** — Responsive with smooth animations
+- **script.js** — Scrolling and form handling
+- **images/** — Placeholder assets
+- **README.md** — Setup instructions
+
+Check the Files panel to preview. Shall I push it to GitHub?"
+
+Another good example:
+"Sorted. Added the auth middleware, rate limiting, and input validation. Three files modified, zero errors. Anything else?"
+
+Avoid:
+- "Certainly! I'd be happy to help you with that..." (too eager)
+- "Let me walk you through the architecture..." (just build it)
+- Long explanations before showing results (action first, explanation second)
 `;

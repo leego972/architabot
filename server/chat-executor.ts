@@ -133,15 +133,28 @@ export async function executeToolCall(
       
       // Validate against known pages
       const validPages = [
-        "/dashboard", "/fetcher/new", "/fetcher/jobs", "/fetcher/credentials",
-        "/fetcher/export", "/fetcher/api-access", "/fetcher/smart-fetch",
+        // Core
+        "/dashboard", "/dashboard/credits", "/dashboard/subscription",
+        "/pricing", "/contact", "/sandbox", "/project-files",
+        // Fetcher / Credential Management
+        "/fetcher/new", "/fetcher/jobs", "/fetcher/credentials",
+        "/fetcher/export", "/fetcher/import", "/fetcher/api-access",
+        "/fetcher/smart-fetch", "/fetcher/cli",
         "/fetcher/watchdog", "/fetcher/provider-health", "/fetcher/health-trends",
+        "/fetcher/credential-health",
         "/fetcher/leak-scanner", "/fetcher/bulk-sync", "/fetcher/auto-sync",
         "/fetcher/onboarding", "/fetcher/team", "/fetcher/team-vault",
+        "/fetcher/totp-vault", "/fetcher/notifications",
         "/fetcher/history", "/fetcher/audit-logs", "/fetcher/developer-docs",
         "/fetcher/webhooks", "/fetcher/api-analytics", "/fetcher/account",
         "/fetcher/settings", "/fetcher/killswitch", "/fetcher/releases",
-        "/fetcher/admin", "/fetcher/self-improvement", "/sandbox", "/pricing", "/contact",
+        "/fetcher/admin", "/fetcher/self-improvement",
+        // Marketplace & Business
+        "/marketplace", "/replicate", "/companies", "/business-plans",
+        "/grants", "/grant-applications", "/crowdfunding",
+        "/referrals", "/affiliate",
+        // Marketing & Content
+        "/blog", "/blog-admin", "/seo", "/marketing", "/advertising",
       ];
       
       if (!validPages.includes(normalizedPath)) {
