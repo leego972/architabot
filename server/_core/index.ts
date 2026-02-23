@@ -52,6 +52,16 @@ async function startServer() {
   app.set("trust proxy", true);
   const server = createServer(app);
 
+  // ── Security Headers ──────────────────────────────────────────
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+    next();
+  });
+
   // Stripe webhook MUST be registered BEFORE express.json() for raw body access
   registerStripeWebhook(app);
   // Binance Pay webhook (also before express.json for raw body)

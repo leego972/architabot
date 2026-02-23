@@ -540,6 +540,24 @@ function HelpPanel({ onTryCommand }: { onTryCommand: (cmd: string) => void }) {
           ))}
         </div>
       </div>
+      <div className="pt-2 border-t border-border/30">
+        <p className="text-xs text-muted-foreground mb-2">Keyboard shortcuts:</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          {[
+            { keys: "Ctrl+K", desc: "Focus input" },
+            { keys: "Ctrl+Shift+N", desc: "New conversation" },
+            { keys: "Ctrl+Shift+S", desc: "Toggle sidebar" },
+            { keys: "Ctrl+/", desc: "Toggle help" },
+            { keys: "Escape", desc: "Close panels / stop speech" },
+            { keys: "Enter", desc: "Send message" },
+          ].map((s) => (
+            <div key={s.keys} className="flex items-center gap-2 text-xs">
+              <kbd className="px-1.5 py-0.5 rounded bg-muted border border-border/50 text-[10px] font-mono text-muted-foreground">{s.keys}</kbd>
+              <span className="text-muted-foreground">{s.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1002,6 +1020,48 @@ export default function ChatPage() {
       setLocation(href);
     }
   };
+
+  // ── Conversation Management ────────────────────────────────────
+  const handleNewConversation = useCallback(() => {
+    setActiveConversationId(null);
+    setLocalMessages([]);
+    setShowHelp(false);
+  }, []);
+
+  // ── Global Keyboard Shortcuts ──────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      // Ctrl/Cmd+K — Focus chat input
+      if (mod && e.key === 'k') {
+        e.preventDefault();
+        textareaRef.current?.focus();
+      }
+      // Ctrl/Cmd+Shift+N — New conversation
+      if (mod && e.shiftKey && e.key === 'N') {
+        e.preventDefault();
+        handleNewConversation();
+      }
+      // Ctrl/Cmd+Shift+S — Toggle sidebar
+      if (mod && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        setSidebarCollapsed(prev => !prev);
+      }
+      // Escape — Close help/slash menu/stop speaking
+      if (e.key === 'Escape') {
+        if (showHelp) { setShowHelp(false); e.preventDefault(); }
+        if (showSlashMenu) { setShowSlashMenu(false); e.preventDefault(); }
+        if (isSpeaking) { stopSpeaking(); e.preventDefault(); }
+      }
+      // Ctrl/Cmd+/ — Toggle help
+      if (mod && e.key === '/') {
+        e.preventDefault();
+        setShowHelp(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showHelp, showSlashMenu, isSpeaking]);
 
   // Cleanup recording on unmount
   useEffect(() => {
@@ -1610,11 +1670,7 @@ export default function ChatPage() {
     }
   };
 
-  const handleNewConversation = () => {
-    setActiveConversationId(null);
-    setLocalMessages([]);
-    setShowHelp(false);
-  };
+  // handleNewConversation is defined above with useCallback for keyboard shortcuts
 
   const handleSelectConversation = (id: number) => {
     setActiveConversationId(id);
@@ -2242,6 +2298,8 @@ export default function ChatPage() {
                 onClick={() => handleSend()}
                 disabled={!input.trim() || isRecording || isTranscribing}
                 size="icon"
+                aria-label="Send message"
+                title="Send message"
                 className={`rounded-xl shrink-0 ${isMobile ? 'h-[44px] w-[44px]' : 'h-10 w-10'}`}
               >
                 <Send className="h-4 w-4" />
