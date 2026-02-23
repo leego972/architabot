@@ -402,10 +402,10 @@ export default function AccountSettingsPage() {
   );
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 px-1 sm:px-0">
       {/* Page Header */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
           <Shield className="w-6 h-6 text-blue-400" />
           Account Settings
         </h1>

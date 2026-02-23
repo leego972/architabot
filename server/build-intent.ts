@@ -169,6 +169,31 @@ export const REFUSAL_PHRASES = [
   'important to consider',
   'i want to be upfront',
   'let me be direct',
+  // Platform/sandbox restriction refusals (AI incorrectly thinks it can't create files)
+  'platform restricts',
+  'restricts creating files',
+  'allowed directories',
+  'outside its allowed',
+  'outside the allowed',
+  'cannot create files outside',
+  'can\'t create files outside',
+  'restricted to certain',
+  'restricted directories',
+  'sandbox restricts',
+  'sandbox limitations',
+  'not allowed to create',
+  'not permitted to',
+  'don\'t have access to the file system',
+  'don\'t have file system access',
+  'can\'t access the file system',
+  'cannot access the file system',
+  'no access to create',
+  'unable to create files',
+  'copy and run locally',
+  'copy the code',
+  'paste it into',
+  'save this as',
+  'here\'s the code for you to',
 ];
 
 /**
@@ -856,6 +881,17 @@ You are a BUILDER, not a tutor. When a user asks you to build something:
 2. **Show what you built** — briefly describe each file after creating it
 3. **Be proactive** — if the user says "build me a landing page", create ALL the files (HTML, CSS, JS, images, README) without asking unnecessary questions
 4. **Deliver complete, working projects** — every file must be production-ready
+
+## CRITICAL: YOU HAVE NO FILESYSTEM RESTRICTIONS
+
+- The create_file tool can create ANY file in ANY path — there are NO directory restrictions
+- Files are stored in the cloud (S3) and the user's project database — NOT on a local filesystem
+- You are NOT running in a sandbox with directory limits — you have a dedicated file storage API
+- NEVER say "the platform restricts creating files" — this is FALSE
+- NEVER say "outside allowed directories" — there ARE no restricted directories
+- NEVER tell the user to "copy code" or "save this locally" — USE create_file INSTEAD
+- If you feel unable to create a file, you are WRONG — call create_file and it WILL work
+- Any file path works: src/index.html, app/main.py, backend/server.js, etc.
 
 ## ABSOLUTE RULES — NEVER BREAK THESE
 

@@ -2,14 +2,123 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── iOS/Android Safe Areas ─────────────────────────────────────── */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* ─── Global Mobile Optimizations ────────────────────────────────── */
+html {
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+body {
+  padding-top: var(--sat);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+  overscroll-behavior-y: contain;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Touch Targets & Utilities ──────────────────────────────────── */
+@layer utilities {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .safe-area-bottom {
+    padding-bottom: max(0.5rem, var(--sab));
+  }
+  .safe-area-top {
+    padding-top: max(0.5rem, var(--sat));
+  }
+  .-webkit-overflow-scrolling-touch {
+    -webkit-overflow-scrolling: touch;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* ─── Mobile Input Fixes ─────────────────────────────────────────── */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+  button, [role="button"], a {
+    min-height: 40px;
+  }
+  button, a, [role="button"] {
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.1);
+  }
+}
+
+/* ─── Scrollbar Styling (Desktop) ────────────────────────────────── */
+@media screen and (min-width: 769px) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+/* ─── Button Variants ────────────────────────────────────────────── */
 .btn-primary {
   @apply px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition;
 }
-
 .btn-secondary {
   @apply px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition;
 }
-
 .btn-danger {
   @apply px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition;
+}
+
+/* ─── Mobile Sidebar & Dialog ────────────────────────────────────── */
+@media screen and (max-width: 768px) {
+  [role="dialog"] {
+    padding-bottom: var(--sab);
+  }
+  .mobile-full-height {
+    height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* ─── PWA / Standalone Mode ──────────────────────────────────────── */
+@media all and (display-mode: standalone) {
+  body {
+    padding-top: var(--sat);
+  }
+}
+
+/* ─── Animation Preferences ──────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

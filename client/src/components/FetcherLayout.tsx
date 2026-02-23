@@ -407,7 +407,7 @@ function FetcherLayoutContent({
                             isActive={isActive}
                             onClick={() => setLocation(item.path)}
                             tooltip={item.label}
-                            className={`h-9 transition-all font-normal ${
+                            className={`h-10 sm:h-9 transition-all font-normal ${
                               isActive
                                 ? "bg-blue-500/10 text-blue-400 font-medium"
                                 : "hover:bg-white/[0.04]"
@@ -487,10 +487,10 @@ function FetcherLayoutContent({
                   </div>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem
                   onClick={() => setLocation("/fetcher/account")}
-                  className="cursor-pointer"
+                  className="cursor-pointer h-10 sm:h-auto"
                 >
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Account Settings</span>
@@ -513,7 +513,7 @@ function FetcherLayoutContent({
                 )}
                 <DropdownMenuItem
                   onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
+                  className="cursor-pointer text-destructive focus:text-destructive h-10 sm:h-auto"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sign out</span>
@@ -534,7 +534,7 @@ function FetcherLayoutContent({
 
       <SidebarInset>
         {isMobile && (
-          <div className="flex border-b border-white/10 h-14 items-center justify-between bg-background px-3 sticky top-0 z-50">
+          <div className="flex border-b border-white/10 h-14 items-center justify-between bg-background px-3 sticky top-0 z-50 safe-area-top">
             <div className="flex items-center gap-3">
               <SidebarTrigger className="h-10 w-10 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-foreground [&_svg]:!h-5 [&_svg]:!w-5" />
               <div className="flex items-center gap-2">
@@ -548,7 +548,7 @@ function FetcherLayoutContent({
           </div>
         )}
         <TrialBanner />
-        <main className="flex-1 p-6 max-md:[&:has(.chat-page-root)]:p-0">{children}</main>
+        <main className="flex-1 p-3 sm:p-4 md:p-6 max-md:[&:has(.chat-page-root)]:p-0 safe-area-bottom">{children}</main>
       </SidebarInset>
     </>
   );

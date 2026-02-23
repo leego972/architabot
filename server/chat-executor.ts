@@ -3244,18 +3244,23 @@ async function execCreateFile(
   }
 
   try {
-    // Upload to S3
+    // Upload to S3 for permanent cloud storage
     const timestamp = Date.now();
     const safeFileName = fileName.replace(/[^a-zA-Z0-9._\/-]/g, "_");
     const s3Key = `projects/${userId}/${conversationId || "general"}/${timestamp}-${safeFileName}`;
     const contentType = getContentType(fileName);
-    const { url } = await storagePut(s3Key, content, contentType);
+    let url = "";
+    try {
+      const result = await storagePut(s3Key, content, contentType);
+      url = result.url;
+    } catch (s3Err: any) {
+      console.warn("[CreateFile] S3 upload failed (non-fatal):", s3Err.message);
+    }
 
     // Store in sandboxFiles table (reuse existing table)
     const db = await getDb();
+    const sbId = await getOrCreateDefaultSandbox(userId);
     if (db) {
-      // Get or create a sandbox for this user
-      const sbId = await getOrCreateDefaultSandbox(userId);
       await db.insert(sandboxFiles).values({
         sandboxId: sbId,
         filePath: fileName,
@@ -3266,6 +3271,14 @@ async function execCreateFile(
       });
     }
 
+    // ALSO write to the sandbox filesystem so files appear in the Project Files viewer
+    try {
+      await sandboxWriteFileImpl(sbId, userId, `/home/sandbox/projects/${fileName}`, content);
+    } catch (fsErr: any) {
+      // Non-fatal: the file is still in S3 and the database
+      console.warn("[CreateFile] Sandbox filesystem write failed (non-fatal):", fsErr.message);
+    }
+
     return {
       success: true,
       data: {
@@ -3273,6 +3286,7 @@ async function execCreateFile(
         url,
         size: Buffer.byteLength(content, "utf-8"),
         language,
+        projectPath: `/home/sandbox/projects/${fileName}`,
         message: `File created: ${fileName} (${formatFileSize(Buffer.byteLength(content, "utf-8"))})`,
       },
     };

@@ -424,4 +424,105 @@ export const sandboxRouter = router({
       const report = generateFixReport(result);
       return { ...result, report };
     }),
+
+  // ── Project Files (from Builder create_file) ─────────────────────
+
+  /**
+   * List all project files created by the builder for this user.
+   * Reads from the sandboxFiles database table (S3-backed).
+   */
+  projectFiles: protectedProcedure
+    .input(z.object({ conversationId: z.number().int().optional() }).optional())
+    .query(async ({ ctx }) => {
+      const { getDb } = await import("./db");
+      const { sandboxFiles } = await import("../drizzle/schema");
+      const { eq, and, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return { files: [], projects: [] };
+
+      // Get user's sandbox
+      const sandboxes = await listSandboxes(ctx.user.id);
+      if (sandboxes.length === 0) return { files: [], projects: [] };
+      const sbId = sandboxes[0].id;
+
+      // Get all files from the database
+      const allFiles = await db
+        .select()
+        .from(sandboxFiles)
+        .where(and(eq(sandboxFiles.sandboxId, sbId), eq(sandboxFiles.isDirectory, 0)))
+        .orderBy(desc(sandboxFiles.createdAt));
+
+      // Group files by their top-level directory (project)
+      const projectMap = new Map<string, typeof allFiles>();
+      for (const file of allFiles) {
+        const parts = file.filePath.split("/");
+        const projectName = parts.length > 1 ? parts[0] : "general";
+        if (!projectMap.has(projectName)) projectMap.set(projectName, []);
+        projectMap.get(projectName)!.push(file);
+      }
+
+      const projects = Array.from(projectMap.entries()).map(([name, files]) => ({
+        name,
+        fileCount: files.length,
+        totalSize: files.reduce((sum, f) => sum + (f.fileSize || 0), 0),
+        lastModified: files[0]?.createdAt || null,
+      }));
+
+      return {
+        files: allFiles.map(f => ({
+          id: f.id,
+          path: f.filePath,
+          name: f.filePath.split("/").pop() || f.filePath,
+          size: f.fileSize || 0,
+          s3Key: f.s3Key,
+          hasContent: !!f.content,
+          createdAt: f.createdAt,
+        })),
+        projects,
+      };
+    }),
+
+  /**
+   * Read a project file's content from the database or S3.
+   */
+  projectFileContent: protectedProcedure
+    .input(z.object({ fileId: z.number().int() }))
+    .query(async ({ ctx, input }) => {
+      const { getDb } = await import("./db");
+      const { sandboxFiles } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return { content: null, error: "Database unavailable" };
+
+      const sandboxes = await listSandboxes(ctx.user.id);
+      if (sandboxes.length === 0) return { content: null, error: "No sandbox found" };
+
+      const [file] = await db
+        .select()
+        .from(sandboxFiles)
+        .where(and(eq(sandboxFiles.id, input.fileId), eq(sandboxFiles.sandboxId, sandboxes[0].id)))
+        .limit(1);
+
+      if (!file) return { content: null, error: "File not found" };
+
+      // Return content from database if available
+      if (file.content) {
+        return { content: file.content, path: file.filePath };
+      }
+
+      // Otherwise fetch from S3
+      if (file.s3Key) {
+        try {
+          const { storageGet } = await import("./storage");
+          const { url } = await storageGet(file.s3Key);
+          const res = await fetch(url);
+          if (res.ok) {
+            const content = await res.text();
+            return { content, path: file.filePath };
+          }
+        } catch {}
+      }
+
+      return { content: null, error: "Content unavailable" };
+    }),
 });

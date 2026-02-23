@@ -1,7 +1,8 @@
 /**
- * Project Files Viewer — Full-featured file explorer for builder projects.
+ * Project Files Viewer — Mobile-first file explorer for builder projects.
  * Shows all files created by the Titan Builder (via create_file tool),
  * with inline preview, download, and GitHub push capabilities.
+ * Reads from database (S3-backed) with filesystem fallback.
  */
 import { useState, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
@@ -13,7 +14,6 @@ import {
   FolderOpen,
   FileText,
   Download,
-  ExternalLink,
   Search,
   ChevronRight,
   ArrowLeft,
@@ -29,6 +29,9 @@ import {
   File,
   Github,
   X,
+  ChevronDown,
+  Package,
+  DownloadCloud,
 } from "lucide-react";
 
 // ─── File type detection ─────────────────────────────────────────
@@ -50,11 +53,20 @@ const LANGUAGE_MAP: Record<string, string> = {
   xml: "xml", svg: "svg", txt: "text",
 };
 
-interface SandboxFile {
-  name: string;
+interface ProjectFile {
+  id: number;
   path: string;
-  type: "file" | "directory";
-  size?: number;
+  name: string;
+  size: number;
+  hasContent: boolean;
+  createdAt: string | null;
+}
+
+interface Project {
+  name: string;
+  fileCount: number;
+  totalSize: number;
+  lastModified: string | null;
 }
 
 interface FilePreview {
@@ -63,10 +75,27 @@ interface FilePreview {
   language: string;
 }
 
+const formatSize = (bytes: number) => {
+  if (!bytes) return "0B";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+};
+
+const getFileIcon = (name: string) => {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  return FILE_ICONS[ext] || File;
+};
+
+const getLanguage = (name: string) => {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  return LANGUAGE_MAP[ext] || "text";
+};
+
 export default function ProjectFilesViewer() {
-  const [currentPath, setCurrentPath] = useState("/home/sandbox");
-  const [files, setFiles] = useState<SandboxFile[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [files, setFiles] = useState<ProjectFile[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [preview, setPreview] = useState<FilePreview | null>(null);
@@ -75,45 +104,65 @@ export default function ProjectFilesViewer() {
   const [showGithubSetup, setShowGithubSetup] = useState(false);
   const [repoName, setRepoName] = useState("");
   const [pushing, setPushing] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [mobileView, setMobileView] = useState<"list" | "preview">("list");
 
   const sendMutation = trpc.chat.send.useMutation();
 
-  const fetchFiles = useCallback(async (path: string) => {
+  const fetchProjectFiles = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // Try the sandbox files API first
-      const res = await fetch(`/api/sandbox/files?path=${encodeURIComponent(path)}`, {
+      // Try the tRPC endpoint first (database-backed)
+      const res = await fetch("/api/trpc/sandbox.projectFiles", {
         credentials: "include",
       });
       if (res.ok) {
-        const data = await res.json();
-        const fileList = (data.files || data || []).map((f: any) => ({
-          name: f.name,
-          path: f.path || `${path}/${f.name}`,
-          type: f.type || (f.isDirectory ? "directory" : "file"),
-          size: f.size,
-        }));
-        setFiles(fileList);
-        setCurrentPath(path);
-        return;
+        const json = await res.json();
+        const data = json?.result?.data;
+        if (data?.files) {
+          setFiles(data.files);
+          setProjects(data.projects || []);
+          // Auto-expand all projects
+          setExpandedProjects(new Set((data.projects || []).map((p: Project) => p.name)));
+          setLoading(false);
+          return;
+        }
       }
-      // Fallback to old API
-      const fallbackRes = await fetch(`/api/files?path=${encodeURIComponent(path)}`, {
+
+      // Fallback: try sandbox filesystem API
+      const fallbackRes = await fetch(`/api/sandbox/files?path=${encodeURIComponent("/home/sandbox/projects")}`, {
         credentials: "include",
       });
       if (fallbackRes.ok) {
         const data = await fallbackRes.json();
-        setFiles(data.map((f: any) => ({
+        const fileList = (data.files || data || []).map((f: any, idx: number) => ({
+          id: idx,
+          path: f.path || f.name,
           name: f.name,
-          path: f.path || `${path}/${f.name}`,
-          type: f.isDirectory ? "directory" : "file",
-          size: f.size,
-        })));
-        setCurrentPath(path);
+          size: f.size || 0,
+          hasContent: true,
+          createdAt: null,
+        }));
+        setFiles(fileList);
+        setLoading(false);
         return;
       }
-      throw new Error("Failed to fetch files");
+
+      // Final fallback: old files API
+      const oldRes = await fetch("/api/files", { credentials: "include" });
+      if (oldRes.ok) {
+        const data = await oldRes.json();
+        setFiles(data.map((f: any, idx: number) => ({
+          id: idx,
+          path: f.path || f.name,
+          name: f.name,
+          size: f.size || 0,
+          hasContent: true,
+          createdAt: null,
+        })));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load files");
     } finally {
@@ -122,42 +171,51 @@ export default function ProjectFilesViewer() {
   }, []);
 
   useEffect(() => {
-    fetchFiles(currentPath);
-  }, []);
+    fetchProjectFiles();
+  }, [fetchProjectFiles]);
 
-  const handleFolderClick = (folderPath: string) => {
-    fetchFiles(folderPath);
-    setPreview(null);
-  };
-
-  const handleFileClick = async (filePath: string) => {
+  const handleFileClick = async (file: ProjectFile) => {
     setPreviewLoading(true);
+    setMobileView("preview");
     try {
-      const res = await fetch(`/api/sandbox/file?path=${encodeURIComponent(filePath)}`, {
+      // Try tRPC endpoint first
+      const res = await fetch(`/api/trpc/sandbox.projectFileContent?input=${encodeURIComponent(JSON.stringify({ fileId: file.id }))}`, {
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to read file");
-      const data = await res.json();
-      const ext = filePath.split(".").pop()?.toLowerCase() || "";
-      setPreview({
-        path: filePath,
-        content: data.content || "",
-        language: LANGUAGE_MAP[ext] || "text",
+      if (res.ok) {
+        const json = await res.json();
+        const data = json?.result?.data;
+        if (data?.content) {
+          setPreview({
+            path: file.path,
+            content: data.content,
+            language: getLanguage(file.name),
+          });
+          setPreviewLoading(false);
+          return;
+        }
+      }
+
+      // Fallback: try sandbox file read
+      const fallbackRes = await fetch(`/api/sandbox/file?path=${encodeURIComponent(`/home/sandbox/projects/${file.path}`)}`, {
+        credentials: "include",
       });
+      if (fallbackRes.ok) {
+        const data = await fallbackRes.json();
+        setPreview({
+          path: file.path,
+          content: data.content || "",
+          language: getLanguage(file.name),
+        });
+        return;
+      }
+
+      toast.error("Could not read file content");
     } catch {
       toast.error("Failed to read file");
     } finally {
       setPreviewLoading(false);
     }
-  };
-
-  const handleBack = () => {
-    if (currentPath === "/home/sandbox" || currentPath === "/") return;
-    const parts = currentPath.split("/");
-    parts.pop();
-    const parentPath = parts.join("/") || "/";
-    fetchFiles(parentPath);
-    setPreview(null);
   };
 
   const handleCopy = () => {
@@ -181,6 +239,25 @@ export default function ProjectFilesViewer() {
     }
   };
 
+  const handleDownloadAll = () => {
+    // Download all files as individual downloads
+    files.forEach(async (file) => {
+      try {
+        const res = await fetch(`/api/trpc/sandbox.projectFileContent?input=${encodeURIComponent(JSON.stringify({ fileId: file.id }))}`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const data = json?.result?.data;
+          if (data?.content) {
+            handleDownload(file.path, data.content);
+          }
+        }
+      } catch {}
+    });
+    toast.success(`Downloading ${files.length} files...`);
+  };
+
   const handlePushToGithub = async () => {
     if (!repoName.trim()) {
       toast.error("Please enter a repository name");
@@ -199,54 +276,76 @@ export default function ProjectFilesViewer() {
     }
   };
 
+  const toggleProject = (name: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
   const filteredFiles = files.filter((f) =>
-    !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase())
+    !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase()) || f.path.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const breadcrumbs = currentPath.split("/").filter(Boolean);
-
-  const getFileIcon = (name: string, type: string) => {
-    if (type === "directory") return FolderOpen;
-    const ext = name.split(".").pop()?.toLowerCase() || "";
-    return FILE_ICONS[ext] || File;
-  };
-
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return "";
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  };
+  // Group filtered files by project
+  const groupedFiles = new Map<string, ProjectFile[]>();
+  for (const file of filteredFiles) {
+    const parts = file.path.split("/");
+    const projectName = parts.length > 1 ? parts[0] : "general";
+    if (!groupedFiles.has(projectName)) groupedFiles.set(projectName, []);
+    groupedFiles.get(projectName)!.push(file);
+  }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)]">
-      {/* File List Panel */}
-      <div className={`${preview ? "w-[380px] border-r border-border" : "flex-1"} flex flex-col bg-background`}>
+    <div className="flex flex-col md:flex-row h-[calc(100vh-3rem)] md:h-[calc(100vh-3rem)]">
+      {/* File List Panel — full width on mobile, sidebar on desktop when preview is open */}
+      <div className={`${
+        preview && mobileView === "preview" ? "hidden md:flex" : "flex"
+      } ${
+        preview ? "md:w-[380px] md:border-r md:border-border" : "flex-1"
+      } flex-col bg-background w-full`}>
         {/* Header */}
-        <div className="px-4 py-3 border-b border-border space-y-3">
+        <div className="px-3 sm:px-4 py-3 border-b border-border space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FolderOpen className="h-5 w-5 text-emerald-400" />
-              <h1 className="text-lg font-semibold">Project Files</h1>
+              <h1 className="text-base sm:text-lg font-semibold">Project Files</h1>
+              {files.length > 0 && (
+                <Badge variant="outline" className="text-[10px]">{files.length}</Badge>
+              )}
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <Button
-                onClick={() => fetchFiles(currentPath)}
+                onClick={() => fetchProjectFiles()}
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-9 w-9 sm:h-8 sm:w-8"
                 title="Refresh"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
+              {files.length > 0 && (
+                <Button
+                  onClick={handleDownloadAll}
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 sm:h-8 sm:w-8"
+                  title="Download All"
+                >
+                  <DownloadCloud className="h-4 w-4" />
+                </Button>
+              )}
               <Button
                 onClick={() => setShowGithubSetup(!showGithubSetup)}
                 variant="outline"
                 size="sm"
-                className="gap-1.5 h-8"
+                className="gap-1.5 h-9 sm:h-8 text-xs sm:text-sm"
               >
                 <Github className="h-3.5 w-3.5" />
-                Push to GitHub
+                <span className="hidden sm:inline">Push to GitHub</span>
+                <span className="sm:hidden">Push</span>
               </Button>
             </div>
           </div>
@@ -256,19 +355,18 @@ export default function ProjectFilesViewer() {
             <div className="p-3 rounded-xl border border-border bg-card space-y-2">
               <p className="text-xs text-muted-foreground">
                 Push all project files to a new GitHub repository.
-                Make sure your GitHub PAT is saved in Account Settings.
               </p>
               <Input
                 value={repoName}
                 onChange={(e) => setRepoName(e.target.value)}
                 placeholder="Repository name (e.g., my-project)"
-                className="h-8 text-sm"
+                className="h-10 sm:h-8 text-sm"
               />
               <Button
                 onClick={handlePushToGithub}
                 disabled={pushing || !repoName.trim()}
                 size="sm"
-                className="w-full gap-2"
+                className="w-full gap-2 h-10 sm:h-8"
               >
                 {pushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Github className="h-3.5 w-3.5" />}
                 {pushing ? "Pushing..." : "Create Repo & Push"}
@@ -276,41 +374,20 @@ export default function ProjectFilesViewer() {
             </div>
           )}
 
-          {/* Breadcrumbs */}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground overflow-x-auto">
-            <button
-              onClick={() => fetchFiles("/home/sandbox")}
-              className="hover:text-foreground transition-colors shrink-0"
-            >
-              ~
-            </button>
-            {breadcrumbs.slice(2).map((part, idx) => (
-              <span key={idx} className="flex items-center gap-1 shrink-0">
-                <ChevronRight className="h-3 w-3" />
-                <button
-                  onClick={() => fetchFiles("/" + breadcrumbs.slice(0, idx + 3).join("/"))}
-                  className="hover:text-foreground transition-colors"
-                >
-                  {part}
-                </button>
-              </span>
-            ))}
-          </div>
-
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search files..."
-              className="h-8 pl-8 text-sm"
+              className="h-10 sm:h-8 pl-9 text-sm"
             />
           </div>
         </div>
 
         {/* File List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overscroll-contain -webkit-overflow-scrolling-touch">
           {loading && (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -320,7 +397,7 @@ export default function ProjectFilesViewer() {
           {error && (
             <div className="p-4 text-center">
               <p className="text-sm text-red-400 mb-2">{error}</p>
-              <Button onClick={() => fetchFiles(currentPath)} variant="outline" size="sm">
+              <Button onClick={() => fetchProjectFiles()} variant="outline" size="sm" className="h-10 sm:h-8">
                 Retry
               </Button>
             </div>
@@ -328,113 +405,118 @@ export default function ProjectFilesViewer() {
 
           {!loading && !error && filteredFiles.length === 0 && (
             <div className="p-8 text-center">
-              <FolderOpen className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No files found</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Use the Builder chat to create project files
+              <Package className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">No project files yet</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-[250px] mx-auto">
+                Ask Titan to build something in the chat and your files will appear here
               </p>
             </div>
           )}
 
-          {!loading && !error && (
-            <div className="divide-y divide-border/30">
-              {/* Back button */}
-              {currentPath !== "/home/sandbox" && currentPath !== "/" && (
-                <button
-                  onClick={handleBack}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50 transition-colors text-left"
-                >
-                  <ArrowLeft className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">..</span>
-                </button>
-              )}
+          {!loading && !error && groupedFiles.size > 0 && (
+            <div>
+              {Array.from(groupedFiles.entries()).map(([projectName, projectFiles]) => (
+                <div key={projectName}>
+                  {/* Project Header */}
+                  <button
+                    onClick={() => toggleProject(projectName)}
+                    className="w-full flex items-center gap-2 px-3 sm:px-4 py-2.5 bg-accent/30 hover:bg-accent/50 transition-colors text-left sticky top-0 z-10 border-b border-border/50"
+                  >
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${
+                      expandedProjects.has(projectName) ? "" : "-rotate-90"
+                    }`} />
+                    <FolderOpen className="h-4 w-4 text-amber-400" />
+                    <span className="text-sm font-medium flex-1 truncate">{projectName}</span>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {projectFiles.length} {projectFiles.length === 1 ? "file" : "files"}
+                    </Badge>
+                  </button>
 
-              {/* Directories first, then files */}
-              {filteredFiles
-                .sort((a, b) => {
-                  if (a.type === "directory" && b.type !== "directory") return -1;
-                  if (a.type !== "directory" && b.type === "directory") return 1;
-                  return a.name.localeCompare(b.name);
-                })
-                .map((file) => {
-                  const Icon = getFileIcon(file.name, file.type);
-                  const isActive = preview?.path === file.path;
-                  return (
-                    <button
-                      key={file.path}
-                      onClick={() =>
-                        file.type === "directory"
-                          ? handleFolderClick(file.path)
-                          : handleFileClick(file.path)
-                      }
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50 transition-colors text-left ${
-                        isActive ? "bg-accent/70" : ""
-                      }`}
-                    >
-                      <Icon
-                        className={`h-4 w-4 shrink-0 ${
-                          file.type === "directory" ? "text-amber-400" : "text-blue-400"
-                        }`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{file.name}</p>
-                      </div>
-                      {file.size !== undefined && file.type !== "directory" && (
-                        <span className="text-[10px] text-muted-foreground shrink-0">
-                          {formatSize(file.size)}
-                        </span>
-                      )}
-                      {file.type === "directory" && (
-                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
+                  {/* Project Files */}
+                  {expandedProjects.has(projectName) && (
+                    <div className="divide-y divide-border/20">
+                      {projectFiles.map((file) => {
+                        const Icon = getFileIcon(file.name);
+                        const isActive = preview?.path === file.path;
+                        return (
+                          <button
+                            key={file.id || file.path}
+                            onClick={() => handleFileClick(file)}
+                            className={`w-full flex items-center gap-3 px-4 sm:px-5 py-3 sm:py-2.5 hover:bg-accent/50 active:bg-accent/70 transition-colors text-left ${
+                              isActive ? "bg-accent/70" : ""
+                            }`}
+                          >
+                            <Icon className="h-4 w-4 shrink-0 text-blue-400" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{file.name}</p>
+                              <p className="text-[10px] text-muted-foreground truncate">{file.path}</p>
+                            </div>
+                            {file.size > 0 && (
+                              <span className="text-[10px] text-muted-foreground shrink-0">
+                                {formatSize(file.size)}
+                              </span>
+                            )}
+                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 md:hidden" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2 border-t border-border">
+        <div className="px-3 sm:px-4 py-2 border-t border-border safe-area-bottom">
           <p className="text-[10px] text-muted-foreground text-center">
-            {filteredFiles.length} items · {filteredFiles.filter((f) => f.type === "file").length} files ·{" "}
-            {filteredFiles.filter((f) => f.type === "directory").length} folders
+            {filteredFiles.length} files · {projects.length} projects · {formatSize(files.reduce((s, f) => s + f.size, 0))} total
           </p>
         </div>
       </div>
 
-      {/* File Preview Panel */}
+      {/* File Preview Panel — full screen on mobile */}
       {preview && (
-        <div className="flex-1 flex flex-col bg-background">
+        <div className={`${
+          mobileView === "list" ? "hidden md:flex" : "flex"
+        } flex-1 flex-col bg-background w-full`}>
           {/* Preview Header */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 border-b border-border">
             <div className="flex items-center gap-2 min-w-0">
+              {/* Back button on mobile */}
+              <button
+                onClick={() => { setMobileView("list"); setPreview(null); }}
+                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground md:hidden"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
               <FileText className="h-4 w-4 text-blue-400 shrink-0" />
               <span className="text-sm font-medium truncate">
                 {preview.path.split("/").pop()}
               </span>
-              <Badge variant="outline" className="text-[10px] shrink-0">
+              <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">
                 {preview.language}
               </Badge>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 shrink-0">
               <button
                 onClick={handleCopy}
-                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                className="p-2 sm:p-1.5 rounded-lg hover:bg-accent/50 active:bg-accent/70 text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy content"
               >
-                {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? <Check className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-green-400" /> : <Copy className="h-4 w-4 sm:h-3.5 sm:w-3.5" />}
               </button>
               <button
                 onClick={() => handleDownload(preview.path, preview.content)}
-                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                className="p-2 sm:p-1.5 rounded-lg hover:bg-accent/50 active:bg-accent/70 text-muted-foreground hover:text-foreground transition-colors"
                 title="Download"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
               </button>
               <button
-                onClick={() => setPreview(null)}
-                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => { setPreview(null); setMobileView("list"); }}
+                className="p-2 sm:p-1.5 rounded-lg hover:bg-accent/50 active:bg-accent/70 text-muted-foreground hover:text-foreground transition-colors hidden md:block"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -447,8 +529,8 @@ export default function ProjectFilesViewer() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="flex-1 overflow-auto">
-              <pre className="p-4 text-sm font-mono leading-relaxed whitespace-pre-wrap break-words">
+            <div className="flex-1 overflow-auto overscroll-contain -webkit-overflow-scrolling-touch">
+              <pre className="p-3 sm:p-4 text-xs sm:text-sm font-mono leading-relaxed whitespace-pre-wrap break-words">
                 <code>{preview.content}</code>
               </pre>
             </div>
