@@ -32,6 +32,7 @@ import {
 } from "./sandbox-engine";
 import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
 import { storagePut } from "./storage";
+import { scrapeProductCatalog, type CatalogResult, type ScrapedProduct } from "./product-scraper";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -484,12 +485,29 @@ export async function researchTarget(
   const subpages = await deepCrawlSite(targetUrl, rawHtml, 20);
   const allPagesHtml = [rawHtml, ...subpages.map(p => p.html)].join("\n");
 
-  // ═══ EXTRACT IMAGES from all pages ═══
+  // ═══ DEEP PRODUCT CATALOG SCRAPING ═══
+  appendBuildLog(projectId, { step: 0, status: "running", message: "Deep scraping product catalog (this may take a few minutes)...", timestamp: new Date().toISOString() });
+  let catalogResult: CatalogResult | null = null;
+  try {
+    catalogResult = await scrapeProductCatalog(targetUrl, rawHtml, {
+      maxPages: 100,
+      maxProducts: 500,
+      maxImages: 200,
+      onProgress: (msg) => {
+        appendBuildLog(projectId, { step: 0, status: "running", message: `[Catalog] ${msg}`, timestamp: new Date().toISOString() });
+      },
+    });
+    appendBuildLog(projectId, { step: 0, status: "running", message: `Catalog scraped: ${catalogResult.products.length} products, ${catalogResult.downloadedImages.length} images, ${catalogResult.pagesScraped} pages`, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    appendBuildLog(projectId, { step: 0, status: "running", message: `Catalog scrape warning: ${err.message} — falling back to basic extraction`, timestamp: new Date().toISOString() });
+  }
+
+  // ═══ EXTRACT IMAGES from all pages (fallback + supplement) ═══
   appendBuildLog(projectId, { step: 0, status: "running", message: `Found ${subpages.length} subpages. Extracting images and product data...`, timestamp: new Date().toISOString() });
   const allImages = extractImages(allPagesHtml, targetUrl);
   const downloadedImages = await downloadImages(allImages, 50);
 
-  // ═══ EXTRACT PRODUCT/MENU DATA ═══
+  // ═══ EXTRACT PRODUCT/MENU DATA (basic fallback) ═══
   const productData = extractProductData(allPagesHtml);
 
   // Build subpage content summary for the LLM
@@ -600,14 +618,52 @@ export async function researchTarget(
   (research as any).productDataRaw = productData.substring(0, 5000);
   (research as any).subpageUrls = subpages.map(p => ({ url: p.url, title: p.title }));
 
+  // Add deep catalog data if available
+  if (catalogResult) {
+    (research as any).catalogProducts = catalogResult.products.map(p => ({
+      name: p.name,
+      description: p.description?.substring(0, 200),
+      price: p.price,
+      originalPrice: p.originalPrice,
+      currency: p.currency,
+      category: p.category,
+      subcategory: p.subcategory,
+      images: p.images.slice(0, 3),
+      sizes: p.sizes,
+      colors: p.colors,
+      sku: p.sku,
+      url: p.url,
+      inStock: p.inStock,
+      brand: p.brand,
+    }));
+    (research as any).catalogCategories = catalogResult.categories;
+    (research as any).catalogStats = {
+      totalProducts: catalogResult.totalProductsFound,
+      totalImages: catalogResult.totalImagesFound,
+      pagesScraped: catalogResult.pagesScraped,
+      downloadedImages: catalogResult.downloadedImages.length,
+    };
+    // Store image buffers reference for the build phase
+    (research as any).catalogImageBuffers = catalogResult.downloadedImages.map(i => ({
+      localPath: i.localPath,
+      productName: i.productName,
+      originalUrl: i.originalUrl,
+      contentType: i.contentType,
+      size: i.imageBuffer.length,
+    }));
+  }
+
+  const totalProducts = catalogResult?.totalProductsFound || 0;
+  const totalCatalogImages = catalogResult?.downloadedImages.length || 0;
+
   // Update the project with research data
-  await updateProjectStatus(projectId, "research_complete", `Research complete: ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length} images`, {
+  await updateProjectStatus(projectId, "research_complete", `Research complete: ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length + totalCatalogImages} images, ${totalProducts} products`, {
     targetUrl,
     targetDescription: research.description,
     researchData: research,
   });
 
-  appendBuildLog(projectId, { step: 0, status: "success", message: `Research complete: ${research.appName} — ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length} images, complexity: ${research.estimatedComplexity}`, timestamp: new Date().toISOString() });
+  appendBuildLog(projectId, { step: 0, status: "success", message: `Research complete: ${research.appName} — ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length + totalCatalogImages} images, ${totalProducts} products, complexity: ${research.estimatedComplexity}`, timestamp: new Date().toISOString() });
 
   return research;
 }
@@ -934,18 +990,68 @@ export async function executeBuild(
     timestamp: new Date().toISOString(),
   });
 
-  // Retrieve images from the research phase (stored in project metadata)
-  // The images were downloaded during research and their paths are in the build context
+  // Retrieve images from the research phase and write them to the sandbox
   try {
     // Create image directories
-    await executeCommand(sandboxId, userId, `mkdir -p /home/sandbox/${plan.projectName}/public/images/{product,hero,logo,general,background,team,gallery}`, {
+    await executeCommand(sandboxId, userId, `mkdir -p /home/sandbox/${plan.projectName}/public/images/{products,hero,logo,general,background,team,gallery}`, {
       timeoutMs: 5000,
       triggeredBy: "system",
     });
+
+    // Write catalog product images (downloaded during research)
+    const catalogImageRefs = (project.researchData as any)?.catalogImageBuffers || [];
+    let imagesWritten = 0;
+    if (catalogImageRefs.length > 0) {
+      appendBuildLog(projectId, {
+        step: plan.buildSteps.length + 1,
+        status: "running",
+        message: `Re-downloading ${catalogImageRefs.length} product images for the build...`,
+        timestamp: new Date().toISOString(),
+      });
+
+      for (const imgRef of catalogImageRefs) {
+        try {
+          // Re-download the image (buffers aren't stored in DB, only metadata)
+          const resp = await fetch(imgRef.originalUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!resp.ok) continue;
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          if (buffer.length < 200) continue;
+
+          // Write to sandbox as base64
+          const filePath = `/home/sandbox/${plan.projectName}/public/${imgRef.localPath}`;
+          const dir = filePath.substring(0, filePath.lastIndexOf("/"));
+          await executeCommand(sandboxId, userId, `mkdir -p "${dir}"`, { timeoutMs: 5000, triggeredBy: "system" });
+          
+          // Write the image file via base64 encoding
+          const base64 = buffer.toString("base64");
+          await executeCommand(sandboxId, userId, `echo '${base64}' | base64 -d > "${filePath}"`, {
+            timeoutMs: 15000,
+            triggeredBy: "system",
+          });
+          imagesWritten++;
+
+          // Rate limit
+          if (imagesWritten % 20 === 0) {
+            appendBuildLog(projectId, {
+              step: plan.buildSteps.length + 1,
+              status: "running",
+              message: `Written ${imagesWritten}/${catalogImageRefs.length} product images...`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } catch {
+          // Skip failed image downloads
+        }
+      }
+    }
+
     appendBuildLog(projectId, {
       step: plan.buildSteps.length + 1,
       status: "success",
-      message: "Image directories created",
+      message: `Written ${imagesWritten} product images to project`,
       timestamp: new Date().toISOString(),
     });
   } catch {
@@ -1140,6 +1246,14 @@ async function generateFileContents(
     ? `\n\nSUBPAGES FOUND:\n${(research as any).subpageUrls.map((p: any) => `- ${p.title}: ${p.url}`).join("\n")}`
     : "";
 
+  // Include deep catalog data if available
+  const catalogProducts = (research as any).catalogProducts || [];
+  const catalogInfo = catalogProducts.length > 0
+    ? `\n\n═══ FULL PRODUCT CATALOG (${catalogProducts.length} products) ═══\nYou MUST include ALL of these products in the database seed data and product listing pages.\n${catalogProducts.slice(0, 200).map((p: any, i: number) => 
+      `${i + 1}. "${p.name}" | Price: ${p.price} ${p.currency} | Category: ${p.category || "General"} | Brand: ${p.brand || ""} | Images: ${(p.images || []).slice(0, 2).join(", ") || "use placeholder"} | Sizes: ${(p.sizes || []).join(", ") || "N/A"} | Colors: ${(p.colors || []).join(", ") || "N/A"} | SKU: ${p.sku || ""}`
+    ).join("\n")}\n\n═══ PRODUCT CATEGORIES ═══\n${((research as any).catalogCategories || []).map((c: any) => `- ${c.name} (${c.productCount} products): ${c.url}`).join("\n") || "No categories extracted"}`
+    : "";
+
   const response = await invokeLLM({
     systemTag: "chat",
     messages: [
@@ -1174,12 +1288,12 @@ ${plan.fileStructure.map(f => `- ${f.path}: ${f.description}`).join("\n")}
 ${plan.dataModels.map(m => `- ${m.name}: ${m.fields.join(", ")}`).join("\n")}
 
 **API routes:**
-${plan.apiRoutes.map(r => `- ${r.method} ${r.path}: ${r.description}`).join("\n")}${productInfo}${subpageInfo}
+${plan.apiRoutes.map(r => `- ${r.method} ${r.path}: ${r.description}`).join("\n")}${productInfo}${subpageInfo}${catalogInfo}
 
 Return ONLY a JSON array: [{"path": "file/path", "content": "full file content"}, ...]`,
       },
     ],
-    maxTokens: 16000,
+    maxTokens: 32000,
   });
 
   const rawContent = response?.choices?.[0]?.message?.content;

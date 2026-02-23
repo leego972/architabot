@@ -1450,6 +1450,28 @@ function ResearchResults({ research }: { research: NonNullable<Project["research
             </div>
           </div>
 
+          {/* Catalog Stats */}
+          {(research as any).catalogStats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="text-center">
+                <p className="text-lg font-bold text-emerald-400">{(research as any).catalogStats.totalProducts}</p>
+                <p className="text-xs text-muted-foreground">Products Scraped</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-blue-400">{(research as any).catalogStats.downloadedImages}</p>
+                <p className="text-xs text-muted-foreground">Product Images</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-amber-400">{(research as any).catalogStats.pagesScraped}</p>
+                <p className="text-xs text-muted-foreground">Pages Scraped</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-purple-400">{((research as any).catalogCategories || []).length}</p>
+                <p className="text-xs text-muted-foreground">Categories</p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t border-border/50">
             <div className="text-center">
               <p className="text-lg font-bold text-purple-400">{research.estimatedComplexity}</p>
