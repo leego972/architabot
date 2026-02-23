@@ -1355,7 +1355,7 @@ function SellView({ onSelectListing }: { onSelectListing: (id: number) => void }
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     className="bg-amber-600 hover:bg-amber-700"
-                    onClick={() => purchaseSellerSub.mutate()}
+                    onClick={() => purchaseSellerSub.mutate({ displayName: sellerName || "Seller", bio: sellerBio || undefined })}
                     disabled={purchaseSellerSub.isPending}
                   >
                     {purchaseSellerSub.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CreditCard className="w-4 h-4 mr-2" />}

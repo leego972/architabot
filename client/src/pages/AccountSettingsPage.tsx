@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { useTheme } from "@/contexts/ThemeContext";
 import { TwoFactorSetup } from "@/components/TwoFactorSetup";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -241,6 +242,7 @@ function OpenAIKeySection() {
 export default function AccountSettingsPage() {
   const { user, loading: authLoading, refresh } = useAuth();
   const utils = trpc.useUtils();
+  const { theme, toggleTheme } = useTheme();
 
   // Profile state
   const [name, setName] = useState("");
@@ -429,8 +431,8 @@ export default function AccountSettingsPage() {
           <div className="flex items-center justify-between">
             <span className="text-sm">Dark Mode</span>
             <Switch
-              checked={isDarkMode}
-              onCheckedChange={setIsDarkMode}
+              checked={theme === "dark"}
+              onCheckedChange={toggleTheme}
               className="ml-2"
             />
           </div>

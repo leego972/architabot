@@ -779,7 +779,7 @@ const MODULE_CATALOG: ModuleDef[] = [
 ];
 
 // ─── Seed Function ──────────────────────────────────────────────────
-export async function seedMarketplaceWithMerchants(): Promise<{ merchants: number; listings: number }> {
+export async function seedMarketplaceWithMerchants(): Promise<{ merchants: number; listings: number; skipped: number; attempted: number; errors: string[]; merchantMap: Record<string, number> }> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 

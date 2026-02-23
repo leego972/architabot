@@ -105,11 +105,11 @@ export function registerBinancePayWebhook(app: Express): void {
               .limit(1);
 
             if (campaign) {
-              const newAmount = parseFloat(campaign.currentAmount || "0") + parseFloat(payment.creatorAmount || "0");
+              const newAmount = (campaign.currentAmount || 0) + Math.round(parseFloat(payment.creatorAmount || "0") * 100) / 100;
               const newBackers = (campaign.backerCount || 0) + 1;
               await db.update(crowdfundingCampaigns)
                 .set({
-                  currentAmount: newAmount.toFixed(2),
+                  currentAmount: Math.round(newAmount),
                   backerCount: newBackers,
                 })
                 .where(eq(crowdfundingCampaigns.id, payment.campaignId));

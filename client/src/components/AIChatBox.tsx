@@ -6,6 +6,7 @@ import { Loader2, Send, User } from "lucide-react";
 import { TitanLogo } from "@/components/TitanLogo";
 import { useState, useEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
+import ChatUploadButton from "@/components/ChatUploadButton";
 
 /**
  * Message type matching server-side LLM Message interface

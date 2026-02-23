@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure } from '../_core/trpc';
 import fs from 'fs/promises';
 import path from 'path';
 

@@ -12,7 +12,7 @@ export function registerChatUploadRoute(app: Express) {
   app.post("/api/chat/upload", async (req: Request, res: Response) => {
     try {
       // Auth check
-      const ctx = await createContext({ req, res, info: {} });
+      const ctx = await createContext({ req, res, info: {} as any });
       if (!ctx.user) {
         return res.status(401).json({ error: "Authentication required" });
       }

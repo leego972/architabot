@@ -321,7 +321,7 @@ export const replicateRouter = router({
       repoFullName: z.string().min(1),
       customDomain: z.string().optional(),
       platformOverride: z.enum(["vercel", "railway"]).optional(),
-      envVars: z.record(z.string()).optional(),
+      envVars: z.record(z.string(), z.string()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const project = await getProject(input.projectId, ctx.user.id);

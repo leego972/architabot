@@ -107,7 +107,7 @@ const GREETINGS = [
 ];
 
 // Roaming positions — TOP of page only, avoids sidebar and buttons (used on Titan/dashboard pages)
-const ROAM_POSITIONS = [
+const ROAM_POSITIONS: Array<{ top?: number; right?: number; bottom?: number; left?: number }> = [
   { top: 12, right: 16 },
   { top: 12, right: 80 },
   { top: 60, right: 16 },
@@ -149,7 +149,7 @@ export default function ArchibaldWizard() {
 
   // Roaming position state
   const [posIndex, setPosIndex] = useState(0);
-  const [currentPos, setCurrentPos] = useState(ROAM_POSITIONS[0]);
+  const [currentPos, setCurrentPos] = useState<{ top?: number; right?: number; bottom?: number; left?: number }>(ROAM_POSITIONS[0]);
   const [isFlipped, setIsFlipped] = useState(false);
 
   // Drag state

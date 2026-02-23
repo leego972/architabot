@@ -389,6 +389,6 @@ function UsageStat({ label, used, limit }: { label: string; used: number; limit:
 }
 
 function getPlanRank(planId: PlanId): number {
-  const ranks: Record<PlanId, number> = { free: 0, pro: 1, enterprise: 2, cyber: 3 };
+  const ranks: Record<PlanId, number> = { free: 0, pro: 1, enterprise: 2, cyber: 3, cyber_plus: 4, titan: 5 };
   return ranks[planId] ?? 0;
 }

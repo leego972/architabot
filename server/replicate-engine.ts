@@ -1161,7 +1161,7 @@ export async function executeBuild(
     if (db && builtFiles.length > 0) {
       const { sandboxFiles } = await import("../drizzle/schema");
       for (const file of builtFiles) {
-        if (file.type === "file") {
+        if (!file.isDirectory) {
           try {
             const content = await readFile(sandboxId, userId, file.path);
             if (content !== null) {

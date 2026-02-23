@@ -405,7 +405,7 @@ async function fallbackFormAnalysis(page: Page) {
 
     // Password fields
     if (f.type === "password") {
-      suggestedValue = generateSecurePassword();
+      suggestedValue = (() => { const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%'; let p = ''; for (let i = 0; i < 16; i++) p += chars[Math.floor(Math.random() * chars.length)]; return p; })();
     }
 
     return {

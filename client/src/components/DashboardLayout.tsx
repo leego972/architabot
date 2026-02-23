@@ -21,8 +21,9 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import { Bell, LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
@@ -261,9 +262,7 @@ function DashboardLayoutContent({
           <div className="flex items-center gap-2 pr-2">
             <div className="relative">
               <Bell className="h-6 w-6 text-muted-foreground" />
-              <Badge variant="destructive" className="absolute -top-1 -right-1">
-                {unreadCount}
-              </Badge>
+              {/* Notification badge - placeholder for future notification system */}
             </div>
             <CreditBalanceWidget />
           </div>

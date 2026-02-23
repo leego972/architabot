@@ -487,7 +487,7 @@ export function validateModifications(
       }
 
       // ── Anti-Self-Break: Empty file guard ──
-      if (mod.content.trim().length < MIN_FILE_CONTENT_LENGTH && mod.action !== "delete") {
+      if (mod.content.trim().length < MIN_FILE_CONTENT_LENGTH && (mod.action as string) !== "delete") {
         errors.push(
           `ANTI-BREAK: ${normalized} — new content is empty or near-empty (${mod.content.trim().length} chars). This would break the system. Use 'delete' action to intentionally remove a file.`
         );
@@ -523,7 +523,7 @@ export function validateModifications(
           }
           // Check that critical exports still exist in the new content
           const missingExports = currentExports.filter(
-            (exp) => !mod.content.includes(exp)
+            (exp) => !mod.content!.includes(exp)
           );
           if (missingExports.length > 0 && missingExports.length > currentExports.length * 0.5) {
             warnings.push(
@@ -2047,8 +2047,8 @@ export async function pushToGitHub(
       await db.insert(selfModificationLog).values({
         requestedBy: "titan_assistant",
         userId: null,
-        action: "git_push",
-        description: `Pushed ${files.length} file(s) to GitHub: ${commitMessage} [${commitHash}] → ${pushedRepos.join(", ")}`,
+        action: "modify_file",
+        description: `[git_push] Pushed ${files.length} file(s) to GitHub: ${commitMessage} [${commitHash}] → ${pushedRepos.join(", ")}`,
         validationResult: "passed",
         applied: 1,
         rolledBack: 0,

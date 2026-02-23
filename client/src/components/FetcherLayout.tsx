@@ -92,6 +92,7 @@ type MenuItem = {
   adminOnly?: boolean;
   isNew?: boolean;
   isCyber?: boolean;
+  premiumOnly?: boolean;
 };
 
 type MenuGroup = {

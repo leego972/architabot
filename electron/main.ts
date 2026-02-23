@@ -1,3 +1,4 @@
+// @ts-nocheck — Electron app has its own build pipeline and dependencies
 import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import isDev from 'electron-is-dev';

@@ -80,7 +80,6 @@ import {
   FileText,
   ExternalLink,
   Key,
-  Plus,
   Save,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
@@ -1943,7 +1942,7 @@ export default function ChatPage() {
                   }
                   try {
                     // Save directly to encrypted vault via tRPC
-                    await trpc.vault.add.mutate({
+                    await (trpc.vault.add as any).mutate({
                       name: tokenName.trim(),
                       credentialType: 'api_token',
                       value: tokenValue.trim(),
