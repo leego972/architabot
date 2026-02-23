@@ -249,6 +249,113 @@ export const userSecretsRouter = router({
       error: validation.error || null,
     };
   }),
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // GitHub PAT Management
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Get the user's stored GitHub PAT (masked)
+   */
+  getGithubPat: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { hasPat: false, maskedPat: null };
+
+    const rows = await db
+      .select({ id: userSecrets.id, label: userSecrets.label })
+      .from(userSecrets)
+      .where(
+        and(
+          eq(userSecrets.userId, ctx.user.id),
+          eq(userSecrets.secretType, "github_pat")
+        )
+      )
+      .limit(1);
+
+    return {
+      hasPat: rows.length > 0,
+      maskedPat: rows.length > 0 ? rows[0].label : null,
+    };
+  }),
+
+  /**
+   * Save the user's GitHub Personal Access Token
+   */
+  saveGithubPat: protectedProcedure
+    .input(z.object({ pat: z.string().min(10) }))
+    .mutation(async ({ input, ctx }) => {
+      // Validate the PAT by making a test call to GitHub
+      try {
+        const testResp = await fetch("https://api.github.com/user", {
+          headers: { Authorization: `token ${input.pat}`, "User-Agent": "ArchibaldTitan" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!testResp.ok) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid GitHub PAT — GitHub returned ${testResp.status}. Make sure the token has 'repo' scope.`,
+          });
+        }
+        const userData = await testResp.json() as any;
+        const githubUsername = userData.login || "unknown";
+
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+        const encrypted = encrypt(input.pat);
+        const maskedPat = `ghp_...${input.pat.slice(-4)} (${githubUsername})`;
+
+        // Check if user already has a GitHub PAT
+        const existing = await db
+          .select({ id: userSecrets.id })
+          .from(userSecrets)
+          .where(
+            and(
+              eq(userSecrets.userId, ctx.user.id),
+              eq(userSecrets.secretType, "github_pat")
+            )
+          )
+          .limit(1);
+
+        if (existing.length > 0) {
+          await db
+            .update(userSecrets)
+            .set({ encryptedValue: encrypted, label: maskedPat })
+            .where(eq(userSecrets.id, existing[0].id));
+        } else {
+          await db.insert(userSecrets).values({
+            userId: ctx.user.id,
+            secretType: "github_pat",
+            encryptedValue: encrypted,
+            label: maskedPat,
+          });
+        }
+
+        return { success: true, maskedPat, githubUsername };
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        throw new TRPCError({ code: "BAD_REQUEST", message: `GitHub PAT validation failed: ${err.message}` });
+      }
+    }),
+
+  /**
+   * Delete the user's GitHub PAT
+   */
+  deleteGithubPat: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+    await db
+      .delete(userSecrets)
+      .where(
+        and(
+          eq(userSecrets.userId, ctx.user.id),
+          eq(userSecrets.secretType, "github_pat")
+        )
+      );
+
+    return { success: true };
+  }),
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

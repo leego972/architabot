@@ -292,3 +292,15 @@ export function enforceFeature(planId: PlanId, feature: string, featureLabel: st
     });
   }
 }
+
+// ─── Clone Website Gate ────────────────────────────────────────────
+// Clone Website is a premium exclusive feature for Cyber+ and Titan tiers only.
+// Returns true if the user can access the clone website feature.
+export async function canUseCloneWebsite(userId: number): Promise<boolean> {
+  const userPlan = await getUserPlan(userId);
+  const allowedPlans: string[] = ["cyber_plus", "titan"];
+  // Admins always have access
+  if (userPlan.planId === "titan") return true;
+  return allowedPlans.includes(userPlan.planId) && userPlan.isActive;
+}
+

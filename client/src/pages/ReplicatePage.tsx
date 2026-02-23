@@ -99,15 +99,31 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
 export default function ReplicatePage() {
   const [activeTab, setActiveTab] = useState("new");
   const [selectedProject, setSelectedProject] = useState<number | null>(null);
-
+  const [patInput, setPatInput] = useState("");
+  const [showPatInput, setShowPatInput] = useState(false);
   const projectsQuery = trpc.replicate.list.useQuery();
+  const githubPatQuery = trpc.userSecrets.getGithubPat.useQuery();
+  const savePatMutation = trpc.userSecrets.saveGithubPat.useMutation({
+    onSuccess: (data) => {
+      toast.success(`GitHub connected as ${data.githubUsername}`);
+      setPatInput("");
+      setShowPatInput(false);
+      githubPatQuery.refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const deletePatMutation = trpc.userSecrets.deleteGithubPat.useMutation({
+    onSuccess: () => {
+      toast.success("GitHub PAT removed");
+      githubPatQuery.refetch();
+    },
+  });
   const projects = (projectsQuery.data ?? []) as unknown as Project[];
-
   const selectedProjectData = useMemo(
     () => projects.find((p) => p.id === selectedProject),
     [projects, selectedProject]
   );
-
+  const hasGithubPat = githubPatQuery.data?.hasPat ?? false;
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
@@ -118,12 +134,94 @@ export default function ReplicatePage() {
             Website Replicate
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Research any website or app and build a working clone with your branding and payments
+            Clone any website with your branding, your payment system, and deploy to your own domain
           </p>
         </div>
       </div>
 
-      <AffiliateRecommendations context="app_builder" variant="banner" />
+      {/* GitHub PAT Setup */}
+      <Card className={`border ${hasGithubPat ? 'border-green-500/30 bg-green-500/5' : 'border-yellow-500/30 bg-yellow-500/5'}`}>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Github className={`h-5 w-5 ${hasGithubPat ? 'text-green-400' : 'text-yellow-400'}`} />
+              <div>
+                <p className="font-medium text-sm">
+                  {hasGithubPat ? 'GitHub Connected' : 'Connect GitHub to Deploy'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {hasGithubPat
+                    ? `Connected: ${githubPatQuery.data?.maskedPat}`
+                    : 'A GitHub Personal Access Token with repo scope is required to push your cloned websites'
+                  }
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {hasGithubPat ? (
+                <>
+                  <Badge variant="outline" className="border-green-500/50 text-green-400">
+                    <CheckCircle2 className="h-3 w-3 mr-1" /> Connected
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowPatInput(!showPatInput)}
+                    className="text-xs"
+                  >
+                    Update
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deletePatMutation.mutate()}
+                    className="text-xs text-red-400 hover:text-red-300"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPatInput(!showPatInput)}
+                >
+                  <Github className="h-4 w-4 mr-1" /> Connect GitHub
+                </Button>
+              )}
+            </div>
+          </div>
+          {showPatInput && (
+            <div className="mt-3 flex items-center gap-2">
+              <Input
+                type="password"
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                value={patInput}
+                onChange={(e) => setPatInput(e.target.value)}
+                className="flex-1 font-mono text-sm"
+              />
+              <Button
+                size="sm"
+                onClick={() => savePatMutation.mutate({ pat: patInput })}
+                disabled={!patInput || patInput.length < 10 || savePatMutation.isPending}
+              >
+                {savePatMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Save & Verify'
+                )}
+              </Button>
+            </div>
+          )}
+          {!hasGithubPat && !showPatInput && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Go to <a href="https://github.com/settings/tokens" target="_blank" rel="noopener" className="text-blue-400 underline">GitHub Settings → Tokens</a> → Generate new token (classic) → Select <strong>repo</strong> scope → Copy and paste here
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <AffiliateRecommendations context="app_builder" variant="banner" /> />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-muted/50">
@@ -643,12 +741,44 @@ function ProjectDetail({
 
   const [githubRepoName, setGithubRepoName] = useState("");
   const [showGithubPush, setShowGithubPush] = useState(false);
+  const [showDomainDeploy, setShowDomainDeploy] = useState(false);
+  const [domainSuggestions, setDomainSuggestions] = useState<Array<{ domain: string; price: number; currency: string }>>([]);
+  const [selectedDomain, setSelectedDomain] = useState("");
+  const [customDomainInput, setCustomDomainInput] = useState("");
+  const [deployPlatform, setDeployPlatform] = useState<"vercel" | "railway" | "auto">("auto");
+  const [deployResult, setDeployResult] = useState<{ url: string; platform: string } | null>(null);
+  const [pushedRepoName, setPushedRepoName] = useState("");
 
   const pushToGithubMutation = trpc.replicate.pushToGithub.useMutation({
     onSuccess: (data) => {
       toast.success(`Pushed to GitHub: ${data.repoUrl}`);
+      setPushedRepoName(data.repoUrl?.replace("https://github.com/", "") || githubRepoName);
       setShowGithubPush(false);
       onRefresh();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const searchDomainsMutation = trpc.replicate.searchDomains.useMutation({
+    onSuccess: (data) => {
+      if (data.success && data.domains.length > 0) {
+        setDomainSuggestions(data.domains);
+      } else {
+        toast.error(data.message || "No domains found. Try a different keyword.");
+      }
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deployMutation = trpc.replicate.deploy.useMutation({
+    onSuccess: (result) => {
+      if (result.success) {
+        setDeployResult({ url: result.deploymentUrl, platform: result.platform });
+        toast.success(result.message);
+        onRefresh();
+      } else {
+        toast.error(result.message);
+      }
     },
     onError: (err) => toast.error(err.message),
   });
@@ -665,7 +795,13 @@ function ProjectDetail({
   const isPlanning = planMutation.isPending;
   const isBuilding = buildMutation.isPending;
   const isPushing = pushToGithubMutation.isPending;
-  const isBusy = isResearching || isPlanning || isBuilding || isPushing;
+  const isSearchingDomains = searchDomainsMutation.isPending;
+  const isDeploying = deployMutation.isPending;
+  const isBusy = isResearching || isPlanning || isBuilding || isPushing || isDeploying;
+
+  // Auto-detect recommended platform based on complexity
+  const complexity = project.researchData?.estimatedComplexity?.toLowerCase() || "standard";
+  const recommendedPlatform = (complexity === "simple" || complexity === "standard") ? "vercel" : "railway";
 
   return (
     <div className="space-y-6">
@@ -869,6 +1005,193 @@ function ProjectDetail({
               )}
             </div>
           </CardContent>
+        </Card>
+      )}
+
+      {/* ═══ DOMAIN & DEPLOY SECTION ═══ */}
+      {(project.status === "build_complete" || project.status === "branded" || project.status === "pushed") && (
+        <Card className="border-border/50 bg-card/50">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-green-400" />
+                Domain & Deployment
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDomainDeploy(!showDomainDeploy)}
+              >
+                {showDomainDeploy ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+            </CardTitle>
+            <CardDescription>
+              Get a custom domain and deploy your cloned website to production
+            </CardDescription>
+          </CardHeader>
+
+          {showDomainDeploy && (
+            <CardContent className="space-y-6">
+              {/* Step 1: Domain Search */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs font-bold">1</span>
+                  Find a Domain
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Search for available domains. GoDaddy registration fees are charged separately on top of the clone service fee.
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    value={customDomainInput}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomDomainInput(e.target.value)}
+                    placeholder="Enter brand name or keyword to search..."
+                    className="h-9 text-sm flex-1"
+                  />
+                  <Button
+                    onClick={() => searchDomainsMutation.mutate({ keyword: customDomainInput })}
+                    disabled={isSearchingDomains || !customDomainInput.trim()}
+                    size="sm"
+                    className="gap-1.5 shrink-0"
+                  >
+                    {isSearchingDomains ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                    Search
+                  </Button>
+                </div>
+
+                {/* Domain Suggestions */}
+                {domainSuggestions.length > 0 && (
+                  <div className="space-y-2">
+                    {domainSuggestions.map((d) => (
+                      <div
+                        key={d.domain}
+                        onClick={() => setSelectedDomain(d.domain)}
+                        className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                          selectedDomain === d.domain
+                            ? "border-green-500 bg-green-500/10"
+                            : "border-border/50 hover:border-green-500/50 bg-card/30"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4 text-green-400" />
+                            <span className="font-medium text-sm">{d.domain}</span>
+                            {selectedDomain === d.domain && (
+                              <CheckCircle2 className="h-4 w-4 text-green-400" />
+                            )}
+                          </div>
+                          <Badge variant="outline" className="text-green-400 border-green-500/30">
+                            ${(d.price / 100).toFixed(2)}/{d.currency || "USD"}/yr
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground">
+                      Or enter your own domain if you already have one:
+                    </p>
+                    <Input
+                      value={selectedDomain}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDomain(e.target.value)}
+                      placeholder="yourdomain.com"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: Choose Deployment Platform */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-xs font-bold">2</span>
+                  Deployment Platform
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  {recommendedPlatform === "vercel"
+                    ? "Vercel is recommended for this project (simple/standard complexity — fast, optimized for static sites)."
+                    : "Railway is recommended for this project (advanced/enterprise complexity — supports databases and backend services)."}
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["auto", "vercel", "railway"] as const).map((platform) => (
+                    <div
+                      key={platform}
+                      onClick={() => setDeployPlatform(platform)}
+                      className={`p-3 rounded-lg border cursor-pointer text-center transition-all ${
+                        deployPlatform === platform
+                          ? "border-blue-500 bg-blue-500/10"
+                          : "border-border/50 hover:border-blue-500/50"
+                      }`}
+                    >
+                      <Server className="h-5 w-5 mx-auto mb-1 text-blue-400" />
+                      <span className="text-xs font-medium">
+                        {platform === "auto" ? `Auto (${recommendedPlatform})` : platform === "vercel" ? "Vercel" : "Railway"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Step 3: Deploy */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs font-bold">3</span>
+                  Deploy to Production
+                </h4>
+
+                {!pushedRepoName && !((project as any).githubRepoUrl) && (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400">
+                    <AlertCircle className="h-4 w-4 inline mr-1" />
+                    Push to GitHub first before deploying. Use the "Push to GitHub" button above.
+                  </div>
+                )}
+
+                {(pushedRepoName || (project as any).githubRepoUrl) && (
+                  <Button
+                    onClick={() => {
+                      const repoName = pushedRepoName || ((project as any).githubRepoUrl?.replace("https://github.com/", "") || "");
+                      deployMutation.mutate({
+                        projectId: project.id,
+                        repoFullName: repoName,
+                        customDomain: selectedDomain || undefined,
+                        platformOverride: deployPlatform === "auto" ? undefined : deployPlatform,
+                      });
+                    }}
+                    disabled={isDeploying}
+                    className="w-full bg-green-600 hover:bg-green-700 gap-2"
+                  >
+                    {isDeploying ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Deploying...</>
+                    ) : (
+                      <><Zap className="h-4 w-4" /> Deploy Now{selectedDomain ? ` to ${selectedDomain}` : ""}</>
+                    )}
+                  </Button>
+                )}
+
+                {/* Deploy Result */}
+                {deployResult && (
+                  <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/30 space-y-2">
+                    <p className="text-sm font-medium text-green-400 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Deployed Successfully!
+                    </p>
+                    <div className="text-xs space-y-1">
+                      <p><span className="text-muted-foreground">Platform:</span> <span className="font-medium capitalize">{deployResult.platform}</span></p>
+                      <p>
+                        <span className="text-muted-foreground">Live URL:</span>{" "}
+                        <a href={deployResult.url} target="_blank" rel="noopener noreferrer" className="text-green-400 hover:underline">
+                          {deployResult.url} <ExternalLink className="h-3 w-3 inline" />
+                        </a>
+                      </p>
+                      {selectedDomain && (
+                        <p className="text-muted-foreground">
+                          Custom domain <span className="text-green-400">{selectedDomain}</span> DNS is being configured. It may take up to 48 hours to propagate.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
     </div>

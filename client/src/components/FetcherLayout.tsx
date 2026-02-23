@@ -107,7 +107,7 @@ const menuGroups: MenuGroup[] = [
     title: "Developer Tools",
     items: [
       { icon: () => <TitanLogo size="sm" />, label: "Titan Builder", path: "/dashboard" },
-      { icon: Copy, label: "Clone Website", path: "/replicate", isNew: true },
+      { icon: Copy, label: "Clone Website", path: "/replicate", isNew: true, premiumOnly: true },
       { icon: Terminal, label: "Sandbox", path: "/sandbox", isNew: true },
       { icon: Sparkles, label: "Smart Fetch AI", path: "/fetcher/smart-fetch" },
       { icon: PlusCircle, label: "New Fetch", path: "/fetcher/new" },
@@ -375,7 +375,14 @@ function FetcherLayoutContent({
           <SidebarContent className="gap-0 overflow-y-auto scrollbar-thin">
             {menuGroups.map((group) => {
               const visibleItems = group.items.filter(
-                (item) => !item.adminOnly || user?.role === "admin"
+                (item) => {
+                  if (item.adminOnly && user?.role !== "admin") return false;
+                  if (item.premiumOnly) {
+                    const plan = sub.planId;
+                    if (plan !== "cyber_plus" && plan !== "titan" && user?.role !== "admin") return false;
+                  }
+                  return true;
+                }
               );
               if (visibleItems.length === 0) return null;
               return (

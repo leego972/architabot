@@ -63,7 +63,7 @@ export const PRICING_TIERS: PricingTier[] = [
       "JSON export",
       "Community support",
       "Basic stealth browser",
-      "100 credits/month",
+      "300 credits/month",
     ],
     limits: {
       fetchesPerMonth: 5,
@@ -74,8 +74,8 @@ export const PRICING_TIERS: PricingTier[] = [
       support: "community",
     },
     credits: {
-      monthlyAllocation: 100,
-      signupBonus: 50,
+      monthlyAllocation: 300,
+      signupBonus: 100,
     },
   },
 
@@ -173,7 +173,7 @@ export const PRICING_TIERS: PricingTier[] = [
       "Security code review",
       "Red team automation",
       "Priority security support",
-      "100,000 credits/month",
+      "75,000 credits/month",
     ],
     limits: {
       fetchesPerMonth: -1,
@@ -184,7 +184,7 @@ export const PRICING_TIERS: PricingTier[] = [
       support: "priority_security",
     },
     credits: {
-      monthlyAllocation: 100000,
+      monthlyAllocation: 75000,
       signupBonus: 5000,
     },
   },
@@ -200,7 +200,8 @@ export const PRICING_TIERS: PricingTier[] = [
     cta: "Go Cyber+",
     features: [
       "Everything in Cyber",
-      "500,000 credits/month",
+      "300,000 credits/month",
+      "Website Clone Engine (exclusive)",
       "Unlimited team seats",
       "Zero-click exploit research",
       "C2 framework building",
@@ -221,7 +222,7 @@ export const PRICING_TIERS: PricingTier[] = [
       support: "dedicated_slack",
     },
     credits: {
-      monthlyAllocation: 500000,
+      monthlyAllocation: 300000,
       signupBonus: 25000,
     },
   },
@@ -238,6 +239,7 @@ export const PRICING_TIERS: PricingTier[] = [
     features: [
       "Everything in Cyber+",
       "1,000,000 credits/month",
+      "Website Clone Engine (exclusive)",
       "Dedicated GPU cluster",
       "Custom model training on your data",
       "On-premise deployment option",
@@ -281,10 +283,13 @@ export const PRICING_TIERS: PricingTier[] = [
 //   That's 5-8 builder requests per day — solid daily usage.
 
 export const CREDIT_COSTS = {
-  chat_message: 1,      // 1 credit per chat message — feels free
-  builder_action: 3,    // 3 credits per builder tool action (was 5 — reduced for fairness)
-  voice_action: 2,      // 2 credits per voice transcription (was 3)
-  fetch_action: 1,      // 1 credit per credential fetch (was 2 — fetches should feel cheap)
+  chat_message: 1,        // 1 credit per chat message — feels free
+  builder_action: 3,      // 3 credits per builder tool action
+  voice_action: 2,        // 2 credits per voice transcription
+  fetch_action: 1,        // 1 credit per credential fetch — fetches should feel cheap
+  clone_action: 50,       // 50 credits per website clone — premium feature (Cyber+/Titan only)
+  github_action: 5,       // 5 credits per GitHub repo create or push
+  image_generation: 10,   // 10 credits per AI image generation (DALL-E is expensive)
 } as const;
 
 export type CreditActionType = keyof typeof CREDIT_COSTS;
@@ -341,6 +346,114 @@ export const CREDIT_PACKS: CreditPack[] = [
     upgradeNudge: "Enterprise gives 25,000 credits/mo for $99 — 2.5x more credits for 2x the price!",
   },
 ];
+
+// ─── Clone Website Pricing (per-use, billed via Stripe) ────────────
+//
+// CLONE PRICING PHILOSOPHY:
+// - A fully cloned, branded website with payment integration is worth $3,500–$8,000+
+//   from a freelancer and takes 2–4 weeks. We deliver it in minutes.
+// - Pricing is tiered by complexity, auto-detected from the target site.
+// - Even at $3,500 for enterprise, it's still HALF what an agency charges.
+// - Minimum $500 ensures the feature is treated as a premium product, not a toy.
+// - Only available to Cyber+ and Titan subscribers.
+// - Titan users get a discount as part of their premium tier.
+
+export type CloneComplexity = "simple" | "standard" | "advanced" | "enterprise";
+
+export interface ClonePricingTier {
+  id: CloneComplexity;
+  name: string;
+  description: string;
+  price: number;           // USD — base price
+  titanPrice: number;      // USD — discounted price for Titan subscribers
+  maxPages: number;        // page count threshold for auto-detection
+  features: string[];      // what's included at this tier
+}
+
+export const CLONE_PRICING: ClonePricingTier[] = [
+  {
+    id: "simple",
+    name: "Simple Clone",
+    description: "Landing pages, portfolios, brochure sites",
+    price: 500,
+    titanPrice: 350,
+    maxPages: 5,
+    features: [
+      "Up to 5 pages",
+      "Responsive design",
+      "Your branding & colors",
+      "Contact form",
+      "SEO meta tags",
+      "GitHub repo + deploy ready",
+    ],
+  },
+  {
+    id: "standard",
+    name: "Standard Clone",
+    description: "Business websites, blogs, multi-page sites",
+    price: 1000,
+    titanPrice: 700,
+    maxPages: 15,
+    features: [
+      "Up to 15 pages",
+      "Everything in Simple",
+      "Blog / news section",
+      "Dynamic content areas",
+      "Multiple forms",
+      "Image gallery",
+      "Newsletter signup",
+    ],
+  },
+  {
+    id: "advanced",
+    name: "Advanced Clone",
+    description: "E-commerce, SaaS, marketplace sites",
+    price: 2000,
+    titanPrice: 1400,
+    maxPages: 50,
+    features: [
+      "Up to 50 pages",
+      "Everything in Standard",
+      "Stripe payment integration",
+      "Product catalog",
+      "Shopping cart & checkout",
+      "User authentication",
+      "Dashboard / admin panel",
+    ],
+  },
+  {
+    id: "enterprise",
+    name: "Enterprise Clone",
+    description: "Complex web applications, multi-feature platforms",
+    price: 3500,
+    titanPrice: 2500,
+    maxPages: -1, // unlimited
+    features: [
+      "Unlimited pages",
+      "Everything in Advanced",
+      "Custom API integrations",
+      "Multi-role user system",
+      "Advanced admin panels",
+      "Real-time features",
+      "Priority build queue",
+    ],
+  },
+];
+
+// Helper to determine clone complexity from page count and feature analysis
+export function detectCloneComplexity(pageCount: number, hasPayments: boolean, hasAuth: boolean): CloneComplexity {
+  if (hasPayments || hasAuth || pageCount > 50) return "enterprise";
+  if (pageCount > 15) return "advanced";
+  if (pageCount > 5) return "standard";
+  return "simple";
+}
+
+// Get the price for a clone based on complexity and user tier
+export function getClonePrice(complexity: CloneComplexity, planId: PlanId): number {
+  const tier = CLONE_PRICING.find(t => t.id === complexity);
+  if (!tier) return 500; // fallback to minimum
+  return planId === "titan" ? tier.titanPrice : tier.price;
+}
 
 export const STRIPE_PRICES: Record<string, { monthly: string; yearly: string }> = {
   pro: {

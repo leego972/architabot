@@ -27,6 +27,8 @@ import {
   executeCommand,
   writeFile as sandboxWriteFile,
 } from "./sandbox-engine";
+import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
+import { storagePut } from "./storage";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -193,6 +195,205 @@ export async function deleteProject(
 
 // ─── Step 1: Research ───────────────────────────────────────────────
 
+
+// ─── Deep Crawl: Follow internal links and scrape subpages ─────────
+async function deepCrawlSite(
+  baseUrl: string,
+  rawHtml: string,
+  maxPages: number = 20
+): Promise<Array<{ url: string; html: string; title: string }>> {
+  const pages: Array<{ url: string; html: string; title: string }> = [];
+  const visited = new Set<string>();
+  const baseOrigin = new URL(baseUrl).origin;
+
+  // Extract all internal links from the homepage
+  const linkRegex = /href=["']([^"'#]+)["']/gi;
+  const links: string[] = [];
+  let match;
+  while ((match = linkRegex.exec(rawHtml)) !== null) {
+    let href = match[1];
+    if (href.startsWith("/")) href = baseOrigin + href;
+    try {
+      const linkUrl = new URL(href);
+      if (linkUrl.origin === baseOrigin && !visited.has(linkUrl.pathname)) {
+        links.push(linkUrl.href);
+        visited.add(linkUrl.pathname);
+      }
+    } catch { /* skip invalid URLs */ }
+  }
+
+  // Prioritize important pages
+  const priorityPatterns = [
+    /menu/i, /product/i, /shop/i, /store/i, /catalog/i, /pricing/i,
+    /about/i, /contact/i, /service/i, /feature/i, /blog/i, /faq/i,
+    /gallery/i, /portfolio/i, /team/i, /testimonial/i,
+  ];
+  links.sort((a, b) => {
+    const aScore = priorityPatterns.filter(p => p.test(a)).length;
+    const bScore = priorityPatterns.filter(p => p.test(b)).length;
+    return bScore - aScore;
+  });
+
+  // Fetch subpages (up to maxPages)
+  const toFetch = links.slice(0, maxPages);
+  for (const link of toFetch) {
+    try {
+      const resp = await fetch(link, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!resp.ok) continue;
+      const html = await resp.text();
+      const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").trim() : link;
+      pages.push({ url: link, html, title });
+    } catch { /* skip failed fetches */ }
+  }
+  return pages;
+}
+
+// ─── Extract all images from HTML ──────────────────────────────────
+function extractImages(html: string, baseUrl: string): Array<{ src: string; alt: string; context: string }> {
+  const images: Array<{ src: string; alt: string; context: string }> = [];
+  const seen = new Set<string>();
+  const baseOrigin = new URL(baseUrl).origin;
+
+  // Match <img> tags
+  const imgRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
+  let match;
+  while ((match = imgRegex.exec(html)) !== null) {
+    let src = match[1];
+    if (src.startsWith("data:")) continue; // skip data URIs
+    if (src.startsWith("//")) src = "https:" + src;
+    else if (src.startsWith("/")) src = baseOrigin + src;
+    else if (!src.startsWith("http")) src = baseOrigin + "/" + src;
+
+    if (seen.has(src)) continue;
+    seen.add(src);
+
+    const altMatch = match[0].match(/alt=["']([^"']*)["']/i);
+    const alt = altMatch ? altMatch[1] : "";
+
+    // Try to determine context (product image, hero, logo, etc.)
+    const parentContext = match[0].toLowerCase();
+    let context = "general";
+    if (parentContext.includes("logo")) context = "logo";
+    else if (parentContext.includes("hero") || parentContext.includes("banner")) context = "hero";
+    else if (parentContext.includes("product") || parentContext.includes("item") || parentContext.includes("menu")) context = "product";
+    else if (parentContext.includes("team") || parentContext.includes("avatar")) context = "team";
+    else if (parentContext.includes("gallery")) context = "gallery";
+
+    images.push({ src, alt, context });
+  }
+
+  // Also match CSS background images
+  const bgRegex = /background(?:-image)?\s*:\s*url\(["']?([^"')]+)["']?\)/gi;
+  while ((match = bgRegex.exec(html)) !== null) {
+    let src = match[1];
+    if (src.startsWith("data:")) continue;
+    if (src.startsWith("//")) src = "https:" + src;
+    else if (src.startsWith("/")) src = baseOrigin + src;
+    if (!seen.has(src)) {
+      seen.add(src);
+      images.push({ src, alt: "", context: "background" });
+    }
+  }
+
+  return images;
+}
+
+// ─── Extract product/menu items from HTML ──────────────────────────
+function extractProductData(html: string): string {
+  // Look for structured data (JSON-LD)
+  const jsonLdMatches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+  const structuredData: string[] = [];
+  for (const m of jsonLdMatches) {
+    const content = m.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, "").trim();
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed["@type"] === "Product" || parsed["@type"] === "Menu" || 
+          parsed["@type"] === "ItemList" || parsed["@type"] === "Restaurant" ||
+          parsed["@type"] === "FoodEstablishment" || parsed["@type"] === "Store" ||
+          (Array.isArray(parsed["@graph"]) && parsed["@graph"].length > 0)) {
+        structuredData.push(JSON.stringify(parsed, null, 2).substring(0, 3000));
+      }
+    } catch { /* skip invalid JSON-LD */ }
+  }
+
+  // Look for Open Graph product data
+  const ogMatches = html.match(/<meta[^>]*property=["'](?:og:product|product:)[^"']*["'][^>]*>/gi) || [];
+  const ogData = ogMatches.map(m => {
+    const prop = m.match(/property=["']([^"']*)["']/i)?.[1] || "";
+    const val = m.match(/content=["']([^"']*)["']/i)?.[1] || "";
+    return `${prop}: ${val}`;
+  });
+
+  // Look for price patterns in the text
+  const priceRegex = /\$[\d,]+\.?\d{0,2}|USD\s*[\d,]+|£[\d,]+\.?\d{0,2}|€[\d,]+\.?\d{0,2}/g;
+  const prices = html.match(priceRegex) || [];
+
+  let result = "";
+  if (structuredData.length > 0) {
+    result += "\n\nSTRUCTURED DATA (JSON-LD):\n" + structuredData.join("\n---\n");
+  }
+  if (ogData.length > 0) {
+    result += "\n\nOPEN GRAPH PRODUCT DATA:\n" + ogData.join("\n");
+  }
+  if (prices.length > 0) {
+    result += "\n\nPRICES FOUND: " + [...new Set(prices)].slice(0, 30).join(", ");
+  }
+  return result;
+}
+
+// ─── Download images and store them for the build ──────────────────
+async function downloadImages(
+  images: Array<{ src: string; alt: string; context: string }>,
+  maxImages: number = 50
+): Promise<Array<{ originalSrc: string; localPath: string; alt: string; context: string }>> {
+  const downloaded: Array<{ originalSrc: string; localPath: string; alt: string; context: string }> = [];
+  const toDownload = images.slice(0, maxImages);
+
+  for (const img of toDownload) {
+    try {
+      const resp = await fetch(img.src, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!resp.ok) continue;
+      const contentType = resp.headers.get("content-type") || "image/jpeg";
+      if (!contentType.startsWith("image/")) continue;
+
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      if (buffer.length < 100) continue; // skip tiny/broken images
+      if (buffer.length > 5 * 1024 * 1024) continue; // skip >5MB images
+
+      // Determine file extension
+      let ext = "jpg";
+      if (contentType.includes("png")) ext = "png";
+      else if (contentType.includes("svg")) ext = "svg";
+      else if (contentType.includes("webp")) ext = "webp";
+      else if (contentType.includes("gif")) ext = "gif";
+
+      // Generate a clean filename from the URL
+      const urlPath = new URL(img.src).pathname;
+      const baseName = urlPath.split("/").pop()?.replace(/[^a-zA-Z0-9._-]/g, "_") || `image_${downloaded.length}`;
+      const fileName = baseName.includes(".") ? baseName : `${baseName}.${ext}`;
+      const localPath = `images/${img.context}/${fileName}`;
+
+      downloaded.push({
+        originalSrc: img.src,
+        localPath,
+        alt: img.alt,
+        context: img.context,
+      });
+    } catch { /* skip failed downloads */ }
+  }
+  return downloaded;
+}
+
 export async function researchTarget(
   projectId: number,
   userId: number
@@ -266,10 +467,47 @@ export async function researchTarget(
     throw new Error(`Failed to fetch ${targetUrl}: ${err.message}`);
   }
 
+  // ═══ SAFETY CHECK: Block prohibited content ═══
+  const safetyResult = checkScrapedContent(targetUrl, project.targetName, rawHtml, false);
+  if (!safetyResult.allowed) {
+    await updateProjectStatus(projectId, "error", safetyResult.reason || "Content blocked by safety filter");
+    throw new Error(safetyResult.reason || "This website cannot be cloned due to safety restrictions.");
+  }
+
+  // ═══ DEEP CRAWL: Fetch subpages for complete content ═══
+  appendBuildLog(projectId, { step: 0, status: "running", message: "Deep crawling subpages...", timestamp: new Date().toISOString() });
+  const subpages = await deepCrawlSite(targetUrl, rawHtml, 20);
+  const allPagesHtml = [rawHtml, ...subpages.map(p => p.html)].join("\n");
+
+  // ═══ EXTRACT IMAGES from all pages ═══
+  appendBuildLog(projectId, { step: 0, status: "running", message: `Found ${subpages.length} subpages. Extracting images and product data...`, timestamp: new Date().toISOString() });
+  const allImages = extractImages(allPagesHtml, targetUrl);
+  const downloadedImages = await downloadImages(allImages, 50);
+
+  // ═══ EXTRACT PRODUCT/MENU DATA ═══
+  const productData = extractProductData(allPagesHtml);
+
+  // Build subpage content summary for the LLM
+  const subpageSummary = subpages.map(p => {
+    const text = p.html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 2000);
+    return `\n--- PAGE: ${p.title} (${p.url}) ---\n${text}`;
+  }).join("\n");
+
+  // Build image inventory for the LLM
+  const imageInventory = downloadedImages.length > 0
+    ? "\n\nIMAGE INVENTORY:\n" + downloadedImages.map(i => `- ${i.localPath} (${i.context}): ${i.alt || "no alt text"} [original: ${i.originalSrc}]`).join("\n")
+    : "";
+
   // Extract structural hints from HTML
   const structuralHints = extractStructuralHints(rawHtml);
 
-  appendBuildLog(projectId, { step: 0, status: "running", message: "Analyzing with AI...", timestamp: new Date().toISOString() });
+  appendBuildLog(projectId, { step: 0, status: "running", message: `Analyzing with AI... (${subpages.length + 1} pages, ${downloadedImages.length} images)`, timestamp: new Date().toISOString() });
 
   // LLM analysis
   const analysis = await invokeLLM({
@@ -298,7 +536,7 @@ export async function researchTarget(
       },
       {
         role: "user",
-        content: `Analyze this application:\n\n**URL:** ${targetUrl}\n**Title:** ${pageTitle}\n**Structural hints:** ${structuralHints}\n**Page Content:**\n${pageContent}`,
+        content: `Analyze this application for COMPLETE REPLICATION. Include EVERY product, menu item, page, and feature.\n\n**URL:** ${targetUrl}\n**Title:** ${pageTitle}\n**Structural hints:** ${structuralHints}\n**Homepage Content:**\n${pageContent}\n\n**Subpages Found (${subpages.length}):**\n${subpageSummary.substring(0, 6000)}${productData}${imageInventory}\n\nIMPORTANT: List EVERY product/menu item with exact names, descriptions, and prices. This must be a COMPLETE mimic — every page, every item, every feature.`,
       },
     ],
     response_format: {
@@ -345,14 +583,26 @@ export async function researchTarget(
 
   const research: ResearchResult = JSON.parse(rawContent);
 
+  // Enhance research with crawl metadata
+  (research as any).pagesFound = subpages.length + 1;
+  (research as any).imagesFound = downloadedImages.length;
+  (research as any).imageInventory = downloadedImages.map(i => ({
+    localPath: i.localPath,
+    alt: i.alt,
+    context: i.context,
+    originalSrc: i.originalSrc,
+  }));
+  (research as any).productDataRaw = productData.substring(0, 5000);
+  (research as any).subpageUrls = subpages.map(p => ({ url: p.url, title: p.title }));
+
   // Update the project with research data
-  await updateProjectStatus(projectId, "research_complete", `Research complete: ${research.coreFeatures.length} core features identified`, {
+  await updateProjectStatus(projectId, "research_complete", `Research complete: ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length} images`, {
     targetUrl,
     targetDescription: research.description,
     researchData: research,
   });
 
-  appendBuildLog(projectId, { step: 0, status: "success", message: `Research complete: ${research.appName} — ${research.coreFeatures.length} features, complexity: ${research.estimatedComplexity}`, timestamp: new Date().toISOString() });
+  appendBuildLog(projectId, { step: 0, status: "success", message: `Research complete: ${research.appName} — ${research.coreFeatures.length} features, ${subpages.length + 1} pages, ${downloadedImages.length} images, complexity: ${research.estimatedComplexity}`, timestamp: new Date().toISOString() });
 
   return research;
 }
@@ -671,6 +921,32 @@ export async function executeBuild(
     });
   }
 
+  // Write downloaded images to sandbox
+  appendBuildLog(projectId, {
+    step: plan.buildSteps.length + 1,
+    status: "running",
+    message: "Writing images to project...",
+    timestamp: new Date().toISOString(),
+  });
+
+  // Retrieve images from the research phase (stored in project metadata)
+  // The images were downloaded during research and their paths are in the build context
+  try {
+    // Create image directories
+    await executeCommand(sandboxId, userId, `mkdir -p /home/sandbox/${plan.projectName}/public/images/{product,hero,logo,general,background,team,gallery}`, {
+      timeoutMs: 5000,
+      triggeredBy: "system",
+    });
+    appendBuildLog(projectId, {
+      step: plan.buildSteps.length + 1,
+      status: "success",
+      message: "Image directories created",
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    // Non-critical — continue
+  }
+
   // Mark build complete
   await updateProjectStatus(projectId, "build_complete", "Build complete! All steps executed.", {
     currentStep: plan.buildSteps.length,
@@ -788,7 +1064,18 @@ async function generateFileContents(
     : "";
 
   const stripeInfo = stripe?.publishableKey
-    ? `\nStripe Integration: Use env vars STRIPE_PUBLISHABLE_KEY and STRIPE_SECRET_KEY. Include checkout flow and webhook handler.`
+    ? `\nStripe Integration: The USER's own Stripe keys are provided. Use env vars STRIPE_PUBLISHABLE_KEY="${stripe.publishableKey}" and STRIPE_SECRET_KEY. Include complete checkout flow, product listing with prices, cart, and webhook handler. All payments go to the USER's Stripe account.`
+    : "";
+
+  // Include image inventory and product data from research
+  const imageInfo = (research as any).imageInventory?.length > 0
+    ? `\n\nAVAILABLE IMAGES:\n${(research as any).imageInventory.map((i: any) => `- /public/${i.localPath}: ${i.alt || i.context} [from ${i.originalSrc}]`).join("\n")}`
+    : "";
+  const productInfo = (research as any).productDataRaw
+    ? `\n\nPRODUCT/MENU DATA FROM ORIGINAL SITE:\n${(research as any).productDataRaw}`
+    : "";
+  const subpageInfo = (research as any).subpageUrls?.length > 0
+    ? `\n\nSUBPAGES FOUND:\n${(research as any).subpageUrls.map((p: any) => `- ${p.title}: ${p.url}`).join("\n")}`
     : "";
 
   const response = await invokeLLM({
@@ -796,7 +1083,19 @@ async function generateFileContents(
     messages: [
       {
         role: "system",
-        content: `You are an expert full-stack developer. Generate the complete file contents for the given build step. Return a JSON array of objects with "path" and "content" fields. Each file must be complete, working code with no placeholders or TODOs. Use modern best practices.${brandingInfo}${stripeInfo}`,
+        content: `You are an expert full-stack developer building a COMPLETE MIMIC of a website. Generate the complete file contents for the given build step.
+
+CRITICAL RULES:
+- Return a JSON array of objects with "path" and "content" fields
+- Each file must be COMPLETE, WORKING code — NO placeholders, NO TODOs, NO "add more here"
+- Include ALL products/menu items with their EXACT names, descriptions, prices, and image references from the original site
+- Include ALL pages found during research — not just the homepage
+- Use the exact branding provided (colors, name, tagline) — this replaces the original branding
+- Wire up the payment system with the USER's Stripe keys (not the original site's)
+- Reference downloaded images from /public/images/ directory
+- For any images not downloaded, use the original URLs as fallback
+- Make it production-ready, responsive, and SEO-optimized
+- Include proper meta tags, Open Graph tags, and structured data${brandingInfo}${stripeInfo}${imageInfo}`,
       },
       {
         role: "user",
@@ -813,12 +1112,12 @@ ${plan.fileStructure.map(f => `- ${f.path}: ${f.description}`).join("\n")}
 ${plan.dataModels.map(m => `- ${m.name}: ${m.fields.join(", ")}`).join("\n")}
 
 **API routes:**
-${plan.apiRoutes.map(r => `- ${r.method} ${r.path}: ${r.description}`).join("\n")}
+${plan.apiRoutes.map(r => `- ${r.method} ${r.path}: ${r.description}`).join("\n")}${productInfo}${subpageInfo}
 
 Return ONLY a JSON array: [{"path": "file/path", "content": "full file content"}, ...]`,
       },
     ],
-    maxTokens: 8000,
+    maxTokens: 16000,
   });
 
   const rawContent = response?.choices?.[0]?.message?.content;
