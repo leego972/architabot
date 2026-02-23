@@ -76,6 +76,9 @@ import {
   Banknote,
   HandCoins,
   Target,
+  FolderOpen,
+  FileText,
+  ExternalLink,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import {
@@ -811,6 +814,8 @@ export default function ChatPage() {
 
   // File Upload State
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [showProjectFiles, setShowProjectFiles] = useState(false);
+  const [createdFiles, setCreatedFiles] = useState<Array<{name: string; url: string; size: number; language: string}>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUploadClick = () => { fileInputRef.current?.click(); };
@@ -1091,8 +1096,34 @@ export default function ChatPage() {
     }
 
     try {
+      // Upload files and append their URLs to the message
+      let finalMessage = messageText;
+      if (selectedFiles.length > 0) {
+        const uploadedUrls: string[] = [];
+        for (const file of selectedFiles) {
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const uploadRes = await fetch('/api/chat/upload', {
+              method: 'POST',
+              body: formData,
+              credentials: 'include',
+            });
+            if (uploadRes.ok) {
+              const { url } = await uploadRes.json();
+              uploadedUrls.push(`[Attached file: ${file.name}](${url})`);
+            }
+          } catch (e) {
+            console.error('File upload failed:', e);
+          }
+        }
+        if (uploadedUrls.length > 0) {
+          finalMessage += '\n\n' + uploadedUrls.join('\n');
+          finalMessage += '\n\nPlease read the attached file(s) using the read_uploaded_file tool to see their contents.';
+        }
+      }
       const result = await sendMutation.mutateAsync({
-        message: messageText,
+        message: finalMessage,
         conversationId: activeConversationId || undefined,
       });
 
@@ -1139,6 +1170,18 @@ export default function ChatPage() {
                   case "self_list_files":
                     summary = `Listed ${d.count || 0} files in ${a.args?.dirPath || "directory"}`;
                     break;
+                  case "create_file":
+                    summary = a.success ? `Created ${d.fileName || a.args?.fileName || "file"} (${d.size ? (d.size < 1024 ? d.size + 'B' : (d.size / 1024).toFixed(1) + 'KB') : ''})` : `Failed to create ${a.args?.fileName || "file"}`;
+                    break;
+                  case "create_github_repo":
+                    summary = a.success ? `Created repo: ${d.repoFullName || a.args?.name}` : `Failed to create repo`;
+                    break;
+                  case "push_to_github":
+                    summary = a.success ? `Pushed ${d.filesPushed || 0} files to ${d.repoFullName || a.args?.repoFullName}` : `Failed to push to GitHub`;
+                    break;
+                  case "read_uploaded_file":
+                    summary = a.success ? `Read uploaded file (${d.size || 0} chars)` : `Failed to read file`;
+                    break;
                 }
               }
               return { tool: a.tool, success: a.success, summary };
@@ -1148,6 +1191,24 @@ export default function ChatPage() {
 
       setLocalMessages((prev) => [...prev, assistantMsg]);
 
+      // Track created files for the project files panel
+      if (result.actions && result.actions.length > 0) {
+        const newFiles = result.actions
+          .filter((a: ExecutedAction) => a.tool === 'create_file' && a.success && a.result)
+          .map((a: ExecutedAction) => {
+            const d = a.result as any;
+            return {
+              name: d.fileName || (a.args as any)?.fileName || 'unknown',
+              url: d.url || '',
+              size: d.size || 0,
+              language: d.language || 'text',
+            };
+          });
+        if (newFiles.length > 0) {
+          setCreatedFiles(prev => [...prev, ...newFiles]);
+          setShowProjectFiles(true);
+        }
+      }
       if (result.actions && result.actions.length > 0) {
         const successCount = result.actions.filter((a: ExecutedAction) => a.success).length;
         const failCount = result.actions.length - successCount;
@@ -1287,7 +1348,7 @@ export default function ChatPage() {
       )}
 
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`flex-1 flex flex-col min-w-0 ${showProjectFiles && !isMobile ? 'mr-[360px]' : ''}`}>
         {/* Header */}
         <div className={`flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-sm ${isMobile ? 'px-3 py-2' : 'px-4 pb-3 pt-1'}`}>
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -1318,6 +1379,15 @@ export default function ChatPage() {
                 <Zap className="h-2.5 w-2.5 mr-0.5" />
                 Actions Enabled
               </Badge>
+            )}
+            {createdFiles.length > 0 && (
+              <button
+                onClick={() => setShowProjectFiles(!showProjectFiles)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all ml-2"
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                Files ({createdFiles.length})
+              </button>
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -1454,7 +1524,20 @@ export default function ChatPage() {
                           {msg.role === "assistant" ? (
                             <>
                               {msg.actionsTaken && msg.actionsTaken.length > 0 && (
+                                <>
                                 <ActionBadges actions={msg.actionsTaken} />
+                                {/* Inline file cards for created files */}
+                                {msg.actionsTaken.filter(a => a.tool === 'create_file' && a.success).length > 0 && (
+                                  <div className="mt-2 space-y-1.5">
+                                    {msg.actionsTaken.filter(a => a.tool === 'create_file' && a.success).map((a, fi) => (
+                                      <div key={fi} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-xs">
+                                        <FileText className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                                        <span className="font-medium text-emerald-300 truncate">{a.summary.replace('Created ', '')}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                </>
                               )}
                               <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2 [&>h1]:text-base [&>h2]:text-sm [&>h3]:text-sm [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-words">
                                 <Streamdown>{msg.content}</Streamdown>
@@ -1751,6 +1834,107 @@ export default function ChatPage() {
           </p>
         </div>
       </div>
+      {/* Project Files Panel */}
+      {showProjectFiles && createdFiles.length > 0 && (
+        <div className={`${isMobile ? 'fixed inset-0 z-50 bg-background' : 'fixed right-0 top-0 bottom-0 w-[360px] border-l border-border'} flex flex-col bg-background`}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <FolderOpen className="h-4 w-4 text-emerald-400" />
+              <h3 className="font-semibold text-sm">Project Files</h3>
+              <Badge variant="outline" className="text-[10px]">{createdFiles.length}</Badge>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  const allContent = createdFiles.map(f => `// === ${f.name} ===\n// Download: ${f.url}`).join('\n\n');
+                  navigator.clipboard.writeText(allContent);
+                  toast.success('File list copied');
+                }}
+                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                title="Copy all file links"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setShowProjectFiles(false)}
+                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {createdFiles.map((file, idx) => (
+              <div key={idx} className="rounded-xl border border-border/50 bg-card hover:bg-accent/30 transition-all">
+                <div className="flex items-center justify-between px-3 py-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 text-blue-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{file.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {file.language} · {file.size < 1024 ? `${file.size}B` : `${(file.size / 1024).toFixed(1)}KB`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {file.url && (
+                      <a
+                        href={file.url}
+                        download={file.name}
+                        className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Download"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                    {file.url && (
+                      <a
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Open in new tab"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-border p-3 space-y-2">
+            <Button
+              onClick={() => {
+                createdFiles.forEach(f => {
+                  if (f.url) {
+                    const a = document.createElement('a');
+                    a.href = f.url;
+                    a.download = f.name;
+                    a.click();
+                  }
+                });
+                toast.success('Downloading all files...');
+              }}
+              variant="outline"
+              size="sm"
+              className="w-full gap-2"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download All ({createdFiles.length} files)
+            </Button>
+            <Button
+              onClick={() => handleSend('Push all project files to GitHub. Create a new repository if needed.')}
+              variant="default"
+              size="sm"
+              className="w-full gap-2"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Push to GitHub
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

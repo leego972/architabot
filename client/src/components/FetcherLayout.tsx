@@ -79,7 +79,7 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { TitanLogo } from "./TitanLogo";
 import { Button } from "./ui/button";
 import OnboardingWizard from "./OnboardingWizard";
-import ArchibaldWizard from "./ArchibaldWizard";
+import HelpBotWidget from "./HelpBotWidget";
 import TrialBanner from "./TrialBanner";
 import { useArchibald } from "@/contexts/ArchibaldContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -100,30 +100,31 @@ type MenuGroup = {
 };
 
 const menuGroups: MenuGroup[] = [
+  // ═══════════════════════════════════════════════════════════════
+  // SECTION 1: DEVELOPER TOOLS
+  // ═══════════════════════════════════════════════════════════════
   {
-    title: "Overview",
+    title: "Developer Tools",
     items: [
-      { icon: () => <TitanLogo size="sm" />, label: "Titan Assistant", path: "/dashboard" },
-      { icon: PlusCircle, label: "New Fetch", path: "/fetcher/new" },
-      { icon: ListOrdered, label: "Jobs", path: "/fetcher/jobs" },
-      { icon: KeyRound, label: "Credentials", path: "/fetcher/credentials" },
-    ],
-  },
-  {
-    title: "Tools",
-    items: [
-      { icon: Download, label: "CSV Export", path: "/fetcher/export" },
-      { icon: Upload, label: "Import", path: "/fetcher/import", isNew: true },
-      { icon: Clock, label: "TOTP Vault", path: "/fetcher/totp-vault", isCyber: true },
-      { icon: Key, label: "API Access", path: "/fetcher/api-access" },
-      { icon: Sparkles, label: "Smart Fetch AI", path: "/fetcher/smart-fetch" },
+      { icon: () => <TitanLogo size="sm" />, label: "Titan Builder", path: "/dashboard" },
+      { icon: Copy, label: "Clone Website", path: "/replicate", isNew: true },
       { icon: Terminal, label: "Sandbox", path: "/sandbox", isNew: true },
-      { icon: Copy, label: "Website Replicate", path: "/replicate", isNew: true },
+      { icon: Sparkles, label: "Smart Fetch AI", path: "/fetcher/smart-fetch" },
+      { icon: PlusCircle, label: "New Fetch", path: "/fetcher/new" },
+      { icon: ListOrdered, label: "Fetch Jobs", path: "/fetcher/jobs" },
+      { icon: Store, label: "Grand Bazaar", path: "/marketplace", isNew: true },
+      { icon: Package2, label: "My Inventory", path: "/marketplace/inventory", isNew: true },
+      { icon: ShoppingBag, label: "Sell / Listings", path: "/marketplace/sell", isNew: true },
+      { icon: LayoutDashboard, label: "Seller Dashboard", path: "/marketplace/seller", isNew: true },
     ],
   },
+  // ═══════════════════════════════════════════════════════════════
+  // SECTION 1b: SECURITY TOOLS
+  // ═══════════════════════════════════════════════════════════════
   {
     title: "Security",
     items: [
+      { icon: Clock, label: "TOTP Vault", path: "/fetcher/totp-vault", isCyber: true },
       { icon: Timer, label: "Expiry Watchdog", path: "/fetcher/watchdog" },
       { icon: Activity, label: "Provider Health", path: "/fetcher/provider-health" },
       { icon: TrendingUp, label: "Health Trends", path: "/fetcher/health-trends", isCyber: true },
@@ -131,25 +132,61 @@ const menuGroups: MenuGroup[] = [
       { icon: ShieldCheck, label: "Credential Health", path: "/fetcher/credential-health", isCyber: true },
     ],
   },
+  // ═══════════════════════════════════════════════════════════════
+  // SECTION 2: BUSINESS & FUNDING
+  // ═══════════════════════════════════════════════════════════════
+  {
+    title: "Business & Funding",
+    items: [
+      { icon: Search, label: "Browse Grants", path: "/grants", isNew: true },
+      { icon: FileText, label: "Grant Applications", path: "/grant-applications", isNew: true },
+      { icon: Building2, label: "Companies", path: "/companies", isNew: true },
+      { icon: FileText, label: "Business Plans", path: "/business-plans", isNew: true },
+      { icon: Rocket, label: "Crowdfunding", path: "/crowdfunding", isNew: true },
+      { icon: FileText, label: "My Campaigns", path: "/crowdfunding/my-campaigns", isNew: true },
+      { icon: Megaphone, label: "Advertising", path: "/advertising", adminOnly: true, isNew: true },
+      { icon: DollarSign, label: "Affiliate Dashboard", path: "/affiliate", adminOnly: true, isNew: true },
+      { icon: Gift, label: "My Referrals", path: "/referrals", isNew: true },
+      { icon: Search, label: "SEO Command Center", path: "/seo", adminOnly: true, isNew: true },
+      { icon: FileText, label: "Blog Engine", path: "/blog-admin", adminOnly: true, isNew: true },
+      { icon: Megaphone, label: "Marketing Engine", path: "/marketing", adminOnly: true, isNew: true },
+    ],
+  },
+  // ═══════════════════════════════════════════════════════════════
+  // SECTION 3: ACCOUNT & SETTINGS
+  // ═══════════════════════════════════════════════════════════════
+  {
+    title: "Account & Settings",
+    items: [
+      { icon: CreditCard, label: "Subscription", path: "/dashboard/subscription" },
+      { icon: KeyRound, label: "Credentials", path: "/fetcher/credentials" },
+      { icon: Key, label: "API Access", path: "/fetcher/api-access" },
+      { icon: Users, label: "Team Management", path: "/fetcher/team" },
+      { icon: Vault, label: "Team Vault", path: "/fetcher/team-vault", isNew: true },
+      { icon: Settings, label: "Settings", path: "/fetcher/settings" },
+      { icon: ShieldAlert, label: "Kill Switch", path: "/fetcher/killswitch" },
+    ],
+  },
+  // ═══════════════════════════════════════════════════════════════
+  // SECTION 3b: DATA & AUTOMATION
+  // ═══════════════════════════════════════════════════════════════
   {
     title: "Automation",
     items: [
+      { icon: Download, label: "CSV Export", path: "/fetcher/export" },
+      { icon: Upload, label: "Import", path: "/fetcher/import", isNew: true },
       { icon: RefreshCw, label: "Bulk Sync", path: "/fetcher/bulk-sync" },
       { icon: CalendarClock, label: "Auto-Sync", path: "/fetcher/auto-sync" },
       { icon: Wand2, label: "Provider Onboarding", path: "/fetcher/onboarding", isNew: true },
-    ],
-  },
-  {
-    title: "Team & History",
-    items: [
-      { icon: Users, label: "Team Management", path: "/fetcher/team" },
-      { icon: Vault, label: "Team Vault", path: "/fetcher/team-vault", isNew: true },
       { icon: History, label: "Credential History", path: "/fetcher/history" },
       { icon: ScrollText, label: "Audit Logs", path: "/fetcher/audit-logs" },
     ],
   },
+  // ═══════════════════════════════════════════════════════════════
+  // SECTION 4: DEVELOPER API & ADMIN
+  // ═══════════════════════════════════════════════════════════════
   {
-    title: "Developer",
+    title: "Developer API",
     items: [
       { icon: Book, label: "API Docs", path: "/fetcher/developer-docs", isNew: true },
       { icon: Webhook, label: "Webhooks", path: "/fetcher/webhooks", isNew: true },
@@ -164,54 +201,9 @@ const menuGroups: MenuGroup[] = [
       { icon: Package, label: "Releases", path: "/fetcher/releases", adminOnly: true },
       { icon: UserCog, label: "User Management", path: "/fetcher/admin", adminOnly: true, isNew: true },
       { icon: Zap, label: "Self-Improvement", path: "/fetcher/self-improvement", adminOnly: true, isNew: true },
-      { icon: Megaphone, label: "Marketing Engine", path: "/marketing", adminOnly: true, isNew: true },
-      { icon: Megaphone, label: "Advertising System", path: "/advertising", adminOnly: true, isNew: true },
-    ],
-  },
-  {
-    title: "Affiliate & Referrals",
-    items: [
-      { icon: DollarSign, label: "Affiliate Dashboard", path: "/affiliate", adminOnly: true, isNew: true },
-      { icon: Gift, label: "My Referrals", path: "/referrals", isNew: true },
-    ],
-  },
-  {
-    title: "SEO",
-    items: [
-      { icon: Search, label: "SEO Command Center", path: "/seo", adminOnly: true, isNew: true },
-      { icon: FileText, label: "Blog Engine", path: "/blog-admin", adminOnly: true, isNew: true },
-    ],
-  },
-  {
-    title: "Grant Finder",
-    items: [
-      { icon: Search, label: "Browse Grants", path: "/grants", isNew: true },
-      { icon: Building2, label: "Companies", path: "/companies", isNew: true },
-      { icon: FileText, label: "Business Plans", path: "/business-plans", isNew: true },
-      { icon: FileText, label: "Applications", path: "/grant-applications", isNew: true },
-      { icon: Rocket, label: "Browse Campaigns", path: "/crowdfunding", isNew: true },
-      { icon: FileText, label: "My Campaigns", path: "/crowdfunding/my-campaigns", isNew: true },
-    ],
-  },
-  {
-    title: "Grand Bazaar",
-    items: [
-      { icon: Store, label: "Browse Marketplace", path: "/marketplace", isNew: true },
-      { icon: Package2, label: "My Inventory", path: "/marketplace/inventory", isNew: true },
-      { icon: ShoppingBag, label: "Sell / My Listings", path: "/marketplace/sell", isNew: true },
-      { icon: LayoutDashboard, label: "Seller Dashboard", path: "/marketplace/seller", isNew: true },
-    ],
-  },
-  {
-    title: "System",
-    items: [
-      { icon: CreditCard, label: "Subscription", path: "/dashboard/subscription" },
-      { icon: Settings, label: "Settings", path: "/fetcher/settings" },
-      { icon: ShieldAlert, label: "Kill Switch", path: "/fetcher/killswitch" },
     ],
   },
 ];
-
 // Flat list for active item detection
 const allMenuItems = menuGroups.flatMap((g) => g.items);
 
@@ -231,7 +223,7 @@ function ArchibaldToggleItem() {
       className="cursor-pointer"
     >
       <Wand2 className="mr-2 h-4 w-4" />
-      <span>{isEnabled ? "Hide Archibald" : "Show Archibald"}</span>
+      <span>{isEnabled ? "Hide Help Bot" : "Show Help Bot"}</span>
     </DropdownMenuItem>
   );
 }
@@ -297,7 +289,7 @@ export default function FetcherLayout({
         {children}
       </FetcherLayoutContent>
       <OnboardingWizard />
-      <ArchibaldWizard />
+      <HelpBotWidget />
     </SidebarProvider>
   );
 }

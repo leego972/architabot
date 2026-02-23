@@ -1505,6 +1505,101 @@ const selfApiMap: Tool = {
   },
 };
 
+
+// ─── Project Builder Tools (create real downloadable files) ──────────
+const createProjectFile: Tool = {
+  type: "function",
+  function: {
+    name: "create_file",
+    description:
+      "Create a file in the user's project. The file is stored permanently and the user can view, download, and push it to GitHub. ALWAYS use this tool instead of pasting code in your message. The user CANNOT copy code from chat — they need actual files.",
+    parameters: {
+      type: "object",
+      properties: {
+        fileName: {
+          type: "string",
+          description: "File name with path (e.g., 'src/index.html', 'package.json', 'styles/main.css')",
+        },
+        content: {
+          type: "string",
+          description: "The complete file content",
+        },
+        language: {
+          type: "string",
+          description: "Programming language for syntax highlighting (e.g., 'html', 'css', 'javascript', 'typescript', 'python', 'json')",
+        },
+      },
+      required: ["fileName", "content"],
+    },
+  },
+};
+const createGithubRepo: Tool = {
+  type: "function",
+  function: {
+    name: "create_github_repo",
+    description:
+      "Create a new GitHub repository for the user's project. Requires the user to have connected their GitHub PAT in settings. Returns the repo URL.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Repository name (lowercase, hyphens allowed, e.g., 'my-landing-page')",
+        },
+        description: {
+          type: "string",
+          description: "Short description of the repository",
+        },
+        isPrivate: {
+          type: "boolean",
+          description: "Whether the repo should be private (default: true)",
+        },
+      },
+      required: ["name"],
+    },
+  },
+};
+const pushToGithubRepo: Tool = {
+  type: "function",
+  function: {
+    name: "push_to_github",
+    description:
+      "Push all project files from the current conversation to a GitHub repository. The repo must have been created first with create_github_repo, or the user can provide an existing repo name.",
+    parameters: {
+      type: "object",
+      properties: {
+        repoFullName: {
+          type: "string",
+          description: "Full repo name (e.g., 'username/repo-name'). If not provided, uses the last created repo.",
+        },
+        commitMessage: {
+          type: "string",
+          description: "Git commit message (default: 'Initial commit from Titan Builder')",
+        },
+      },
+      required: [],
+    },
+  },
+};
+const readUploadedFile: Tool = {
+  type: "function",
+  function: {
+    name: "read_uploaded_file",
+    description:
+      "Read the content of a file that the user uploaded to the chat. Use this when the user uploads a file and you need to read its contents to understand what they want.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "The URL of the uploaded file (provided in the user's message as [Attached file: ...])",
+        },
+      },
+      required: ["url"],
+    },
+  },
+};
+
 // ─── Export All Tools ────────────────────────────────────────────────────
 
 export const TITAN_TOOLS: Tool[] = [
@@ -1573,6 +1668,11 @@ export const TITAN_TOOLS: Tool[] = [
   appResearch,
   appClone,
   websiteReplicate,
+  // Project Builder (create real downloadable files)
+  createProjectFile,
+  createGithubRepo,
+  pushToGithubRepo,
+  readUploadedFile,
   // Self-Improvement
   selfReadFile,
   selfListFiles,
@@ -1626,6 +1726,23 @@ export const BUILDER_TOOLS: Tool[] = [
   selfAnalyzeFile,
   selfFindDeadCode,
   selfApiMap,
+  // System
+  getSystemStatus,
+];
+
+// Focused tool subset for EXTERNAL project building — creates real files the user can download
+export const EXTERNAL_BUILD_TOOLS: Tool[] = [
+  // Core builder tools — create real files
+  createProjectFile,
+  readUploadedFile,
+  // Web Research
+  webSearch,
+  webPageRead,
+  // GitHub integration
+  createGithubRepo,
+  pushToGithubRepo,
+  // Navigation
+  navigateToPage,
   // System
   getSystemStatus,
 ];

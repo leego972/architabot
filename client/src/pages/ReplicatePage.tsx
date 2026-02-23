@@ -31,6 +31,8 @@ import {
   Copy,
   ExternalLink,
   AlertCircle,
+  Github,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -559,7 +561,46 @@ function ProjectList({
                 </div>
               </div>
 
-              {project.statusMessage && (
+              {/* GitHub Push Form */}
+          {showGithubPush && (
+            <div className="mt-3 p-3 rounded-lg border border-purple-500/30 bg-purple-500/5 space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <Github className="h-4 w-4 text-purple-400" />
+                Push to GitHub Repository
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Creates a new GitHub repository and pushes all project files. Make sure your GitHub PAT is saved in Account Settings.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={githubRepoName}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGithubRepoName(e.target.value)}
+                  placeholder="Repository name (e.g., my-clone)"
+                  className="h-8 text-sm flex-1"
+                />
+                <Button
+                  onClick={() => pushToGithubMutation.mutate({ projectId: project.id, repoName: githubRepoName })}
+                  disabled={isPushing || !githubRepoName.trim()}
+                  size="sm"
+                  className="gap-1.5 shrink-0"
+                >
+                  {isPushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  {isPushing ? "Pushing..." : "Push"}
+                </Button>
+              </div>
+              {(project as any).githubRepoUrl && (
+                <a
+                  href={(project as any).githubRepoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-purple-400 hover:underline flex items-center gap-1"
+                >
+                  View on GitHub <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          )}
+          {project.statusMessage && (
                 <p className="text-xs text-muted-foreground mt-2 pl-13">
                   {project.statusMessage}
                 </p>
@@ -600,6 +641,18 @@ function ProjectDetail({
     onError: (err) => toast.error(err.message),
   });
 
+  const [githubRepoName, setGithubRepoName] = useState("");
+  const [showGithubPush, setShowGithubPush] = useState(false);
+
+  const pushToGithubMutation = trpc.replicate.pushToGithub.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Pushed to GitHub: ${data.repoUrl}`);
+      setShowGithubPush(false);
+      onRefresh();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   const buildMutation = trpc.replicate.build.useMutation({
     onSuccess: () => {
       toast.success("Build complete!");
@@ -611,7 +664,8 @@ function ProjectDetail({
   const isResearching = researchMutation.isPending;
   const isPlanning = planMutation.isPending;
   const isBuilding = buildMutation.isPending;
-  const isBusy = isResearching || isPlanning || isBuilding;
+  const isPushing = pushToGithubMutation.isPending;
+  const isBusy = isResearching || isPlanning || isBuilding || isPushing;
 
   return (
     <div className="space-y-6">
@@ -644,9 +698,59 @@ function ProjectDetail({
               <Badge variant="outline" className="text-xs">
                 {project.priority === "mvp" ? "MVP" : "Full"}
               </Badge>
+              {(project.status === "build_complete" || project.status === "branded" || project.status === "pushed") && (
+                <Button
+                  onClick={() => setShowGithubPush(!showGithubPush)}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <Github className="h-3.5 w-3.5" />
+                  Push to GitHub
+                </Button>
+              )}
             </div>
           </div>
 
+          {/* GitHub Push Form */}
+          {showGithubPush && (
+            <div className="mt-3 p-3 rounded-lg border border-purple-500/30 bg-purple-500/5 space-y-2">
+              <p className="text-sm font-medium flex items-center gap-2">
+                <Github className="h-4 w-4 text-purple-400" />
+                Push to GitHub Repository
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Creates a new GitHub repository and pushes all project files. Make sure your GitHub PAT is saved in Account Settings.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={githubRepoName}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGithubRepoName(e.target.value)}
+                  placeholder="Repository name (e.g., my-clone)"
+                  className="h-8 text-sm flex-1"
+                />
+                <Button
+                  onClick={() => pushToGithubMutation.mutate({ projectId: project.id, repoName: githubRepoName })}
+                  disabled={isPushing || !githubRepoName.trim()}
+                  size="sm"
+                  className="gap-1.5 shrink-0"
+                >
+                  {isPushing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  {isPushing ? "Pushing..." : "Push"}
+                </Button>
+              </div>
+              {(project as any).githubRepoUrl && (
+                <a
+                  href={(project as any).githubRepoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-purple-400 hover:underline flex items-center gap-1"
+                >
+                  View on GitHub <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          )}
           {project.statusMessage && (
             <p className="text-sm text-muted-foreground mt-3 pl-15">
               {project.statusMessage}

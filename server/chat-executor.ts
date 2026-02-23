@@ -7,6 +7,8 @@
  */
 
 import { getDb } from "./db";
+import { storagePut } from "./storage";
+import { chatConversations } from "../drizzle/schema";
 import {
   fetcherJobs,
   fetcherTasks,
@@ -28,6 +30,7 @@ import {
   fetchRecommendations,
   auditLogs,
   builderActivityLog,
+  sandboxFiles,
 } from "../drizzle/schema";
 import { eq, and, desc, isNull, sql, gte } from "drizzle-orm";
 import { PROVIDERS } from "../shared/fetcher";
@@ -113,7 +116,8 @@ export async function executeToolCall(
   userName?: string,
   userEmail?: string,
   userApiKey?: string | null
-): Promise<ToolExecutionResult> {
+,
+  conversationId?: number): Promise<ToolExecutionResult> {
   try {
     switch (toolName) {
       // ── Credentials & Fetching ──────────────────────────────────
@@ -461,6 +465,15 @@ export async function executeToolCall(
       case "website_replicate":
         return await execWebsiteReplicate(userId, args);
 
+      // ── Project Builder Tools ─────────────────────────────────
+      case "create_file":
+        return await execCreateFile(userId, args, conversationId);
+      case "create_github_repo":
+        return await execCreateGithubRepo(userId, args, conversationId);
+      case "push_to_github":
+        return await execPushToGithub(userId, args, conversationId);
+      case "read_uploaded_file":
+        return await execReadUploadedFile(args);
       default:
         return { success: false, error: `Unknown tool: ${toolName}` };
     }
@@ -3207,4 +3220,373 @@ async function execWebsiteReplicate(
   } catch (err: any) {
     return { success: false, error: `Failed to create replicate project: ${err.message}` };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Project Builder Tool Implementations
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Create a file in the user's project — stored in S3 with a downloadable URL.
+ * This is the core builder tool that replaces sandbox_write_file for user-facing projects.
+ */
+async function execCreateFile(
+  userId: number,
+  args: Record<string, unknown>,
+  conversationId?: number
+): Promise<ToolExecutionResult> {
+  const fileName = args.fileName as string;
+  const content = args.content as string;
+  const language = (args.language as string) || detectLanguage(fileName);
+
+  if (!fileName || content === undefined) {
+    return { success: false, error: "fileName and content are required" };
+  }
+
+  try {
+    // Upload to S3
+    const timestamp = Date.now();
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9._\/-]/g, "_");
+    const s3Key = `projects/${userId}/${conversationId || "general"}/${timestamp}-${safeFileName}`;
+    const contentType = getContentType(fileName);
+    const { url } = await storagePut(s3Key, content, contentType);
+
+    // Store in sandboxFiles table (reuse existing table)
+    const db = await getDb();
+    if (db) {
+      // Get or create a sandbox for this user
+      const sbId = await getOrCreateDefaultSandbox(userId);
+      await db.insert(sandboxFiles).values({
+        sandboxId: sbId,
+        filePath: fileName,
+        content: content.length <= 65000 ? content : null,
+        s3Key: s3Key,
+        fileSize: Buffer.byteLength(content, "utf-8"),
+        isDirectory: 0,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        fileName,
+        url,
+        size: Buffer.byteLength(content, "utf-8"),
+        language,
+        message: `File created: ${fileName} (${formatFileSize(Buffer.byteLength(content, "utf-8"))})`,
+      },
+    };
+  } catch (err: any) {
+    console.error("[CreateFile] Error:", err);
+    return { success: false, error: `Failed to create file: ${err.message}` };
+  }
+}
+
+/**
+ * Create a GitHub repository for the user's project.
+ */
+async function execCreateGithubRepo(
+  userId: number,
+  args: Record<string, unknown>,
+  conversationId?: number
+): Promise<ToolExecutionResult> {
+  const repoName = args.name as string;
+  const description = (args.description as string) || "Created by Titan Builder";
+  const isPrivate = args.isPrivate !== false; // default true
+
+  if (!repoName) {
+    return { success: false, error: "Repository name is required" };
+  }
+
+  try {
+    // Get user's GitHub PAT from user_secrets
+    const githubToken = await getUserGithubToken(userId);
+    if (!githubToken) {
+      return {
+        success: false,
+        error: "No GitHub token found. Please add your GitHub Personal Access Token in Account Settings to use this feature.",
+      };
+    }
+
+    // Create repo via GitHub API
+    const response = await fetch("https://api.github.com/user/repos", {
+      method: "POST",
+      headers: {
+        Authorization: `token ${githubToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify({
+        name: repoName,
+        description,
+        private: isPrivate,
+        auto_init: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error: `GitHub API error: ${(err as any).message || response.statusText}`,
+      };
+    }
+
+    const repo = await response.json() as any;
+
+    return {
+      success: true,
+      data: {
+        repoUrl: repo.html_url,
+        repoFullName: repo.full_name,
+        cloneUrl: repo.clone_url,
+        isPrivate: repo.private,
+        defaultBranch: repo.default_branch || "main",
+        message: `Repository created: ${repo.full_name} (${repo.private ? "private" : "public"})`,
+      },
+    };
+  } catch (err: any) {
+    console.error("[CreateGithubRepo] Error:", err);
+    return { success: false, error: `Failed to create repo: ${err.message}` };
+  }
+}
+
+/**
+ * Push all project files from the current conversation to a GitHub repo.
+ */
+async function execPushToGithub(
+  userId: number,
+  args: Record<string, unknown>,
+  conversationId?: number
+): Promise<ToolExecutionResult> {
+  const repoFullName = args.repoFullName as string;
+  const commitMessage = (args.commitMessage as string) || "Initial commit from Titan Builder";
+
+  if (!repoFullName) {
+    return { success: false, error: "repoFullName is required (e.g., 'username/repo-name')" };
+  }
+
+  try {
+    const githubToken = await getUserGithubToken(userId);
+    if (!githubToken) {
+      return {
+        success: false,
+        error: "No GitHub token found. Please add your GitHub PAT in Account Settings.",
+      };
+    }
+
+    // Get all project files for this user's sandbox
+    const db = await getDb();
+    if (!db) return { success: false, error: "Database unavailable" };
+
+    const sbId = await getOrCreateDefaultSandbox(userId);
+    const files = await db
+      .select()
+      .from(sandboxFiles)
+      .where(and(eq(sandboxFiles.sandboxId, sbId), eq(sandboxFiles.isDirectory, 0)));
+
+    if (files.length === 0) {
+      return { success: false, error: "No files to push. Create files first using the create_file tool." };
+    }
+
+    // Push files using GitHub API (create tree + commit)
+    const pushed = await pushFilesToGithub(githubToken, repoFullName, files, commitMessage);
+
+    return {
+      success: true,
+      data: {
+        repoFullName,
+        repoUrl: `https://github.com/${repoFullName}`,
+        filesPushed: pushed,
+        commitMessage,
+        message: `Pushed ${pushed} files to ${repoFullName}`,
+      },
+    };
+  } catch (err: any) {
+    console.error("[PushToGithub] Error:", err);
+    return { success: false, error: `Failed to push: ${err.message}` };
+  }
+}
+
+/**
+ * Read content from an uploaded file URL.
+ */
+async function execReadUploadedFile(
+  args: Record<string, unknown>
+): Promise<ToolExecutionResult> {
+  const url = args.url as string;
+  if (!url) return { success: false, error: "URL is required" };
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return { success: false, error: `Failed to fetch file: ${response.statusText}` };
+    }
+    const content = await response.text();
+    return {
+      success: true,
+      data: {
+        content: content.slice(0, 100000), // Limit to 100KB
+        size: content.length,
+        truncated: content.length > 100000,
+      },
+    };
+  } catch (err: any) {
+    return { success: false, error: `Failed to read file: ${err.message}` };
+  }
+}
+
+// ─── GitHub Helper Functions ─────────────────────────────────────────
+
+async function getUserGithubToken(userId: number): Promise<string | null> {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+    const { userSecrets } = await import("../drizzle/schema");
+    const { decrypt } = await import("./fetcher-db");
+    const secrets = await db
+      .select()
+      .from(userSecrets)
+      .where(and(eq(userSecrets.userId, userId), eq(userSecrets.secretType, "github_pat")));
+    if (secrets.length === 0) return null;
+    return decrypt(secrets[0].encryptedValue);
+  } catch {
+    return null;
+  }
+}
+
+async function pushFilesToGithub(
+  token: string,
+  repoFullName: string,
+  files: Array<{ filePath: string; content: string | null; s3Key: string | null }>,
+  commitMessage: string
+): Promise<number> {
+  const headers = {
+    Authorization: `token ${token}`,
+    "Content-Type": "application/json",
+    Accept: "application/vnd.github.v3+json",
+  };
+
+  // Get the default branch ref
+  let sha: string | null = null;
+  try {
+    const refResp = await fetch(`https://api.github.com/repos/${repoFullName}/git/ref/heads/main`, { headers });
+    if (refResp.ok) {
+      const refData = await refResp.json() as any;
+      sha = refData.object?.sha;
+    }
+  } catch {}
+
+  // Create blobs for each file
+  const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+
+  for (const file of files) {
+    let content = file.content;
+    if (!content && file.s3Key) {
+      // Fetch from S3
+      try {
+        const { storageGet } = await import("./storage");
+        const data = await storageGet(file.s3Key);
+        content = typeof data === "string" ? data : Buffer.from(data as any).toString("utf-8");
+      } catch {
+        continue;
+      }
+    }
+    if (!content) continue;
+
+    // Create blob
+    const blobResp = await fetch(`https://api.github.com/repos/${repoFullName}/git/blobs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ content, encoding: "utf-8" }),
+    });
+    if (!blobResp.ok) continue;
+    const blobData = await blobResp.json() as any;
+
+    treeItems.push({
+      path: file.filePath.replace(/^\//, ""),
+      mode: "100644",
+      type: "blob",
+      sha: blobData.sha,
+    });
+  }
+
+  if (treeItems.length === 0) return 0;
+
+  // Create tree
+  const treeBody: any = { tree: treeItems };
+  if (sha) treeBody.base_tree = sha;
+
+  const treeResp = await fetch(`https://api.github.com/repos/${repoFullName}/git/trees`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(treeBody),
+  });
+  if (!treeResp.ok) throw new Error("Failed to create git tree");
+  const treeData = await treeResp.json() as any;
+
+  // Create commit
+  const commitBody: any = {
+    message: commitMessage,
+    tree: treeData.sha,
+  };
+  if (sha) commitBody.parents = [sha];
+
+  const commitResp = await fetch(`https://api.github.com/repos/${repoFullName}/git/commits`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(commitBody),
+  });
+  if (!commitResp.ok) throw new Error("Failed to create commit");
+  const commitData = await commitResp.json() as any;
+
+  // Update ref (or create if new repo)
+  if (sha) {
+    await fetch(`https://api.github.com/repos/${repoFullName}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ sha: commitData.sha }),
+    });
+  } else {
+    await fetch(`https://api.github.com/repos/${repoFullName}/git/refs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ref: "refs/heads/main", sha: commitData.sha }),
+    });
+  }
+
+  return treeItems.length;
+}
+
+// ─── File Utility Functions ──────────────────────────────────────────
+
+function detectLanguage(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  const map: Record<string, string> = {
+    ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
+    py: "python", rb: "ruby", go: "go", rs: "rust", java: "java",
+    html: "html", css: "css", scss: "scss", less: "less",
+    json: "json", yaml: "yaml", yml: "yaml", toml: "toml",
+    md: "markdown", sql: "sql", sh: "bash", bash: "bash",
+    xml: "xml", svg: "svg", txt: "text",
+  };
+  return map[ext] || "text";
+}
+
+function getContentType(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  const map: Record<string, string> = {
+    html: "text/html", css: "text/css", js: "application/javascript",
+    ts: "text/typescript", tsx: "text/typescript", json: "application/json",
+    py: "text/x-python", md: "text/markdown", svg: "image/svg+xml",
+    xml: "application/xml", yaml: "text/yaml", yml: "text/yaml",
+    txt: "text/plain", sh: "text/x-shellscript",
+  };
+  return map[ext] || "text/plain";
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }

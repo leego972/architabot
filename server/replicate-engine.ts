@@ -852,6 +852,243 @@ Return ONLY a JSON array: [{"path": "file/path", "content": "full file content"}
   return [];
 }
 
+
+// ─── Step 5: Push to GitHub ────────────────────────────────────────
+export async function pushToGithub(
+  projectId: number,
+  userId: number,
+  repoName: string
+): Promise<{ success: boolean; repoUrl: string; message: string }> {
+  const project = await getProject(projectId, userId);
+  if (!project) throw new Error("Project not found");
+  if (project.status !== "build_complete" && project.status !== "branded") {
+    throw new Error("Build must be complete before pushing to GitHub");
+  }
+
+  const plan = project.buildPlan;
+  if (!plan) throw new Error("No build plan found");
+
+  // Get user's GitHub PAT from secrets
+  const db = getDb();
+  const secrets = await db.query.userSecrets.findFirst({
+    where: (s: any, { eq: eqOp }: any) => eqOp(s.userId, userId),
+  });
+  const githubToken = secrets?.githubToken;
+  if (!githubToken) {
+    throw new Error("GitHub Personal Access Token not found. Please add it in Account Settings.");
+  }
+
+  await updateProjectStatus(projectId, "pushing", `Pushing to GitHub: ${repoName}...`);
+  appendBuildLog(projectId, {
+    step: 99,
+    status: "running",
+    message: `Creating GitHub repository: ${repoName}`,
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    // 1. Create the GitHub repo
+    const createRes = await fetch("https://api.github.com/user/repos", {
+      method: "POST",
+      headers: {
+        Authorization: `token ${githubToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify({
+        name: repoName,
+        description: project.targetDescription || `Clone of ${project.targetUrl}`,
+        private: false,
+        auto_init: true,
+      }),
+    });
+
+    if (!createRes.ok) {
+      const err = await createRes.json().catch(() => ({}));
+      // If repo already exists, that's okay
+      if (createRes.status !== 422) {
+        throw new Error(`Failed to create repo: ${(err as any).message || createRes.statusText}`);
+      }
+    }
+
+    const repoData = await createRes.json();
+    const owner = (repoData as any).owner?.login || (repoData as any).full_name?.split("/")[0];
+    const repoFullName = `${owner}/${repoName}`;
+
+    // 2. Get the sandbox files
+    const sandboxId = project.sandboxId;
+    if (!sandboxId) throw new Error("No sandbox found for this project");
+
+    // Read all files from the sandbox
+    const projectDir = `/home/sandbox/${plan.projectName}`;
+    const lsResult = await executeCommand(sandboxId, userId, `find ${projectDir} -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' | head -200`, {
+      timeoutMs: 30000,
+      triggeredBy: "system",
+    });
+
+    const filePaths = lsResult.output.trim().split("\n").filter(Boolean);
+    if (filePaths.length === 0) throw new Error("No files found in sandbox");
+
+    appendBuildLog(projectId, {
+      step: 99,
+      status: "running",
+      message: `Found ${filePaths.length} files. Pushing to ${repoFullName}...`,
+      timestamp: new Date().toISOString(),
+    });
+
+    // 3. Push files using the GitHub API (tree/blob/commit approach)
+    // Get the default branch SHA
+    const refRes = await fetch(`https://api.github.com/repos/${repoFullName}/git/ref/heads/main`, {
+      headers: { Authorization: `token ${githubToken}`, Accept: "application/vnd.github.v3+json" },
+    });
+    
+    let baseSha: string;
+    let baseTreeSha: string;
+    
+    if (refRes.ok) {
+      const refData = await refRes.json() as any;
+      baseSha = refData.object.sha;
+      const commitRes = await fetch(`https://api.github.com/repos/${repoFullName}/git/commits/${baseSha}`, {
+        headers: { Authorization: `token ${githubToken}`, Accept: "application/vnd.github.v3+json" },
+      });
+      const commitData = await commitRes.json() as any;
+      baseTreeSha = commitData.tree.sha;
+    } else {
+      // Empty repo — create initial commit
+      baseSha = "";
+      baseTreeSha = "";
+    }
+
+    // Create blobs for each file
+    const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+    
+    for (const filePath of filePaths) {
+      try {
+        const catResult = await executeCommand(sandboxId, userId, `cat "${filePath}" | base64`, {
+          timeoutMs: 15000,
+          triggeredBy: "system",
+        });
+        
+        const base64Content = catResult.output.trim();
+        if (!base64Content) continue;
+
+        const blobRes = await fetch(`https://api.github.com/repos/${repoFullName}/git/blobs`, {
+          method: "POST",
+          headers: {
+            Authorization: `token ${githubToken}`,
+            "Content-Type": "application/json",
+            Accept: "application/vnd.github.v3+json",
+          },
+          body: JSON.stringify({
+            content: base64Content,
+            encoding: "base64",
+          }),
+        });
+
+        if (blobRes.ok) {
+          const blobData = await blobRes.json() as any;
+          const relativePath = filePath.replace(`${projectDir}/`, "");
+          treeItems.push({
+            path: relativePath,
+            mode: "100644",
+            type: "blob",
+            sha: blobData.sha,
+          });
+        }
+      } catch {
+        // Skip files that can't be read
+      }
+    }
+
+    if (treeItems.length === 0) throw new Error("No files could be read from sandbox");
+
+    // Create tree
+    const treeBody: any = { tree: treeItems };
+    if (baseTreeSha) treeBody.base_tree = baseTreeSha;
+
+    const treeRes = await fetch(`https://api.github.com/repos/${repoFullName}/git/trees`, {
+      method: "POST",
+      headers: {
+        Authorization: `token ${githubToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify(treeBody),
+    });
+
+    if (!treeRes.ok) throw new Error("Failed to create git tree");
+    const treeData = await treeRes.json() as any;
+
+    // Create commit
+    const commitBody: any = {
+      message: `Clone of ${project.targetUrl} — built by Archibald Titan`,
+      tree: treeData.sha,
+    };
+    if (baseSha) commitBody.parents = [baseSha];
+
+    const commitRes2 = await fetch(`https://api.github.com/repos/${repoFullName}/git/commits`, {
+      method: "POST",
+      headers: {
+        Authorization: `token ${githubToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify(commitBody),
+    });
+
+    if (!commitRes2.ok) throw new Error("Failed to create commit");
+    const newCommit = await commitRes2.json() as any;
+
+    // Update ref
+    const updateRefRes = await fetch(`https://api.github.com/repos/${repoFullName}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `token ${githubToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify({ sha: newCommit.sha, force: true }),
+    });
+
+    if (!updateRefRes.ok) {
+      // Try creating the ref instead
+      await fetch(`https://api.github.com/repos/${repoFullName}/git/refs`, {
+        method: "POST",
+        headers: {
+          Authorization: `token ${githubToken}`,
+          "Content-Type": "application/json",
+          Accept: "application/vnd.github.v3+json",
+        },
+        body: JSON.stringify({ ref: "refs/heads/main", sha: newCommit.sha }),
+      });
+    }
+
+    const repoUrl = `https://github.com/${repoFullName}`;
+    
+    await updateProjectStatus(projectId, "pushed", `Pushed ${treeItems.length} files to ${repoUrl}`, {
+      githubRepoUrl: repoUrl,
+    });
+
+    appendBuildLog(projectId, {
+      step: 99,
+      status: "success",
+      message: `Pushed ${treeItems.length} files to ${repoUrl}`,
+      timestamp: new Date().toISOString(),
+    });
+
+    return { success: true, repoUrl, message: `Pushed ${treeItems.length} files to ${repoUrl}` };
+  } catch (err: any) {
+    await updateProjectStatus(projectId, "build_complete", `GitHub push failed: ${err.message}`);
+    appendBuildLog(projectId, {
+      step: 99,
+      status: "error",
+      message: `GitHub push failed: ${err.message}`,
+      timestamp: new Date().toISOString(),
+    });
+    throw err;
+  }
+}
+
 async function appendBuildLog(projectId: number, entry: BuildLogEntry): Promise<void> {
   const db = await getDb();
   if (!db) return;

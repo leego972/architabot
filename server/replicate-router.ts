@@ -14,6 +14,7 @@ import {
   executeBuild,
   updateBranding,
   updateStripeConfig,
+  pushToGithub,
 } from "./replicate-engine";
 
 export const replicateRouter = router({
@@ -165,6 +166,19 @@ export const replicateRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Push built project to GitHub
+   */
+  pushToGithub: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.number().int(),
+        repoName: z.string().min(1),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      return pushToGithub(input.projectId, ctx.user.id, input.repoName);
+    }),
   /**
    * Delete a replicate project
    */
