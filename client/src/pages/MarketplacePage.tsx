@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1748,7 +1748,27 @@ function SellerDashboardView() {
 
 export default function MarketplacePage() {
   const [location, navigate] = useLocation();
+  const searchString = useSearch();
   const [selectedListingId, setSelectedListingId] = useState<number | null>(null);
+
+  // Handle Stripe checkout success/cancel URL params
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    if (params.get("purchase_success") === "true") {
+      const listingUid = params.get("listing") || "";
+      toast.success(`Purchase complete! ${listingUid ? `Item ${listingUid} has` : "Your item has"} been added to your inventory.`, { duration: 6000 });
+      navigate("/marketplace/inventory", { replace: true });
+    } else if (params.get("purchase_canceled") === "true") {
+      toast.info("Checkout was canceled. No charges were made.");
+      navigate("/marketplace", { replace: true });
+    } else if (params.get("seller_success") === "true") {
+      toast.success("Welcome to the Bazaar! Your seller stall is now active.", { duration: 6000 });
+      navigate("/marketplace/sell", { replace: true });
+    } else if (params.get("seller_canceled") === "true") {
+      toast.info("Seller registration was canceled. No charges were made.");
+      navigate("/marketplace", { replace: true });
+    }
+  }, [searchString, navigate]);
 
   // Determine active tab from URL
   const subPath = location.replace("/marketplace", "").replace(/^\//, "");

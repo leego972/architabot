@@ -339,10 +339,10 @@ async function startServer() {
         const existing = await db.select({ count: sql<number>`count(*)` }).from(releases);
         if (existing[0].count === 0) {
           await db.insert(releases).values({
-            version: "7.1.0",
-            title: "Archibald Titan v7.1.0",
-            changelog: "**Archibald Titan v7.1.0 — Latest Release**\n\n" +
-              "All features from v1.0 through v7.1 included:\n\n" +
+            version: "8.1.0",
+            title: "Archibald Titan v8.1.0",
+            changelog: "**Archibald Titan v8.1.0 — Latest Release**\n\n" +
+              "All features from v1.0 through v8.1 included:\n\n" +
               "- 15+ Provider Automation with stealth browser\n" +
               "- AES-256-GCM Encrypted Vault\n" +
               "- CAPTCHA Solving (reCAPTCHA, hCaptcha)\n" +
@@ -359,7 +359,13 @@ async function startServer() {
               "- Email/Password Authentication\n" +
               "- Credit Membership System\n" +
               "- Autonomous Advertising & Marketing Engine\n" +
-              "- Contextual Affiliate Recommendations",
+              "- Contextual Affiliate Recommendations\n" +
+              "- Tech Bazaar Marketplace with dual payment (Credits + Stripe)\n" +
+              "- Seller Payout System (Bank, PayPal, Stripe Connect)\n" +
+              "- AI-Powered Code Builder with Sandbox\n" +
+              "- Website Replicator & Domain Search\n" +
+              "- SEO Engine with IndexNow & Structured Data\n" +
+              "- Blog CMS with AI Generation",
             downloadUrlWindows: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/AlISTsCQSdQTgAut.exe",
             downloadUrlMac: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/hHpsXgJtQRLZdDOK.zip",
             downloadUrlLinux: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/aelqItiquyVUiorf.AppImage",
@@ -368,7 +374,7 @@ async function startServer() {
             isPrerelease: 0,
             downloadCount: 0,
           });
-          log.info('Auto-seeded v7.1.0 release');
+          log.info('Auto-seeded v8.1.0 release');
         } else {
           log.debug(`Releases already exist (${existing[0].count} found)`);
         }
