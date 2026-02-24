@@ -33,6 +33,7 @@ import {
   sandboxFiles,
 } from "../drizzle/schema";
 import { eq, and, desc, isNull, sql, gte } from "drizzle-orm";
+import { safeSqlIdentifier } from "./_core/sql-sanitize.js";
 import { PROVIDERS } from "../shared/fetcher";
 import {
   getDecryptedCredentials,
@@ -99,6 +100,7 @@ import {
 import { invokeLLM } from "./_core/llm";
 import { sandboxes } from "../drizzle/schema";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("ChatExecutor");
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -232,8 +234,8 @@ export async function executeToolCall(
           return { success: true, data: { message: "No results found. Try a different search query.", query } };
         }
         return { success: true, data: { query, resultCount: results.length, results } };
-      } catch (err: any) {
-        return { success: false, error: `Search failed: ${err.message}` };
+      } catch (err: unknown) {
+        return { success: false, error: `Search failed: ${getErrorMessage(err)}` };
       }
     }
 
@@ -276,8 +278,8 @@ export async function executeToolCall(
           text = text.substring(0, 4000) + "... [truncated]";
         }
         return { success: true, data: { title, url, contentLength: text.length, content: text } };
-      } catch (err: any) {
-        return { success: false, error: `Failed to read page: ${err.message}` };
+      } catch (err: unknown) {
+        return { success: false, error: `Failed to read page: ${getErrorMessage(err)}` };
       }
     }
 
@@ -492,11 +494,11 @@ export async function executeToolCall(
       default:
         return { success: false, error: `Unknown tool: ${toolName}` };
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error(`[ChatExecutor] Error executing ${toolName}:`, { error: String(err) });
     return {
       success: false,
-      error: err.message || `Failed to execute ${toolName}`,
+      error: getErrorMessage(err) || `Failed to execute ${toolName}`,
     };
   }
 }
@@ -1776,10 +1778,10 @@ async function execSelfDependencyAudit(
       const audit = JSON.parse(output);
       const vulns = audit.metadata?.vulnerabilities || {};
       auditResult = `critical: ${vulns.critical || 0}, high: ${vulns.high || 0}, moderate: ${vulns.moderate || 0}, low: ${vulns.low || 0}`;
-    } catch (e: any) {
+    } catch (e: unknown) {
       // npm audit returns non-zero when vulns found, parse anyway
       try {
-        const audit = JSON.parse(e.stdout || "{}");
+        const audit = JSON.parse((e as any).stdout || "{}");
         const vulns = audit.metadata?.vulnerabilities || {};
         auditResult = `critical: ${vulns.critical || 0}, high: ${vulns.high || 0}, moderate: ${vulns.moderate || 0}, low: ${vulns.low || 0}`;
       } catch { auditResult = "npm audit unavailable"; }
@@ -1802,8 +1804,8 @@ async function execSelfDependencyAudit(
         summary: `${totalDeps} dependencies audited. ${securityFlags.length} security flags, ${riskyVersions.length} risky versions.`,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: `Dependency audit failed: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Dependency audit failed: ${getErrorMessage(err)}` };
   }
 }
 
@@ -1832,12 +1834,12 @@ async function execSelfGrepCodebase(
         results,
       },
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // grep returns exit code 1 when no matches found
-    if (err.status === 1) {
+    if ((err as any).status === 1) {
       return { success: true, data: { pattern, matchCount: 0, results: [], message: "No matches found" } };
     }
-    return { success: false, error: `Grep failed: ${err.message}` };
+    return { success: false, error: `Grep failed: ${getErrorMessage(err)}` };
   }
 }
 
@@ -1869,8 +1871,8 @@ async function execSelfGitDiff(
         truncated: diff.split("\n").length >= 500,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: `Git diff failed: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Git diff failed: ${getErrorMessage(err)}` };
   }
 }
 
@@ -1930,8 +1932,8 @@ async function execSelfEnvCheck(): Promise<ToolExecutionResult> {
         healthy: criticalMissing === 0,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: `Env check failed: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Env check failed: ${getErrorMessage(err)}` };
   }
 }
 
@@ -1943,10 +1945,12 @@ async function execSelfDbSchemaInspect(
     if (!db) return { success: false, error: "Database not available" };
 
     if (table) {
+      // Validate table name to prevent SQL injection
+      const safeTable = safeSqlIdentifier(table, "table");
       // Inspect specific table
-      const [columns] = await db.execute(sql`SHOW COLUMNS FROM ${sql.raw(table)}`) as any;
-      const [indexes] = await db.execute(sql`SHOW INDEX FROM ${sql.raw(table)}`) as any;
-      const [createStmt] = await db.execute(sql`SHOW CREATE TABLE ${sql.raw(table)}`) as any;
+      const [columns] = await db.execute(sql`SHOW COLUMNS FROM ${sql.raw(safeTable)}`) as any;
+      const [indexes] = await db.execute(sql`SHOW INDEX FROM ${sql.raw(safeTable)}`) as any;
+      const [createStmt] = await db.execute(sql`SHOW CREATE TABLE ${sql.raw(safeTable)}`) as any;
       return {
         success: true,
         data: {
@@ -1963,8 +1967,9 @@ async function execSelfDbSchemaInspect(
       const tableInfo: Array<{ name: string; columns: number; rows: string }> = [];
       for (const tName of tableNames.slice(0, 50)) { // cap at 50 tables
         try {
+          const safeName = safeSqlIdentifier(tName, "table");
           const [cols] = await db.execute(sql`SELECT COUNT(*) as cnt FROM information_schema.columns WHERE table_name = ${tName}`) as any;
-          const [rowCount] = await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(tName)}`) as any;
+          const [rowCount] = await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(safeName)}`) as any;
           tableInfo.push({
             name: tName,
             columns: cols?.[0]?.cnt || 0,
@@ -1980,8 +1985,8 @@ async function execSelfDbSchemaInspect(
         },
       };
     }
-  } catch (err: any) {
-    return { success: false, error: `DB schema inspect failed: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `DB schema inspect failed: ${getErrorMessage(err)}` };
   }
 }
 
@@ -2047,8 +2052,8 @@ async function execSelfCodeStats(
         summary: `${totalFiles} files, ${totalLines.toLocaleString()} lines of code, ~${functionCount} functions`,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: `Code stats failed: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Code stats failed: ${getErrorMessage(err)}` };
   }
 }
 
@@ -2077,16 +2082,16 @@ async function execSelfDeploymentCheck(
       } else {
         checks.push({ name: "Database Connectivity", status: "FAIL", passed: false, detail: "getDb() returned null" });
       }
-    } catch (dbErr: any) {
-      checks.push({ name: "Database Connectivity", status: "FAIL", passed: false, detail: dbErr.message });
+    } catch (dbErr: unknown) {
+      checks.push({ name: "Database Connectivity", status: "FAIL", passed: false, detail: getErrorMessage(dbErr) });
     }
 
     // 3. TypeScript compilation (always)
     try {
       const tscOutput = execSync("npx tsc --noEmit 2>&1", { cwd: PROJ_ROOT, encoding: "utf-8", timeout: 30000 });
       checks.push({ name: "TypeScript Compilation", status: "PASS", passed: true, detail: "No type errors" });
-    } catch (tscErr: any) {
-      const errorCount = (tscErr.stdout || "").split("\n").filter((l: string) => l.includes("error TS")).length;
+    } catch (tscErr: unknown) {
+      const errorCount = ((tscErr as any).stdout || "").split("\n").filter((l: string) => l.includes("error TS")).length;
       checks.push({ name: "TypeScript Compilation", status: "FAIL", passed: false, detail: `${errorCount} type error(s)` });
     }
 
@@ -2154,8 +2159,8 @@ async function execSelfDeploymentCheck(
           : "Fix the failing checks before deploying to avoid downtime.",
       },
     };
-  } catch (err: any) {
-    return { success: false, error: `Deployment check failed: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Deployment check failed: ${getErrorMessage(err)}` };
   }
 }
 
@@ -2340,8 +2345,8 @@ async function execSelfAnalyzeFile(filePath: string): Promise<ToolExecutionResul
         summary: `${filePath}: ${lines.length} lines, ${analysis.imports.length} imports, ${analysis.exports.length} exports, ${analysis.functions.length} functions, ${analysis.issues.length} potential issues`,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    return { success: false, error: getErrorMessage(err) };
   }
 }
 
@@ -2426,8 +2431,8 @@ async function execSelfFindDeadCode(directory?: string): Promise<ToolExecutionRe
         note: deadExports.length > 50 ? `Showing first 50 of ${deadExports.length} dead exports` : undefined,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    return { success: false, error: getErrorMessage(err) };
   }
 }
 
@@ -2513,8 +2518,8 @@ async function execSelfApiMap(): Promise<ToolExecutionResult> {
         ...results,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    return { success: false, error: getErrorMessage(err) };
   }
 }
 
@@ -2904,8 +2909,8 @@ async function execAppResearch(
       .replace(/\s+/g, " ")
       .trim()
       .substring(0, 6000);
-  } catch (err: any) {
-    return { success: false, error: `Failed to fetch ${targetUrl}: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Failed to fetch ${targetUrl}: ${getErrorMessage(err)}` };
   }
 
   // Step 3: Use LLM to analyze the app's features
@@ -3195,13 +3200,13 @@ async function execWebsiteReplicate(
     if (autoResearch) {
       try {
         researchData = await researchTarget(project.id, userId);
-      } catch (err: any) {
+      } catch (err: unknown) {
         return {
           success: true,
           data: {
             projectId: project.id,
             status: "created_research_failed",
-            message: `Project created (ID: ${project.id}) but research failed: ${err.message}. The user can retry research from the Website Replicate page (/replicate).`,
+            message: `Project created (ID: ${project.id}) but research failed: ${getErrorMessage(err)}. The user can retry research from the Website Replicate page (/replicate).`,
             navigateTo: "/replicate",
           },
         };
@@ -3232,8 +3237,8 @@ async function execWebsiteReplicate(
         navigateTo: "/replicate",
       },
     };
-  } catch (err: any) {
-    return { success: false, error: `Failed to create replicate project: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Failed to create replicate project: ${getErrorMessage(err)}` };
   }
 }
 
@@ -3268,8 +3273,8 @@ async function execCreateFile(
     try {
       const result = await storagePut(s3Key, content, contentType);
       url = result.url;
-    } catch (s3Err: any) {
-      log.warn("[CreateFile] S3 upload failed (non-fatal):", { error: s3Err.message });
+    } catch (s3Err: unknown) {
+      log.warn("[CreateFile] S3 upload failed (non-fatal):", { error: getErrorMessage(s3Err) });
     }
 
     // Store in sandboxFiles table (reuse existing table)
@@ -3289,9 +3294,9 @@ async function execCreateFile(
     // ALSO write to the sandbox filesystem so files appear in the Project Files viewer
     try {
       await sandboxWriteFileImpl(sbId, userId, `/home/sandbox/projects/${fileName}`, content);
-    } catch (fsErr: any) {
+    } catch (fsErr: unknown) {
       // Non-fatal: the file is still in S3 and the database
-      log.warn("[CreateFile] Sandbox filesystem write failed (non-fatal):", { error: fsErr.message });
+      log.warn("[CreateFile] Sandbox filesystem write failed (non-fatal):", { error: getErrorMessage(fsErr) });
     }
 
     return {
@@ -3305,9 +3310,9 @@ async function execCreateFile(
         message: `File created: ${fileName} (${formatFileSize(Buffer.byteLength(content, "utf-8"))})`,
       },
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error("[CreateFile] Error:", { error: String(err) });
-    return { success: false, error: `Failed to create file: ${err.message}` };
+    return { success: false, error: `Failed to create file: ${getErrorMessage(err)}` };
   }
 }
 
@@ -3374,9 +3379,9 @@ async function execCreateGithubRepo(
         message: `Repository created: ${repo.full_name} (${repo.private ? "private" : "public"})`,
       },
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error("[CreateGithubRepo] Error:", { error: String(err) });
-    return { success: false, error: `Failed to create repo: ${err.message}` };
+    return { success: false, error: `Failed to create repo: ${getErrorMessage(err)}` };
   }
 }
 
@@ -3431,9 +3436,9 @@ async function execPushToGithub(
         message: `Pushed ${pushed} files to ${repoFullName}`,
       },
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.error("[PushToGithub] Error:", { error: String(err) });
-    return { success: false, error: `Failed to push: ${err.message}` };
+    return { success: false, error: `Failed to push: ${getErrorMessage(err)}` };
   }
 }
 
@@ -3460,8 +3465,8 @@ async function execReadUploadedFile(
         truncated: content.length > 100000,
       },
     };
-  } catch (err: any) {
-    return { success: false, error: `Failed to read file: ${err.message}` };
+  } catch (err: unknown) {
+    return { success: false, error: `Failed to read file: ${getErrorMessage(err)}` };
   }
 }
 

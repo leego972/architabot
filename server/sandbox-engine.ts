@@ -32,6 +32,7 @@ import {
 } from "../drizzle/schema";
 import { storagePut } from "./storage";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("SandboxEngine");
 
 const execAsync = promisify(exec);
@@ -333,8 +334,8 @@ export async function executeCommand(
           "\n... [output truncated at 100KB]";
       }
     }
-  } catch (err: any) {
-    output = `Error executing command: ${err.message}\n`;
+  } catch (err: unknown) {
+    output = `Error executing command: ${getErrorMessage(err)}\n`;
     exitCode = 1;
   }
 
@@ -520,8 +521,8 @@ export async function persistWorkspace(
     fs.unlinkSync(tarPath);
 
     return url;
-  } catch (err: any) {
-    log.error(`[Sandbox] Failed to persist workspace ${sandboxId}:`, { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error(`[Sandbox] Failed to persist workspace ${sandboxId}:`, { error: String(getErrorMessage(err)) });
     return null;
   }
 }

@@ -326,7 +326,7 @@ export function registerSocialAuthRoutes(app: Express) {
       });
 
       await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `GitHub login: ${ghUser.login} (${ghUser.email})`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       log.error("[Social Auth] GitHub callback failed:", { error: String(error) });
       const publicOrigin = getPublicOrigin();
       res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("GitHub login failed. Please try again.")}`);
@@ -376,7 +376,7 @@ export function registerSocialAuthRoutes(app: Express) {
       });
 
       await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `Google login: ${googleUser.email}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       log.error("[Social Auth] Google callback failed:", { error: String(error) });
       const publicOrigin = getPublicOrigin();
       res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("Google login failed. Please try again.")}`);

@@ -626,7 +626,8 @@ function CodeEditor({
             Save
           </Button>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 p-1">
-            <X className="w-3.5 h-3.5" />
+                  <span className="sr-only">Close</span>
+                  <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

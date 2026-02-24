@@ -10,6 +10,7 @@
 import type { Page } from "playwright";
 import { humanType, humanClick, humanDelay, humanScroll, takeScreenshot } from "./browser";
 import { detectAndSolveCaptcha, detectBotProtection, type CaptchaConfig } from "./captcha-solver";
+import { getErrorMessage } from "../_core/errors.js";
 
 export interface ProviderCredential {
   keyType: string;
@@ -116,8 +117,8 @@ async function loginWithBotCheck(
           } catch { continue; }
         }
         if (!pwFound) throw new Error("Could not find password input field after two-step login");
-      } catch (e: any) {
-        if (e.message?.includes("Could not find password")) throw e;
+      } catch (e: unknown) {
+        if (getErrorMessage(e)?.includes("Could not find password")) throw e;
         throw new Error("Could not find password input field");
       }
     }
@@ -1039,7 +1040,7 @@ async function automateDiscord(page: Page, email: string, password: string, capt
     const postCaptcha = await detectAndSolveCaptcha(page, captchaConfig);
     if (postCaptcha.solved) await humanDelay(2000, 3000);
   } catch (e) {
-    throw new Error(`Discord login failed: ${e instanceof Error ? e.message : String(e)}`);
+    throw new Error(`Discord login failed: ${e instanceof Error ? getErrorMessage(e) : String(e)}`);
   }
 
   // Navigate to Developer Portal Applications

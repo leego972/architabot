@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("BinancePayService");
 
 // Binance Pay API Configuration
@@ -199,9 +200,9 @@ export async function createCryptoPaymentOrder(
     }
 
     return result;
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error("Binance Pay API call failed:", { error: String(error) });
-    throw new Error(`Failed to create crypto payment: ${error.message}`);
+    throw new Error(`Failed to create crypto payment: ${getErrorMessage(error)}`);
   }
 }
 
@@ -228,9 +229,9 @@ export async function queryOrderStatus(merchantTradeNo: string): Promise<any> {
     );
 
     return await response.json();
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error("Binance Pay query failed:", { error: String(error) });
-    throw new Error(`Failed to query order: ${error.message}`);
+    throw new Error(`Failed to query order: ${getErrorMessage(error)}`);
   }
 }
 

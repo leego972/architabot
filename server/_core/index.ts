@@ -27,7 +27,11 @@ import { registerSeoRoutes, startScheduledSeo } from "../seo-engine";
 import { registerChatStreamRoutes } from "../chat-stream";
 import { registerMarketplaceFileRoutes } from "../marketplace-files";
 import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
+import { csrfCookieMiddleware, csrfValidationMiddleware } from "./csrf";
+import { correlationMiddleware } from "./correlation";
 import { createLogger } from "./logger";
+import { getErrorMessage } from "../_core/errors.js";
 
 const log = createLogger('Startup');
 
@@ -108,6 +112,14 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // ── Request Correlation IDs ───────────────────────────────────
+  app.use(correlationMiddleware);
+
+  // ── Cookie Parser & CSRF Protection ───────────────────────────
+  app.use(cookieParser());
+  app.use(csrfCookieMiddleware);
+  app.use('/api/', csrfValidationMiddleware);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // Email/password authentication endpoints
@@ -171,8 +183,8 @@ async function startServer() {
       log.debug('Migrations folder', { path: migrationsFolder });
       await migrate(migrationDb, { migrationsFolder });
       log.info('Database migrations completed');
-    } catch (migErr: any) {
-      log.warn('Drizzle migration warning (continuing with raw SQL)', { error: migErr.message?.substring(0, 200) });
+    } catch (migErr: unknown) {
+      log.warn('Drizzle migration warning (continuing with raw SQL)', { error: getErrorMessage(migErr)?.substring(0, 200) });
     }
     // Step 2: Always run raw SQL to ensure columns and tables exist (idempotent)
     try {
@@ -212,10 +224,10 @@ async function startServer() {
         try {
           await pool.promise().query(sql);
           log.debug('Added column', { column: sql.split('\`')[3] });
-        } catch (e: any) {
+        } catch (e: unknown) {
           // Column already exists - ignore
-          if (!e.message?.includes('Duplicate column')) {
-            log.warn('Column fix warning', { error: e.message });
+          if (!getErrorMessage(e)?.includes('Duplicate column')) {
+            log.warn('Column fix warning', { error: getErrorMessage(e) });
           }
         }
       }
@@ -225,8 +237,8 @@ async function startServer() {
           "ALTER TABLE `crowdfundingCampaigns` MODIFY COLUMN `source` enum('internal','kickstarter','indiegogo','gofundme','other') DEFAULT 'internal' NOT NULL"
         );
         log.debug('Ensured source column is ENUM type');
-      } catch (e: any) {
-        log.warn('Source column fix', { error: e.message?.substring(0, 100) });
+      } catch (e: unknown) {
+        log.warn('Source column fix', { error: getErrorMessage(e)?.substring(0, 100) });
       }
 
       // Create marketplace tables if they don't exist
@@ -242,13 +254,13 @@ async function startServer() {
       for (const ddl of createTables) {
         try {
           await pool.promise().query(ddl);
-        } catch (e: any) {
-          log.warn('Table creation warning', { error: e.message?.substring(0, 100) });
+        } catch (e: unknown) {
+          log.warn('Table creation warning', { error: getErrorMessage(e)?.substring(0, 100) });
         }
       }
       log.info('All tables ensured');
-    } catch (err: any) {
-      log.error('Raw SQL migration failed', { error: err.message });
+    } catch (err: unknown) {
+      log.error('Raw SQL migration failed', { error: getErrorMessage(err) });
     }
     // Always close the migration pool
     try { await pool.promise().end(); } catch (_) {}
@@ -421,8 +433,8 @@ function scheduleMonthlyRefill() {
       log.info('Running startup credit refill check...');
       const result = await processAllMonthlyRefills();
       log.info('Startup refill complete', { processed: result.processed, refilled: result.refilled, errors: result.errors });
-    } catch (err: any) {
-      log.error('Startup refill failed', { error: err.message });
+    } catch (err: unknown) {
+      log.error('Startup refill failed', { error: getErrorMessage(err) });
     }
   }, 30_000); // 30 second delay — give DB connections time to settle
 
@@ -432,8 +444,8 @@ function scheduleMonthlyRefill() {
       log.info('Running scheduled credit refill...');
       const result = await processAllMonthlyRefills();
       log.info('Scheduled refill complete', { processed: result.processed, refilled: result.refilled, errors: result.errors });
-    } catch (err: any) {
-      log.error('Scheduled refill failed', { error: err.message });
+    } catch (err: unknown) {
+      log.error('Scheduled refill failed', { error: getErrorMessage(err) });
     }
   }, TWENTY_FOUR_HOURS);
 }

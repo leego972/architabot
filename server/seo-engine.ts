@@ -26,6 +26,7 @@ import { blogPosts } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import type { Express, Request, Response } from "express";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("SeoEngine");
 
 // ─── Configuration ──────────────────────────────────────────────────
@@ -1247,8 +1248,8 @@ Analyze the competitive landscape and identify SEO opportunities.`,
     const parsed = JSON.parse(response.choices?.[0]?.message?.content as string);
     logSeoEvent("competitor_analysis", `Analyzed ${parsed.competitors?.length || 0} competitors`);
     return { ...parsed, analyzedAt: Date.now() };
-  } catch (err: any) {
-    log.error("[SEO] Competitor analysis failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[SEO] Competitor analysis failed:", { error: String(getErrorMessage(err)) });
     return {
       competitors: [
         {
@@ -1335,8 +1336,8 @@ Focus on topics that:
       logSeoEvent("content_briefs", `Generated ${briefs.length} content briefs`);
       return briefs.map((b: any) => ({ ...b, generatedAt: Date.now() }));
     }
-  } catch (err: any) {
-    log.error("[SEO] Content brief generation failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[SEO] Content brief generation failed:", { error: String(getErrorMessage(err)) });
   }
 
   // Fallback briefs
@@ -1790,8 +1791,8 @@ Analyze and provide keyword recommendations for SEO optimization.`,
       `Analyzed ${analysis.primaryKeywords?.length || 0} primary keywords`
     );
     return { ...analysis, generatedAt: Date.now() };
-  } catch (err: any) {
-    log.error("[SEO] Keyword analysis failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[SEO] Keyword analysis failed:", { error: String(getErrorMessage(err)) });
     return {
       primaryKeywords: [
         { keyword: "AI credential manager", volume: "medium", difficulty: "low", opportunity: "high" },
@@ -1898,8 +1899,8 @@ ${PUBLIC_PAGES.map(
       }
     }
     logSeoEvent("meta_optimization", `Generated ${optimizations.length} meta tag optimizations`);
-  } catch (err: any) {
-    log.error("[SEO] Meta optimization failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[SEO] Meta optimization failed:", { error: String(getErrorMessage(err)) });
   }
 
   return optimizations;
@@ -2031,8 +2032,8 @@ export async function submitToIndexNow(urls: string[]): Promise<{ success: boole
     const success = response.ok || response.status === 202;
     logSeoEvent("indexnow", `Submitted ${urls.length} URLs to IndexNow`, { status: response.status });
     return { success, submitted: urls.length };
-  } catch (err: any) {
-    log.error("[SEO] IndexNow submission failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[SEO] IndexNow submission failed:", { error: String(getErrorMessage(err)) });
     return { success: false, submitted: 0 };
   }
 }
@@ -2170,8 +2171,8 @@ export function registerSeoRoutes(app: Express): void {
         engine: "Google",
         status: googleRes.ok ? "success" : `failed (${googleRes.status})`,
       });
-    } catch (err: any) {
-      results.push({ engine: "Google", status: `error: ${err.message}` });
+    } catch (err: unknown) {
+      results.push({ engine: "Google", status: `error: ${getErrorMessage(err)}` });
     }
 
     // Ping Bing
@@ -2181,8 +2182,8 @@ export function registerSeoRoutes(app: Express): void {
         engine: "Bing",
         status: bingRes.ok ? "success" : `failed (${bingRes.status})`,
       });
-    } catch (err: any) {
-      results.push({ engine: "Bing", status: `error: ${err.message}` });
+    } catch (err: unknown) {
+      results.push({ engine: "Bing", status: `error: ${getErrorMessage(err)}` });
     }
 
     // Ping Yandex
@@ -2194,8 +2195,8 @@ export function registerSeoRoutes(app: Express): void {
         engine: "Yandex",
         status: yandexRes.ok ? "success" : `failed (${yandexRes.status})`,
       });
-    } catch (err: any) {
-      results.push({ engine: "Yandex", status: `error: ${err.message}` });
+    } catch (err: unknown) {
+      results.push({ engine: "Yandex", status: `error: ${getErrorMessage(err)}` });
     }
 
     // IndexNow
@@ -2305,9 +2306,9 @@ export async function runScheduledSeoOptimization(): Promise<SeoReport | null> {
     }
 
     return report;
-  } catch (err: any) {
-    log.error("[SEO] Scheduled optimization failed:", { error: String(err.message) });
-    logSeoEvent("error", `Scheduled optimization failed: ${err.message}`);
+  } catch (err: unknown) {
+    log.error("[SEO] Scheduled optimization failed:", { error: String(getErrorMessage(err)) });
+    logSeoEvent("error", `Scheduled optimization failed: ${getErrorMessage(err)}`);
     return null;
   }
 }
@@ -2338,8 +2339,8 @@ export function startScheduledSeo(): void {
     try {
       log.info("[SEO v3] Running first scheduled SEO analysis...");
       await runScheduledSeoOptimization();
-    } catch (err: any) {
-      log.error("[SEO v3] First analysis failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[SEO v3] First analysis failed:", { error: String(getErrorMessage(err)) });
     }
   }, 6 * 60 * 60 * 1000); // 6 hours after deploy
 
@@ -2347,8 +2348,8 @@ export function startScheduledSeo(): void {
   setInterval(async () => {
     try {
       await runScheduledSeoOptimization();
-    } catch (err: any) {
-      log.error("[SEO v3] Scheduled run failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[SEO v3] Scheduled run failed:", { error: String(getErrorMessage(err)) });
     }
   }, ONE_DAY);
 }

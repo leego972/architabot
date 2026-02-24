@@ -11,6 +11,7 @@ import { parse as parseCookieHeader } from "cookie";
 import { COOKIE_NAME } from "../shared/const";
 import { sdk } from "./_core/sdk";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("ReleasesRouter");
 
 // ─── Default seed release (shown when DB has no releases) ───────────
@@ -330,8 +331,8 @@ export function registerUpdateFeedRoutes(app: Express) {
       const yml = generateUpdateYml(latest, "windows");
       res.set("Content-Type", "text/yaml");
       res.send(yml);
-    } catch (err: any) {
-      log.error("[Update Feed] Error:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[Update Feed] Error:", { error: String(getErrorMessage(err)) });
       res.status(500).send("Internal error");
     }
   });
@@ -346,8 +347,8 @@ export function registerUpdateFeedRoutes(app: Express) {
       const yml = generateUpdateYml(latest, "linux");
       res.set("Content-Type", "text/yaml");
       res.send(yml);
-    } catch (err: any) {
-      log.error("[Update Feed] Error:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[Update Feed] Error:", { error: String(getErrorMessage(err)) });
       res.status(500).send("Internal error");
     }
   });
@@ -362,8 +363,8 @@ export function registerUpdateFeedRoutes(app: Express) {
       const yml = generateUpdateYml(latest, "mac");
       res.set("Content-Type", "text/yaml");
       res.send(yml);
-    } catch (err: any) {
-      log.error("[Update Feed] Error:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[Update Feed] Error:", { error: String(getErrorMessage(err)) });
       res.status(500).send("Internal error");
     }
   });
@@ -482,9 +483,9 @@ export function registerReleaseUploadRoute(app: Express) {
         fileSizeMb: Math.round(result.fileBuffer.length / (1024 * 1024)),
         url,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error("[Release Upload Error]", { error: String(err) });
-      return res.status(500).json({ error: err.message || "Upload failed" });
+      return res.status(500).json({ error: getErrorMessage(err) || "Upload failed" });
     }
   });
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { getErrorMessage } from "./_core/errors.js";
 
 // ── helpers ──────────────────────────────────────────────────────
 
@@ -290,9 +291,9 @@ describe("marketing router", () => {
           durationDays: 30,
           focusChannels: ["meta_facebook", "google_ads"],
         });
-      } catch (e: any) {
+      } catch (e: unknown) {
         // Only acceptable errors are DB/LLM errors, not validation errors
-        expect(e.message).not.toContain("Expected");
+        expect(getErrorMessage(e)).not.toContain("Expected");
       }
     });
 
@@ -305,8 +306,8 @@ describe("marketing router", () => {
           autoPublish: false,
           contentFrequency: "daily",
         });
-      } catch (e: any) {
-        expect(e.message).not.toContain("Expected");
+      } catch (e: unknown) {
+        expect(getErrorMessage(e)).not.toContain("Expected");
       }
     });
   });

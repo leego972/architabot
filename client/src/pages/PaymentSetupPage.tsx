@@ -55,7 +55,7 @@ export default function PaymentSetupPage() {
         <div className="flex flex-col items-center justify-center gap-3 mb-6">
           <div className="relative">
             <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full" />
-            <img src={FULL_LOGO_DARK_512} alt="Archibald Titan" className="relative h-20 w-auto object-contain drop-shadow-2xl" />
+            <img loading="lazy" src={FULL_LOGO_DARK_512} alt="Archibald Titan" className="relative h-20 w-auto object-contain drop-shadow-2xl" />
           </div>
         </div>
 

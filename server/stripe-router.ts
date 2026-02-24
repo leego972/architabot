@@ -10,6 +10,7 @@ import { addCredits, processMonthlyRefill, getCreditBalance } from "./credit-ser
 import { sellerProfiles } from "../drizzle/schema";
 import type { Express, Request, Response } from "express";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("StripeRouter");
 
 // ─── Stripe Client ──────────────────────────────────────────────────
@@ -699,8 +700,8 @@ export function registerStripeWebhook(app: Express) {
           : (req as any).rawBody || JSON.stringify(req.body);
 
         event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
-      } catch (err: any) {
-        log.error("[Stripe Webhook] Signature verification failed:", { error: String(err.message) });
+      } catch (err: unknown) {
+        log.error("[Stripe Webhook] Signature verification failed:", { error: String(getErrorMessage(err)) });
         return res.status(400).json({ error: "Webhook signature verification failed" });
       }
 
@@ -742,8 +743,8 @@ export function registerStripeWebhook(app: Express) {
           default:
             log.info(`[Stripe Webhook] Unhandled event type: ${event.type}`);
         }
-      } catch (err: any) {
-        log.error(`[Stripe Webhook] Error processing ${event.type}:`, { error: String(err.message) });
+      } catch (err: unknown) {
+        log.error(`[Stripe Webhook] Error processing ${event.type}:`, { error: String(getErrorMessage(err)) });
       }
 
       res.json({ received: true });
@@ -766,9 +767,9 @@ export function registerStripeWebhook(app: Express) {
       const result = await processAllMonthlyRefills();
       log.info(`[Cron] Monthly credit refill completed: ${result.processed} users processed, ${result.refilled} refilled`);
       res.json({ success: true, ...result });
-    } catch (err: any) {
-      log.error("[Cron] Monthly refill error:", { error: String(err.message) });
-      res.status(500).json({ error: "Refill processing failed", message: err.message });
+    } catch (err: unknown) {
+      log.error("[Cron] Monthly refill error:", { error: String(getErrorMessage(err)) });
+      res.status(500).json({ error: "Refill processing failed", message: getErrorMessage(err) });
     }
   });
 }
@@ -794,9 +795,9 @@ export async function processAllMonthlyRefills(): Promise<{ processed: number; r
     try {
       const result = await processMonthlyRefill(bal.userId);
       if (result) refilled++;
-    } catch (err: any) {
+    } catch (err: unknown) {
       errors++;
-      log.error(`[Cron] Refill error for user ${bal.userId}:`, { error: String(err.message) });
+      log.error(`[Cron] Refill error for user ${bal.userId}:`, { error: String(getErrorMessage(err)) });
     }
   }
 

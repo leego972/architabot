@@ -16,6 +16,7 @@ import {
   SUPPORTED_CRYPTO,
 } from "./binance-pay-service";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("GrantFinderRouter");
 
 // ==========================================
@@ -714,11 +715,11 @@ export const crowdfundingRouter = router({
         platformFee,
         creatorAmount,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       log.error("Binance Pay order creation failed:", { error: String(error) });
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: `Crypto payment failed: ${error.message}`,
+        message: `Crypto payment failed: ${getErrorMessage(error)}`,
       });
     }
   }),
@@ -756,9 +757,9 @@ export const crowdfundingRouter = router({
       }
 
       return payment;
-    } catch (error: any) {
-      if (error.code === "NOT_FOUND") throw error;
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: error.message });
+    } catch (error: unknown) {
+      if ((error as any).code === "NOT_FOUND") throw error;
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: getErrorMessage(error) });
     }
   }),
 

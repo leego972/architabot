@@ -6,6 +6,7 @@
  */
 
 import { ENV } from "./_core/env";
+import { getErrorMessage } from "./_core/errors.js";
 
 // ============================================
 // TYPES
@@ -74,8 +75,8 @@ export const devtoAdapter = {
         platformPostId: String(data.id),
         url: data.url,
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -150,8 +151,8 @@ export const mediumAdapter = {
         platformPostId: data.data?.id,
         url: data.data?.url,
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 };
@@ -236,8 +237,8 @@ export const hashnodeAdapter = {
         platformPostId: post?.id,
         url: post?.url,
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 };
@@ -293,8 +294,8 @@ export const discordAdapter = {
 
       const errData = await response.text();
       return { success: false, error: `Discord webhook ${response.status}: ${errData}` };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 };
@@ -347,8 +348,8 @@ export const mastodonAdapter = {
         platformPostId: data.id,
         url: data.url,
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 };
@@ -402,8 +403,8 @@ export const telegramAdapter = {
         success: true,
         platformPostId: String(data.result?.message_id),
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -435,8 +436,8 @@ export const telegramAdapter = {
         return { success: false, error: data.description || "Telegram API error" };
       }
       return { success: true, platformPostId: String(data.result?.message_id) };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 };
@@ -500,8 +501,8 @@ export const whatsappAdapter = {
         success: true,
         platformPostId: data.messages?.[0]?.id,
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -547,8 +548,8 @@ export const whatsappAdapter = {
         success: true,
         platformPostId: data.messages?.[0]?.id,
       };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 };

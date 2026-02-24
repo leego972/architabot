@@ -12,6 +12,7 @@
 
 import * as dbHelpers from "./db";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("GrantRefreshService");
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -143,8 +144,8 @@ async function fetchGrantsGovByCategory(
       closeDate: parseGrantsGovDate(hit.closeDate),
       applicationDeadline: parseGrantsGovDate(hit.closeDate),
     }));
-  } catch (error: any) {
-    log.error(`[GrantRefresh] Grants.gov fetch error for ${categoryCode}:`, { error: String(error.message) });
+  } catch (error: unknown) {
+    log.error(`[GrantRefresh] Grants.gov fetch error for ${categoryCode}:`, { error: String(getErrorMessage(error)) });
     return [];
   }
 }
@@ -200,8 +201,8 @@ async function fetchUSAGrants(industryFilter?: string): Promise<{ grants: Discov
             }));
           }
         }
-      } catch (e: any) {
-        errors.push(`Keyword search failed: ${e.message}`);
+      } catch (e: unknown) {
+        errors.push(`Keyword search failed: ${getErrorMessage(e)}`);
       }
     }
   } else {
@@ -211,8 +212,8 @@ async function fetchUSAGrants(industryFilter?: string): Promise<{ grants: Discov
         const grants = await fetchGrantsGovByCategory(cat, 15);
         allGrants.push(...grants);
         await new Promise((r) => setTimeout(r, 500));
-      } catch (e: any) {
-        errors.push(`Category ${cat} failed: ${e.message}`);
+      } catch (e: unknown) {
+        errors.push(`Category ${cat} failed: ${getErrorMessage(e)}`);
       }
     }
   }
@@ -357,8 +358,8 @@ async function fetchAustralianGrants(industryFilter?: string): Promise<{ grants:
 
     const data = await response.json();
     return processARCData(data, errors);
-  } catch (error: any) {
-    errors.push(`ARC API fetch error: ${error.message}`);
+  } catch (error: unknown) {
+    errors.push(`ARC API fetch error: ${getErrorMessage(error)}`);
     return { grants: allGrants, errors };
   }
 }
@@ -1583,9 +1584,9 @@ export async function refreshGrantsForCountry(
       } as any);
       inserted++;
       existingTitles.add(grant.title?.toLowerCase());
-    } catch (err: any) {
-      if (!err?.message?.includes("Duplicate")) {
-        log.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, { error: err?.message });
+    } catch (err: unknown) {
+      if (!getErrorMessage(err).includes("Duplicate")) {
+        log.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, { error: getErrorMessage(err) });
       }
     }
   }
@@ -1644,10 +1645,10 @@ export async function refreshAllGrants(
       } as any);
       inserted++;
       existingTitles.add(grant.title?.toLowerCase());
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Skip duplicate key errors silently
-      if (!err?.message?.includes("Duplicate")) {
-        log.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, { error: err?.message });
+      if (!getErrorMessage(err).includes("Duplicate")) {
+        log.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, { error: getErrorMessage(err) });
       }
     }
   }

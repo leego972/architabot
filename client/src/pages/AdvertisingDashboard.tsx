@@ -657,7 +657,7 @@ function TikTokContentTab() {
           {stats?.creatorInfo ? (
             <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
               {stats.creatorInfo.creatorAvatarUrl && (
-                <img src={stats.creatorInfo.creatorAvatarUrl} alt="" className="w-10 h-10 rounded-full" />
+                <img loading="lazy" src={stats.creatorInfo.creatorAvatarUrl} alt="" className="w-10 h-10 rounded-full" />
               )}
               <div>
                 <div className="font-medium">{stats.creatorInfo.creatorNickname || "Connected Account"}</div>

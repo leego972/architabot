@@ -55,6 +55,7 @@ import {
 import { eq, desc, and, gte, sql, count } from "drizzle-orm";
 import { runTikTokContentPipeline, getTikTokContentStats, isTikTokContentConfigured } from "./tiktok-content-service";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("AdvertisingOrchestrator");
 
 // ============================================
@@ -823,12 +824,12 @@ Return as JSON: { "title": "...", "metaDescription": "...", "content": "...(mark
       details: `Published: "${post.title}" targeting "${targetKeyword}"`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "blog_content",
       action: "generate_blog_post",
       status: "failed",
-      details: `Blog generation failed: ${err.message}`,
+      details: `Blog generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -866,12 +867,12 @@ async function generateSocialContent(): Promise<AdvertisingAction[]> {
         details: result.success ? `Posted tweet: "${content.headline}"` : `Tweet failed: ${result.error}`,
         cost: 0,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       actions.push({
         channel: "social_organic",
         action: "post_tweet",
         status: "failed",
-        details: `Twitter post failed: ${err.message}`,
+        details: `Twitter post failed: ${getErrorMessage(err)}`,
         cost: 0,
       });
     }
@@ -906,12 +907,12 @@ async function generateSocialContent(): Promise<AdvertisingAction[]> {
         details: result.success ? `Posted to r/${subreddit}: "${content.headline}"` : `Reddit post failed: ${result.error}`,
         cost: 0,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       actions.push({
         channel: "community_engagement",
         action: "reddit_post",
         status: "failed",
-        details: `Reddit post failed: ${err.message}`,
+        details: `Reddit post failed: ${getErrorMessage(err)}`,
         cost: 0,
       });
     }
@@ -935,12 +936,12 @@ async function generateSocialContent(): Promise<AdvertisingAction[]> {
         details: `Generated LinkedIn post: "${content.headline}" (queued for publishing)`,
         cost: 0,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       actions.push({
         channel: "social_organic",
         action: "linkedin_post",
         status: "failed",
-        details: `LinkedIn content generation failed: ${err.message}`,
+        details: `LinkedIn content generation failed: ${getErrorMessage(err)}`,
         cost: 0,
       });
     }
@@ -972,12 +973,12 @@ async function runSeoOptimization(): Promise<AdvertisingAction> {
       details: `SEO score: ${report.score.overall}/100, ${report.score.issues.length} issues found, ${report.keywords.primaryKeywords.length} keywords tracked`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "seo_organic",
       action: "seo_optimization",
       status: "failed",
-      details: `SEO optimization failed: ${err.message}`,
+      details: `SEO optimization failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1050,12 +1051,12 @@ Return as JSON: { "subject": "...", "body": "...", "targetType": "security_blog|
       details: `Generated outreach template: "${email.subject}" targeting ${email.targetType}`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "backlink_outreach",
       action: "generate_outreach_template",
       status: "failed",
-      details: `Outreach generation failed: ${err.message}`,
+      details: `Outreach generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1150,12 +1151,12 @@ Return as JSON: { "subject": "...", "preheader": "...", "body": "...(html)...", 
       details: `Generated nurture email for "${segment.name}": "${email.subject}"`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "email_nurture",
       action: "generate_nurture_email",
       status: "failed",
-      details: `Email nurture generation failed: ${err.message}`,
+      details: `Email nurture generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1189,12 +1190,12 @@ async function optimizeAffiliateNetwork(): Promise<AdvertisingAction> {
       details: `Affiliate network: ${activePartners} active partners, ${totalClicks} clicks in last 30 days`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "affiliate_network",
       action: "optimize_network",
       status: "failed",
-      details: `Affiliate optimization failed: ${err.message}`,
+      details: `Affiliate optimization failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1274,12 +1275,12 @@ Return as JSON: { "platform": "${platform}", "topic": "...", "content": "...", "
       details: `Generated ${platform} content: "${post.topic}" (queued as draft)`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "forum_participation",
       action: "generate_community_content",
       status: "failed",
-      details: `Community content generation failed: ${err.message}`,
+      details: `Community content generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1318,8 +1319,8 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
         published: true,
       });
       actions.push({ channel: "devto_crosspost", action: "publish_article", status: result.success ? "success" : "failed", details: result.success ? `Published to Dev.to: "${article.title}"` : `Dev.to failed: ${result.error}`, cost: 0 });
-    } catch (err: any) {
-      actions.push({ channel: "devto_crosspost", action: "publish_article", status: "failed", details: `Dev.to: ${err.message}`, cost: 0 });
+    } catch (err: unknown) {
+      actions.push({ channel: "devto_crosspost", action: "publish_article", status: "failed", details: `Dev.to: ${getErrorMessage(err)}`, cost: 0 });
     }
   }
 
@@ -1345,8 +1346,8 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
         publishStatus: "public",
       });
       actions.push({ channel: "medium_republish", action: "publish_article", status: result.success ? "success" : "failed", details: result.success ? `Published to Medium: "${article.title}"` : `Medium failed: ${result.error}`, cost: 0 });
-    } catch (err: any) {
-      actions.push({ channel: "medium_republish", action: "publish_article", status: "failed", details: `Medium: ${err.message}`, cost: 0 });
+    } catch (err: unknown) {
+      actions.push({ channel: "medium_republish", action: "publish_article", status: "failed", details: `Medium: ${getErrorMessage(err)}`, cost: 0 });
     }
   }
 
@@ -1370,8 +1371,8 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
         canonicalUrl: `https://archibaldtitan.com/blog`,
       });
       actions.push({ channel: "hashnode_crosspost", action: "publish_article", status: result.success ? "success" : "failed", details: result.success ? `Published to Hashnode: "${article.title}"` : `Hashnode failed: ${result.error}`, cost: 0 });
-    } catch (err: any) {
-      actions.push({ channel: "hashnode_crosspost", action: "publish_article", status: "failed", details: `Hashnode: ${err.message}`, cost: 0 });
+    } catch (err: unknown) {
+      actions.push({ channel: "hashnode_crosspost", action: "publish_article", status: "failed", details: `Hashnode: ${getErrorMessage(err)}`, cost: 0 });
     }
   }
 
@@ -1390,8 +1391,8 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
       const msg = JSON.parse((response.choices[0].message.content as string) || "{}");
       const result = await discordAdapter.postMessage({ content: msg.content });
       actions.push({ channel: "discord_community", action: "send_message", status: result.success ? "success" : "failed", details: result.success ? `Posted to Discord` : `Discord failed: ${result.error}`, cost: 0 });
-    } catch (err: any) {
-      actions.push({ channel: "discord_community", action: "send_message", status: "failed", details: `Discord: ${err.message}`, cost: 0 });
+    } catch (err: unknown) {
+      actions.push({ channel: "discord_community", action: "send_message", status: "failed", details: `Discord: ${getErrorMessage(err)}`, cost: 0 });
     }
   }
 
@@ -1410,8 +1411,8 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
       const toot = JSON.parse((response.choices[0].message.content as string) || "{}");
       const result = await mastodonAdapter.postStatus({ status: toot.status });
       actions.push({ channel: "mastodon_infosec", action: "post_status", status: result.success ? "success" : "failed", details: result.success ? `Posted to Mastodon` : `Mastodon failed: ${result.error}`, cost: 0 });
-    } catch (err: any) {
-      actions.push({ channel: "mastodon_infosec", action: "post_status", status: "failed", details: `Mastodon: ${err.message}`, cost: 0 });
+    } catch (err: unknown) {
+      actions.push({ channel: "mastodon_infosec", action: "post_status", status: "failed", details: `Mastodon: ${getErrorMessage(err)}`, cost: 0 });
     }
   }
 
@@ -1430,8 +1431,8 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
       const msg = JSON.parse((response.choices[0].message.content as string) || "{}");
       const result = await telegramAdapter.sendMessage({ text: msg.text, parseMode: "Markdown" });
       actions.push({ channel: "telegram_channel", action: "send_broadcast", status: result.success ? "success" : "failed", details: result.success ? `Broadcast to Telegram` : `Telegram failed: ${result.error}`, cost: 0 });
-    } catch (err: any) {
-      actions.push({ channel: "telegram_channel", action: "send_broadcast", status: "failed", details: `Telegram: ${err.message}`, cost: 0 });
+    } catch (err: unknown) {
+      actions.push({ channel: "telegram_channel", action: "send_broadcast", status: "failed", details: `Telegram: ${getErrorMessage(err)}`, cost: 0 });
     }
   }
 
@@ -1444,8 +1445,8 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
         languageCode: "en_US",
       });
       actions.push({ channel: "whatsapp_broadcast", action: "send_template", status: result.success ? "success" : "failed", details: result.success ? `WhatsApp weekly broadcast sent` : `WhatsApp: ${result.error}`, cost: 0 });
-    } catch (err: any) {
-      actions.push({ channel: "whatsapp_broadcast", action: "send_template", status: "failed", details: `WhatsApp: ${err.message}`, cost: 0 });
+    } catch (err: unknown) {
+      actions.push({ channel: "whatsapp_broadcast", action: "send_template", status: "failed", details: `WhatsApp: ${getErrorMessage(err)}`, cost: 0 });
     }
   }
 
@@ -1546,12 +1547,12 @@ Return JSON: { "title": "...", "content": "...(markdown)...", "forum": "${forum.
       details: `Generated ${forum.name} post: "${post.title}" (queued for publishing)`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "hackforums",
       action: "generate_forum_post",
       status: "failed",
-      details: `Hacker forum content generation failed: ${err.message}`,
+      details: `Hacker forum content generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1640,12 +1641,12 @@ Return JSON: { "hook": "...", "script": "...", "visualDirections": ["..."], "has
       details: `Generated ${platform} script: "${video.hook}" (${video.estimatedDuration})`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "tiktok_organic",
       action: "generate_video_script",
       status: "failed",
-      details: `Video script generation failed: ${err.message}`,
+      details: `Video script generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1715,12 +1716,12 @@ async function generateContentQueueItems(): Promise<AdvertisingAction> {
       details: `Generated ${generated} content queue items for: ${todayChannels.map(c => c.name).join(", ")}`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "forum_participation",
       action: "content_queue_generation",
       status: "failed",
-      details: `Content queue generation failed: ${err.message}`,
+      details: `Content queue generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -1962,12 +1963,12 @@ async function recycleTopContent(): Promise<AdvertisingAction> {
       details: `Recycled "${post.title}" → ${format.name}: "${recycled.title}"`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "blog_content",
       action: "recycle_content",
       status: "failed",
-      details: `Content recycling failed: ${err.message}`,
+      details: `Content recycling failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -2059,12 +2060,12 @@ async function monitorCampaignHealth(): Promise<AdvertisingAction> {
       details: `Health check: ${unhealthyChannels.length} unhealthy channels detected out of ${channelFailures.size + channelSuccesses.size} active`,
       cost: 0,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       channel: "google_ads",
       action: "campaign_health_check",
       status: "failed",
-      details: `Campaign health check failed: ${err.message}`,
+      details: `Campaign health check failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -2146,8 +2147,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
   try {
     const healthAction = await monitorCampaignHealth();
     actions.push(healthAction);
-  } catch (err: any) {
-    errors.push(`Health Monitor: ${err.message}`);
+  } catch (err: unknown) {
+    errors.push(`Health Monitor: ${getErrorMessage(err)}`);
   }
 
   // 1. SEO Optimization (daily)
@@ -2157,8 +2158,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       const seoAction = await runSeoOptimization();
       actions.push(seoAction);
       recordChannelPerformance("seo_organic", seoAction.status === "success", Date.now() - t0);
-    } catch (err: any) {
-      errors.push(`SEO: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`SEO: ${getErrorMessage(err)}`);
       recordChannelPerformance("seo_organic", false, Date.now() - t0);
     }
   }
@@ -2170,8 +2171,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       const blogAction = await generateSeoBlogPost();
       actions.push(blogAction);
       recordChannelPerformance("blog_content", blogAction.status === "success", Date.now() - t0);
-    } catch (err: any) {
-      errors.push(`Blog: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Blog: ${getErrorMessage(err)}`);
       recordChannelPerformance("blog_content", false, Date.now() - t0);
     }
   }
@@ -2183,8 +2184,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       const recycleAction = await recycleTopContent();
       actions.push(recycleAction);
       recordChannelPerformance("content_recycling", recycleAction.status === "success", Date.now() - t0);
-    } catch (err: any) {
-      errors.push(`Content Recycling: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Content Recycling: ${getErrorMessage(err)}`);
       recordChannelPerformance("content_recycling", false, Date.now() - t0);
     }
   }
@@ -2197,8 +2198,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       actions.push(...socialActions);
       const anySuccess = socialActions.some(a => a.status === "success");
       recordChannelPerformance("social_organic", anySuccess, Date.now() - t0);
-    } catch (err: any) {
-      errors.push(`Social: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Social: ${getErrorMessage(err)}`);
       recordChannelPerformance("social_organic", false, Date.now() - t0);
     }
   } else if (!isOptimalPostingTime("social_organic")) {
@@ -2212,8 +2213,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       const communityAction = await generateCommunityContent();
       actions.push(communityAction);
       recordChannelPerformance("community_engagement", communityAction.status === "success", Date.now() - t0);
-    } catch (err: any) {
-      errors.push(`Community: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Community: ${getErrorMessage(err)}`);
       recordChannelPerformance("community_engagement", false, Date.now() - t0);
     }
   }
@@ -2223,8 +2224,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     try {
       const emailAction = await generateEmailNurture();
       actions.push(emailAction);
-    } catch (err: any) {
-      errors.push(`Email: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Email: ${getErrorMessage(err)}`);
     }
   }
 
@@ -2233,8 +2234,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     try {
       const outreachAction = await generateBacklinkOutreach();
       actions.push(outreachAction);
-    } catch (err: any) {
-      errors.push(`Outreach: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Outreach: ${getErrorMessage(err)}`);
     }
   }
 
@@ -2243,8 +2244,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     try {
       const affiliateAction = await optimizeAffiliateNetwork();
       actions.push(affiliateAction);
-    } catch (err: any) {
-      errors.push(`Affiliate: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Affiliate: ${getErrorMessage(err)}`);
     }
   }
 
@@ -2256,8 +2257,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     for (const action of expandedActions) {
       recordChannelPerformance(action.channel, action.status === "success");
     }
-  } catch (err: any) {
-    errors.push(`Expanded Channels: ${err.message}`);
+  } catch (err: unknown) {
+    errors.push(`Expanded Channels: ${getErrorMessage(err)}`);
   }
 
   // 9. Hacker Forum & Infosec Community Content (Mon/Wed/Fri/Sat, with throttling)
@@ -2267,8 +2268,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       const hackerAction = await generateHackerForumContent();
       actions.push(hackerAction);
       recordChannelPerformance(hackerAction.channel, hackerAction.status === "success", Date.now() - t0);
-    } catch (err: any) {
-      errors.push(`Hacker Forums: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Hacker Forums: ${getErrorMessage(err)}`);
       recordChannelPerformance("hackforums", false, Date.now() - t0);
     }
   }
@@ -2284,16 +2285,16 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
         details: tiktokResult.details,
         cost: 0,
       });
-    } catch (err: any) {
-      errors.push(`TikTok Content: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`TikTok Content: ${getErrorMessage(err)}`);
     }
 
     // Also generate YouTube Shorts scripts
     try {
       const videoAction = await generateVideoScripts();
       actions.push(videoAction);
-    } catch (err: any) {
-      errors.push(`Video Scripts: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Video Scripts: ${getErrorMessage(err)}`);
     }
   }
 
@@ -2301,8 +2302,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
   try {
     const queueAction = await generateContentQueueItems();
     actions.push(queueAction);
-  } catch (err: any) {
-    errors.push(`Content Queue: ${err.message}`);
+  } catch (err: unknown) {
+    errors.push(`Content Queue: ${getErrorMessage(err)}`);
   }
 
   // 12. Trigger Marketing Engine cycle (handles paid campaigns + social publishing)
@@ -2315,13 +2316,13 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       details: `Marketing engine: ${marketingResult.contentGenerated} content, ${marketingResult.contentPublished} published, ${marketingResult.campaignsOptimized} campaigns optimized`,
       cost: 0, // Tracked separately by marketing engine
     });
-  } catch (err: any) {
-    errors.push(`Marketing Engine: ${err.message}`);
+  } catch (err: unknown) {
+    errors.push(`Marketing Engine: ${getErrorMessage(err)}`);
     actions.push({
       channel: "google_ads",
       action: "marketing_engine_cycle",
       status: "failed",
-      details: `Marketing engine cycle failed: ${err.message}`,
+      details: `Marketing engine cycle failed: ${getErrorMessage(err)}`,
       cost: 0,
     });
   }
@@ -2343,8 +2344,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
         status: errors.length === 0 ? "success" : "failed",
       });
     }
-  } catch (err: any) {
-    log.error("[AdvertisingOrchestrator] Failed to log cycle:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[AdvertisingOrchestrator] Failed to log cycle:", { error: String(getErrorMessage(err)) });
   }
 
   // Calculate metrics
@@ -2428,8 +2429,8 @@ export function startAdvertisingScheduler(): void {
     try {
       log.info("[AdvertisingOrchestrator] Running scheduled advertising cycle...");
       await runAdvertisingCycle();
-    } catch (err: any) {
-      log.error("[AdvertisingOrchestrator] Scheduled cycle failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[AdvertisingOrchestrator] Scheduled cycle failed:", { error: String(getErrorMessage(err)) });
     }
   }, 24 * 60 * 60 * 1000);
 }

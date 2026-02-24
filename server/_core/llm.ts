@@ -455,12 +455,12 @@ async function _invokeLLMWithRetry(
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(fetchTimeout);
     // Release key on error
     if (keyHandle) reportError(keyHandle.index, keyHandle.envVar);
 
-    if (err.name === 'AbortError') {
+    if ((err as Error).name === 'AbortError') {
       throw new Error(`LLM request timed out after ${fetchTimeoutMs / 1000}s`);
     }
     throw err;

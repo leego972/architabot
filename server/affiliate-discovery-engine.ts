@@ -25,6 +25,7 @@ import {
 import { randomBytes } from "crypto";
 import { notifyOwner } from "./_core/notification";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("AffiliateDiscoveryEngine");
 
 // ─── Kill Switch ──────────────────────────────────────────────────────
@@ -252,8 +253,8 @@ export async function runDiscoveryCycle(
               try {
                 await generateApplication(program.id);
                 totalApplications++;
-              } catch (appErr: any) {
-                errors.push(`Application gen failed for ${program.name}: ${appErr.message}`);
+              } catch (appErr: unknown) {
+                errors.push(`Application gen failed for ${program.name}: ${getErrorMessage(appErr)}`);
               }
 
               // Step 3b: Auto-promote programs scoring 80+ immediately
@@ -261,17 +262,17 @@ export async function runDiscoveryCycle(
                 try {
                   await promoteDiscoveryToPartner(program.id);
                   log.info(`[AffiliateDiscovery] Auto-promoted high-scorer: ${program.name} (score: ${scored.overallScore})`);
-                } catch (promoErr: any) {
-                  errors.push(`Auto-promote failed for ${program.name}: ${promoErr.message}`);
+                } catch (promoErr: unknown) {
+                  errors.push(`Auto-promote failed for ${program.name}: ${getErrorMessage(promoErr)}`);
                 }
               }
             }
-          } catch (evalErr: any) {
-            errors.push(`Evaluation failed for ${program.name}: ${evalErr.message}`);
+          } catch (evalErr: unknown) {
+            errors.push(`Evaluation failed for ${program.name}: ${getErrorMessage(evalErr)}`);
           }
         }
-      } catch (vertErr: any) {
-        errors.push(`Vertical ${verticalConfig.vertical} failed: ${vertErr.message}`);
+      } catch (vertErr: unknown) {
+        errors.push(`Vertical ${verticalConfig.vertical} failed: ${getErrorMessage(vertErr)}`);
       }
     }
 
@@ -303,19 +304,19 @@ export async function runDiscoveryCycle(
     }
 
     return { batchId, programsDiscovered: totalDiscovered, programsApproved: totalApproved, applicationsGenerated: totalApplications, errors, durationMs };
-  } catch (err: any) {
+  } catch (err: unknown) {
     const durationMs = Date.now() - startTime;
     await db.update(affiliateDiscoveryRuns)
       .set({
         status: "failed",
         completedAt: new Date(),
         durationMs,
-        errors: [...errors, err.message],
+        errors: [...errors, getErrorMessage(err)],
       })
       .where(eq(affiliateDiscoveryRuns.batchId, batchId));
 
     log.error(`[AffiliateDiscovery] Cycle failed:`, { error: String(err) });
-    return { batchId, programsDiscovered: totalDiscovered, programsApproved: totalApproved, applicationsGenerated: totalApplications, errors: [...errors, err.message], durationMs };
+    return { batchId, programsDiscovered: totalDiscovered, programsApproved: totalApproved, applicationsGenerated: totalApplications, errors: [...errors, getErrorMessage(err)], durationMs };
   }
 }
 
@@ -448,8 +449,8 @@ Already known domains to EXCLUDE: ${Array.from(existingDomains).slice(0, 50).joi
         discovered.push({ id: insertId, name: prog.name });
         log.info(`[AffiliateDiscovery] Found: ${prog.name} (${domain}) — ${vertical}`);
       }
-    } catch (err: any) {
-      log.error(`[AffiliateDiscovery] Query "${query}" failed:`, { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error(`[AffiliateDiscovery] Query "${query}" failed:`, { error: String(getErrorMessage(err)) });
     }
   }
 
@@ -543,7 +544,7 @@ Score this program's revenue potential and relevance to Titan users.`,
     log.info(`[AffiliateDiscovery] Scored ${discovery.name}: revenue=${revenueScore}, relevance=${relevanceScore}, overall=${overallScore} → ${newStatus}`);
 
     return { revenueScore, relevanceScore, overallScore };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Fallback scoring based on commission rate
     const revenueScore = discovery.estimatedCommissionRate > 5000 ? 70 : discovery.estimatedCommissionRate > 1000 ? 50 : 30;
     const relevanceScore = ["ai_tools", "dev_tools", "hosting"].includes(discovery.vertical) ? 70 : 40;
@@ -642,7 +643,7 @@ Affiliate Program URL: ${discovery.affiliateProgramUrl || "N/A"}`,
 
     log.info(`[AffiliateDiscovery] Application drafted for ${discovery.name}`);
     return email;
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Fallback template
     const fallback = {
       subject: `Partnership Opportunity: Archibald Titan x ${discovery.name}`,
@@ -870,8 +871,8 @@ export function startScheduledDiscovery(): void {
         log.info("[AffiliateDiscovery] Daily scheduled run triggered");
         try {
           await runDiscoveryCycle("scheduled");
-        } catch (err: any) {
-          log.error("[AffiliateDiscovery] Scheduled run failed:", { error: String(err.message) });
+        } catch (err: unknown) {
+          log.error("[AffiliateDiscovery] Scheduled run failed:", { error: String(getErrorMessage(err)) });
         }
       }
     }
@@ -893,8 +894,8 @@ export function startScheduledDiscovery(): void {
       log.info("[AffiliateDiscovery] Startup discovery run triggered");
       try {
         await runDiscoveryCycle("startup");
-      } catch (err: any) {
-        log.error("[AffiliateDiscovery] Startup run failed:", { error: String(err.message) });
+      } catch (err: unknown) {
+        log.error("[AffiliateDiscovery] Startup run failed:", { error: String(getErrorMessage(err)) });
       }
     }
   }, 5 * 60 * 1000);

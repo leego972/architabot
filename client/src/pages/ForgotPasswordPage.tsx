@@ -52,7 +52,7 @@ export default function ForgotPasswordPage() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center justify-center gap-3 mb-8">
-          <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/HNaKzhPBmMbQmPPP.png" alt="Archibald Titan" className="h-20 object-contain" />
+          <img loading="lazy" src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/HNaKzhPBmMbQmPPP.png" alt="Archibald Titan" className="h-20 object-contain" />
         </div>
 
         <Card className="border-border/50 bg-card/80 backdrop-blur-sm shadow-2xl">

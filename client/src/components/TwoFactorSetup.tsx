@@ -167,7 +167,7 @@ export function TwoFactorSetup() {
             </div>
             <div className="flex justify-center">
               <div className="bg-white p-3 rounded-lg">
-                <img src={setupData.qrCode} alt="2FA QR Code" className="w-48 h-48" />
+                <img loading="lazy" src={setupData.qrCode} alt="2FA QR Code" className="w-48 h-48" />
               </div>
             </div>
             <div className="flex items-center gap-2">

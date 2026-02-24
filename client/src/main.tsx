@@ -42,11 +42,21 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+/** Read the CSRF token from the cookie set by the server */
+function getCsrfToken(): string | undefined {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      headers() {
+        const csrf = getCsrfToken();
+        return csrf ? { "x-csrf-token": csrf } : {};
+      },
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),

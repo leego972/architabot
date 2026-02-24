@@ -32,6 +32,20 @@ body {
     min-height: 44px;
     min-width: 44px;
   }
+}
+
+/* Ensure minimum 44px touch targets on mobile for all interactive elements */
+@media (pointer: coarse) {
+  button:not([class*="h-"]),
+  a[role="button"],
+  [role="tab"],
+  [role="menuitem"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+@layer utilities {
   .safe-area-bottom {
     padding-bottom: max(0.5rem, var(--sab));
   }

@@ -254,14 +254,14 @@ export const webhookRouter = router({
           .where(eq(webhooks.id, hook[0].id));
 
         return { success: response.ok, statusCode: response.status, responseMs };
-      } catch (err: any) {
+      } catch (err: unknown) {
         await db.insert(webhookDeliveryLogs).values({
           webhookId: hook[0].id,
           userId: ctx.user.id,
           eventType: "test.ping",
           payload: testPayload,
           success: 0,
-          errorMessage: err.message || "Connection failed",
+          errorMessage: getErrorMessage(err) || "Connection failed",
         });
 
         await db
@@ -269,7 +269,7 @@ export const webhookRouter = router({
           .set({ failCount: sql`${webhooks.failCount} + 1` })
           .where(eq(webhooks.id, hook[0].id));
 
-        return { success: false, error: err.message || "Connection failed" };
+        return { success: false, error: getErrorMessage(err) || "Connection failed" };
       }
     }),
 
@@ -464,6 +464,7 @@ export const apiAnalyticsRouter = router({
 import { Express, Request, Response, NextFunction } from "express";
 import { validateApiKey } from "./api-access-router";
 import { getDecryptedCredentials, exportCredentials } from "./fetcher-db";
+import { getErrorMessage } from "./_core/errors.js";
 
 // Rate limiting middleware
 async function rateLimitMiddleware(req: Request, res: Response, next: NextFunction) {

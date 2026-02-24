@@ -13,6 +13,7 @@
 
 import { ENV } from "./_core/env";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("MarketingChannels");
 
 // ============================================
@@ -96,8 +97,8 @@ async function apiCall(
       }
 
       return data;
-    } catch (err: any) {
-      lastError = err;
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, retryDelay * Math.pow(2, attempt)));
       }
@@ -191,9 +192,9 @@ export const metaAdapter = {
         platformPostId: data.id || data.post_id,
         url: `https://facebook.com/${data.id}`,
       };
-    } catch (err: any) {
-      log.error("[Meta FB] Post failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[Meta FB] Post failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -239,9 +240,9 @@ export const metaAdapter = {
         platformPostId: publish.id,
         url: `https://instagram.com/p/${publish.id}`,
       };
-    } catch (err: any) {
-      log.error("[Meta IG] Post failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[Meta IG] Post failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -369,9 +370,9 @@ export const metaAdapter = {
         platformAdSetId: adSet.id,
         platformAdId: ad.id,
       };
-    } catch (err: any) {
-      log.error("[Meta Ads] Campaign creation failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[Meta Ads] Campaign creation failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -402,8 +403,8 @@ export const metaAdapter = {
         cpc: parseFloat(insight.cpc || "0"),
         cpm: parseFloat(insight.cpm || "0"),
       };
-    } catch (err: any) {
-      log.error("[Meta] Metrics fetch failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[Meta] Metrics fetch failed:", { error: String(getErrorMessage(err)) });
       return null;
     }
   },
@@ -580,9 +581,9 @@ export const googleAdsAdapter = {
         platformAdSetId: adGroupResourceName,
         platformAdId: adResp.results[0].resourceName,
       };
-    } catch (err: any) {
-      log.error("[Google Ads] Campaign creation failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[Google Ads] Campaign creation failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -630,8 +631,8 @@ export const googleAdsAdapter = {
         cpc: parseInt(row.averageCpc || "0") / 1_000_000,
         cpm: parseInt(row.averageCpm || "0") / 1_000_000,
       };
-    } catch (err: any) {
-      log.error("[Google Ads] Metrics fetch failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[Google Ads] Metrics fetch failed:", { error: String(getErrorMessage(err)) });
       return null;
     }
   },
@@ -736,9 +737,9 @@ export const xAdapter = {
         platformPostId: data.data?.id,
         url: `https://x.com/i/status/${data.data?.id}`,
       };
-    } catch (err: any) {
-      log.error("[X] Tweet failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[X] Tweet failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -770,8 +771,8 @@ export const xAdapter = {
 
       const data = await response.json();
       return data.media_id_string || null;
-    } catch (err: any) {
-      log.error("[X] Media upload failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[X] Media upload failed:", { error: String(getErrorMessage(err)) });
       return null;
     }
   },
@@ -804,8 +805,8 @@ export const xAdapter = {
         cpc: 0,
         cpm: 0,
       };
-    } catch (err: any) {
-      log.error("[X] Metrics fetch failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[X] Metrics fetch failed:", { error: String(getErrorMessage(err)) });
       return null;
     }
   },
@@ -882,9 +883,9 @@ export const linkedinAdapter = {
         platformPostId: data.id,
         url: `https://linkedin.com/feed/update/${data.id}`,
       };
-    } catch (err: any) {
-      log.error("[LinkedIn] Post failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[LinkedIn] Post failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -952,9 +953,9 @@ export const linkedinAdapter = {
         platformCampaignId: campaignGroup.id,
         platformAdSetId: campaign.id,
       };
-    } catch (err: any) {
-      log.error("[LinkedIn Ads] Campaign creation failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[LinkedIn Ads] Campaign creation failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -986,8 +987,8 @@ export const linkedinAdapter = {
         cpc: el.clicks && el.costInLocalCurrency ? parseFloat(el.costInLocalCurrency) / el.clicks : 0,
         cpm: el.impressions ? (parseFloat(el.costInLocalCurrency || "0") / el.impressions) * 1000 : 0,
       };
-    } catch (err: any) {
-      log.error("[LinkedIn] Metrics fetch failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[LinkedIn] Metrics fetch failed:", { error: String(getErrorMessage(err)) });
       return null;
     }
   },
@@ -1154,9 +1155,9 @@ export const snapchatAdapter = {
         platformAdSetId: adSquadId,
         platformAdId: adResp.ads?.[0]?.ad?.id,
       };
-    } catch (err: any) {
-      log.error("[Snapchat] Campaign creation failed:", { error: String(err.message) });
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error("[Snapchat] Campaign creation failed:", { error: String(getErrorMessage(err)) });
+      return { success: false, error: getErrorMessage(err) };
     }
   },
 
@@ -1188,8 +1189,8 @@ export const snapchatAdapter = {
         cpc: stats.swipes ? ((stats.spend || 0) / 1_000_000) / stats.swipes : 0,
         cpm: stats.impressions ? ((stats.spend || 0) / 1_000_000 / stats.impressions) * 1000 : 0,
       };
-    } catch (err: any) {
-      log.error("[Snapchat] Metrics fetch failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[Snapchat] Metrics fetch failed:", { error: String(getErrorMessage(err)) });
       return null;
     }
   },
@@ -1248,8 +1249,8 @@ const sendgridAdapter = {
       }
 
       return { success: true, platformPostId: response.headers.get("x-message-id") || undefined };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 
@@ -1299,8 +1300,8 @@ const sendgridAdapter = {
       }
 
       return { success: true, platformCampaignId: data.id };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 
@@ -1414,8 +1415,8 @@ const redditAdapter = {
 
       const postUrl = data.json?.data?.url;
       return { success: true, platformPostId: data.json?.data?.id, url: postUrl };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 
@@ -1485,8 +1486,8 @@ const tiktokAdapter = {
       }
 
       return { success: true, platformCampaignId: data.data?.campaign_id };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 
@@ -1527,8 +1528,8 @@ const tiktokAdapter = {
         return { success: false, error: `TikTok error: ${data.message}` };
       }
       return { success: true, adGroupId: data.data?.adgroup_id };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 
@@ -1551,8 +1552,8 @@ const tiktokAdapter = {
       const data = await response.json() as any;
       if (data.code !== 0) return { success: false, error: data.message };
       return { success: true, videoId: data.data?.video_id };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 
@@ -1666,8 +1667,8 @@ const pinterestAdapter = {
         platformPostId: data.id,
         url: `https://pinterest.com/pin/${data.id}`,
       };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 
@@ -1707,8 +1708,8 @@ const pinterestAdapter = {
       const data = await response.json() as any;
       const campaign = data.items?.[0]?.data;
       return { success: true, platformCampaignId: campaign?.id };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
   },
 

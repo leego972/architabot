@@ -47,6 +47,7 @@ import {
 import { getAffiliateRecommendationContext } from "./affiliate-recommendation-engine";
 import { getExpertKnowledge, getDomainSummary } from "./titan-knowledge-base";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("ChatRouter");
 
 const MAX_CONTEXT_MESSAGES = 20; // max messages loaded into LLM context (lower = faster + more room for tool results)
@@ -1582,8 +1583,8 @@ Do NOT attempt any tool calls or builds.`;
                 } else {
                   log.warn(`[Chat] GitHub push failed: ${pushResult.error}`);
                 }
-              } catch (e: any) {
-                log.warn(`[Chat] GitHub push error: ${e?.message}`);
+              } catch (e: unknown) {
+                log.warn(`[Chat] GitHub push error: ${getErrorMessage(e)}`);
               }
             }
           }
@@ -1612,8 +1613,8 @@ Do NOT attempt any tool calls or builds.`;
               } else {
                 log.warn(`[Chat] Fallback push failed: ${pushResult.error}`);
               }
-            } catch (e: any) {
-              log.warn(`[Chat] Fallback push error: ${e?.message}`);
+            } catch (e: unknown) {
+              log.warn(`[Chat] Fallback push error: ${getErrorMessage(e)}`);
             }
           }
         }
@@ -1660,15 +1661,15 @@ Do NOT attempt any tool calls or builds.`;
           },
           upsell,
         };
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Clean up deferred mode on error
         disableDeferredMode();
-        log.error("[Chat] LLM error:", { error: err?.message || err });
+        log.error("[Chat] LLM error:", { error: getErrorMessage(err) });
         // Instead of throwing (which loses the user's message), save an error response
         const errorText = "Connection blip on my end — couldn't reach the AI service. Send that again, would you? If it keeps happening, a fresh conversation usually sorts it out.";
         emitChatEvent(conversationId!, {
           type: "error",
-          data: { message: err?.message || "Unknown error" },
+          data: { message: getErrorMessage(err) },
         });
         completeBuild(conversationId!, { status: "failed" });
         cleanupRequest(conversationId!);

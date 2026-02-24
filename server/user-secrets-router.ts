@@ -20,6 +20,7 @@ import { getDb } from "./db";
 import { userSecrets } from "../drizzle/schema";
 import { encrypt, decrypt } from "./fetcher-db";
 import { TRPCError } from "@trpc/server";
+import { getErrorMessage } from "./_core/errors.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -62,11 +63,11 @@ async function validateKeyWithOpenAI(apiKey: string): Promise<{ valid: boolean; 
 
     const body = await response.text().catch(() => "");
     return { valid: false, error: `OpenAI returned ${response.status}: ${body.slice(0, 200)}` };
-  } catch (err: any) {
-    if (err.name === "TimeoutError" || err.name === "AbortError") {
+  } catch (err: unknown) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
       return { valid: false, error: "Connection to OpenAI timed out — please try again" };
     }
-    return { valid: false, error: `Failed to connect to OpenAI: ${err.message}` };
+    return { valid: false, error: `Failed to connect to OpenAI: ${getErrorMessage(err)}` };
   }
 }
 
@@ -332,9 +333,9 @@ export const userSecretsRouter = router({
         }
 
         return { success: true, maskedPat, githubUsername };
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (err instanceof TRPCError) throw err;
-        throw new TRPCError({ code: "BAD_REQUEST", message: `GitHub PAT validation failed: ${err.message}` });
+        throw new TRPCError({ code: "BAD_REQUEST", message: `GitHub PAT validation failed: ${getErrorMessage(err)}` });
       }
     }),
 

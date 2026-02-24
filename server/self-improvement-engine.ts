@@ -366,7 +366,7 @@ export async function createSnapshot(
   } catch (err) {
     return {
       success: false,
-      error: `Snapshot failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Snapshot failed: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }
@@ -726,7 +726,7 @@ export async function applyModifications(
         rolledBack: 0,
       });
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = err instanceof Error ? getErrorMessage(err) : String(err);
       results.push({
         filePath: normalized,
         action: mod.action,
@@ -848,7 +848,7 @@ export async function rollbackToSnapshot(
     return {
       success: false,
       filesRestored: 0,
-      error: `Rollback failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Rollback failed: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }
@@ -976,7 +976,7 @@ export async function saveCheckpoint(
   } catch (err) {
     return {
       success: false,
-      error: `Checkpoint save failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Checkpoint save failed: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }
@@ -1010,7 +1010,7 @@ export async function listCheckpoints(
   } catch (err) {
     return {
       success: false,
-      error: `List checkpoints failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `List checkpoints failed: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }
@@ -1073,7 +1073,7 @@ export async function rollbackToCheckpoint(
     return {
       success: false,
       filesRestored: 0,
-      error: `Rollback to checkpoint failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Rollback to checkpoint failed: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }// ─── Health Check ──────────────────────────────────────────────────────────────
@@ -1289,7 +1289,7 @@ export async function requestRestart(
   } catch (err) {
     return {
       success: false,
-      message: `Failed to trigger restart: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Failed to trigger restart: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }
@@ -1333,7 +1333,7 @@ export function readFile(
   } catch (err) {
     return {
       success: false,
-      error: `Read failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Read failed: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }
@@ -1365,7 +1365,7 @@ export function listFiles(
   } catch (err) {
     return {
       success: false,
-      error: `List failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `List failed: ${err instanceof Error ? getErrorMessage(err) : String(err)}`,
     };
   }
 }
@@ -1429,6 +1429,7 @@ export function getAllowedDirectories(): string[] {
 
 import { execSync } from "child_process";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("SelfImprovementEngine");
 
 /**
@@ -1455,8 +1456,8 @@ export async function runTypeCheck(): Promise<{
       timeout: 60000,
     });
     return { passed: true, errorCount: 0, output: output.trim() || "No errors found." };
-  } catch (err: any) {
-    const output = err.stdout || err.stderr || String(err);
+  } catch (err: unknown) {
+    const output = (err as any).stdout || (err as any).stderr || String(err);
     const errorMatches = output.match(/error TS\d+/g) || [];
     return {
       passed: false,
@@ -1506,8 +1507,8 @@ export async function runTests(testPattern?: string): Promise<{
       failedTests: totalFailed,
       output: output.substring(0, 5000),
     };
-  } catch (err: any) {
-    const output = err.stdout || err.stderr || String(err);
+  } catch (err: unknown) {
+    const output = (err as any).stdout || (err as any).stderr || String(err);
     const passMatch = output.match(/(\d+)\s+passed/);
     const failMatch = output.match(/(\d+)\s+failed/);
     const totalPassed = passMatch ? parseInt(passMatch[1], 10) : 0;
@@ -1705,7 +1706,7 @@ export async function flushStagedChanges(): Promise<{
         }
       }
     } catch (err) {
-      const msg = `Failed to flush ${change.filePath}: ${err instanceof Error ? err.message : String(err)}`;
+      const msg = `Failed to flush ${change.filePath}: ${err instanceof Error ? getErrorMessage(err) : String(err)}`;
       log.error(`[SelfImprovement] ${msg}`);
       errors.push(msg);
     }
@@ -1865,7 +1866,7 @@ export async function applyModificationsDeferred(
         });
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = err instanceof Error ? getErrorMessage(err) : String(err);
       results.push({
         filePath: normalized,
         action: mod.action,
@@ -1970,8 +1971,8 @@ export async function pushToGitHub(
         execSync("git fetch origin main --depth=1 2>&1", { cwd: PROJECT_ROOT, encoding: "utf-8", timeout: 30000 });
         // Reset to the fetched state but keep our working tree changes
         execSync("git reset --soft origin/main 2>&1", { cwd: PROJECT_ROOT, encoding: "utf-8" });
-      } catch (fetchErr: any) {
-        log.warn(`[SelfImprovement] Could not fetch from origin: ${fetchErr.message}`);
+      } catch (fetchErr: unknown) {
+        log.warn(`[SelfImprovement] Could not fetch from origin: ${getErrorMessage(fetchErr)}`);
       }
       log.info("[SelfImprovement] Git repo initialized successfully");
     } else {
@@ -1997,9 +1998,9 @@ export async function pushToGitHub(
     const sanitizedMessage = commitMessage.replace(/"/g, '\\"');
     try {
       execSync(`git commit -m "${sanitizedMessage}"`, { cwd: PROJECT_ROOT, encoding: "utf-8" });
-    } catch (commitErr: any) {
+    } catch (commitErr: unknown) {
       // If nothing to commit, that's OK
-      if (commitErr.stdout?.includes("nothing to commit") || commitErr.stderr?.includes("nothing to commit")) {
+      if ((commitErr as any).stdout?.includes("nothing to commit") || (commitErr as any).stderr?.includes("nothing to commit")) {
         return {
           success: true,
           pushedRepos: [],
@@ -2032,8 +2033,8 @@ export async function pushToGitHub(
         });
         pushedRepos.push(repo.name);
         log.info(`[SelfImprovement] Pushed to ${repo.name} (${commitHash})`);
-      } catch (pushErr: any) {
-        log.error(`[SelfImprovement] Failed to push to ${repo.name}: ${pushErr.message}`);
+      } catch (pushErr: unknown) {
+        log.error(`[SelfImprovement] Failed to push to ${repo.name}: ${getErrorMessage(pushErr)}`);
       }
     }
 
@@ -2058,7 +2059,7 @@ export async function pushToGitHub(
       error: pushedRepos.length === 0 ? "Failed to push to any repository" : undefined,
     };
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorMsg = err instanceof Error ? getErrorMessage(err) : String(err);
     log.error(`[SelfImprovement] GitHub push failed: ${errorMsg}`);
     return {
       success: false,

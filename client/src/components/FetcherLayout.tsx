@@ -552,7 +552,7 @@ function FetcherLayoutContent({
         )}
         <DesktopStatusBar />
         <TrialBanner />
-        <main className="flex-1 p-3 sm:p-4 md:p-6 max-md:[&:has(.chat-page-root)]:p-0 safe-area-bottom">{children}</main>
+        <main id="main-content" className="flex-1 p-3 sm:p-4 md:p-6 max-md:[&:has(.chat-page-root)]:p-0 safe-area-bottom">{children}</main>
       </SidebarInset>
     </>
   );

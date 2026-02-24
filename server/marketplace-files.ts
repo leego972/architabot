@@ -10,6 +10,7 @@ import { storagePut, storageGet } from "./storage";
 import * as db from "./db";
 import crypto from "crypto";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("MarketplaceFiles");
 
 // Max file size: 100MB
@@ -157,8 +158,8 @@ export function registerMarketplaceFileRoutes(app: Express) {
               }
             }
           }
-        } catch (antiResaleErr: any) {
-          log.warn("[Marketplace] Anti-resale check warning (non-fatal):", { error: antiResaleErr.message });
+        } catch (antiResaleErr: unknown) {
+          log.warn("[Marketplace] Anti-resale check warning (non-fatal):", { error: getErrorMessage(antiResaleErr) });
         }
       }
 
@@ -175,8 +176,8 @@ export function registerMarketplaceFileRoutes(app: Express) {
         const backupKey = `backups/users/${user.id}/marketplace/${listing.uid}/${timestamp}-${sanitizedName}`;
         await storagePut(backupKey, result.fileBuffer, mimeType);
         log.info(`[Marketplace] Backup stored: ${backupKey}`);
-      } catch (backupErr: any) {
-        log.warn(`[Marketplace] Backup failed (non-fatal): ${backupErr.message}`);
+      } catch (backupErr: unknown) {
+        log.warn(`[Marketplace] Backup failed (non-fatal): ${getErrorMessage(backupErr)}`);
       }
 
       // Update listing with file info + hash for anti-resale protection
@@ -195,9 +196,9 @@ export function registerMarketplaceFileRoutes(app: Express) {
         fileType: ext,
         url,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error("[Marketplace Upload Error]", { error: String(err) });
-      return res.status(500).json({ error: err.message || "Upload failed" });
+      return res.status(500).json({ error: getErrorMessage(err) || "Upload failed" });
     }
   });
 
@@ -292,9 +293,9 @@ export function registerMarketplaceFileRoutes(app: Express) {
         downloadsUsed: purchase.downloadCount + 1,
         downloadsRemaining: purchase.maxDownloads - purchase.downloadCount - 1,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error("[Marketplace Download Error]", { error: String(err) });
-      return res.status(500).json({ error: err.message || "Download failed" });
+      return res.status(500).json({ error: getErrorMessage(err) || "Download failed" });
     }
   });
 

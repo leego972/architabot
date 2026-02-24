@@ -39,6 +39,7 @@ import { notifyOwner } from "./_core/notification";
 import { invokeLLM } from "./_core/llm";
 import { getSettings } from "./fetcher-db";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("AffiliateSignupEngine");
 
 // ─── Business Details ────────────────────────────────────────────────
@@ -739,13 +740,13 @@ async function signupForProgram(
         manualStepDescription: "Form was submitted but the result page was ambiguous. Check archibaldtitan@gmail.com for confirmation.",
       };
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (browser) {
       try { await browser.close(); } catch { /* */ }
     }
     return {
       success: false,
-      message: `Signup error for ${programName}: ${err.message}`,
+      message: `Signup error for ${programName}: ${getErrorMessage(err)}`,
       requiresManualStep: true,
       manualStepDescription: `Automated signup encountered an error. Visit ${signupUrl} manually.`,
     };
@@ -983,8 +984,8 @@ export async function autoSignupAfterDiscovery(adminUserId?: number): Promise<vo
       adminUserId,
     });
     log.info(`[AffiliateSignup] Auto-signup complete: ${result.succeeded} succeeded, ${result.pending} pending, ${result.failed} failed`);
-  } catch (err: any) {
-    log.error("[AffiliateSignup] Auto-signup failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[AffiliateSignup] Auto-signup failed:", { error: String(getErrorMessage(err)) });
   }
 }
 
@@ -1010,8 +1011,8 @@ export function startScheduledSignups(): void {
       log.info("[AffiliateSignup] Scheduled signup batch triggered");
       try {
         await runSignupBatch({ limit: 5 });
-      } catch (err: any) {
-        log.error("[AffiliateSignup] Scheduled signup failed:", { error: String(err.message) });
+      } catch (err: unknown) {
+        log.error("[AffiliateSignup] Scheduled signup failed:", { error: String(getErrorMessage(err)) });
       }
     }
   }, EIGHT_HOURS);

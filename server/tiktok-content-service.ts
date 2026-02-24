@@ -20,6 +20,7 @@ import { getDb } from "./db";
 import { marketingContent, marketingActivityLog, blogPosts } from "../drizzle/schema";
 import { eq, desc, and, isNotNull, sql } from "drizzle-orm";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("TiktokContentService");
 
 // ============================================
@@ -112,8 +113,8 @@ export async function queryCreatorInfo(): Promise<TikTokCreatorInfo | null> {
       stitchDisabled: data.data?.stitch_disabled,
       maxVideoPostDurationSec: data.data?.max_video_post_duration_sec,
     };
-  } catch (err: any) {
-    log.error("[TikTok Content] Failed to query creator info:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[TikTok Content] Failed to query creator info:", { error: String(getErrorMessage(err)) });
     return null;
   }
 }
@@ -172,9 +173,9 @@ export async function postVideoByUrl(params: {
       success: true,
       publishId: data.data?.publish_id,
     };
-  } catch (err: any) {
-    log.error("[TikTok Content] Video post failed:", { error: String(err.message) });
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    log.error("[TikTok Content] Video post failed:", { error: String(getErrorMessage(err)) });
+    return { success: false, error: getErrorMessage(err) };
   }
 }
 
@@ -238,9 +239,9 @@ export async function postPhotos(params: {
       success: true,
       publishId: data.data?.publish_id,
     };
-  } catch (err: any) {
-    log.error("[TikTok Content] Photo post failed:", { error: String(err.message) });
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    log.error("[TikTok Content] Photo post failed:", { error: String(getErrorMessage(err)) });
+    return { success: false, error: getErrorMessage(err) };
   }
 }
 
@@ -274,8 +275,8 @@ export async function getPostStatus(publishId: string): Promise<TikTokPostStatus
       failReason: data.data?.fail_reason,
       publiclyAvailable: data.data?.publicly_available,
     };
-  } catch (err: any) {
-    log.error("[TikTok Content] Status check failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[TikTok Content] Status check failed:", { error: String(getErrorMessage(err)) });
     return null;
   }
 }
@@ -344,8 +345,8 @@ Return JSON with these fields:
 
     const plan = JSON.parse((response.choices[0].message.content as string) || "{}");
     return plan as TikTokContentPlan;
-  } catch (err: any) {
-    log.error("[TikTok Content] Plan generation failed:", { error: String(err.message) });
+  } catch (err: unknown) {
+    log.error("[TikTok Content] Plan generation failed:", { error: String(getErrorMessage(err)) });
     return null;
   }
 }
@@ -377,8 +378,8 @@ export async function generateCarouselImages(plan: TikTokContentPlan): Promise<s
         const { url: s3Url } = await storagePut(key, imageBuffer, "image/png");
         imageUrls.push(s3Url);
       }
-    } catch (err: any) {
-      log.error("[TikTok Content] Image generation failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[TikTok Content] Image generation failed:", { error: String(getErrorMessage(err)) });
     }
   }
 

@@ -113,7 +113,8 @@ export default function OnboardingWizard() {
             className="text-muted-foreground hover:text-foreground transition-colors p-1"
             title="Skip onboarding"
           >
-            <X className="w-5 h-5" />
+                  <span className="sr-only">Close</span>
+                  <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -135,7 +136,7 @@ export default function OnboardingWizard() {
           <CardContent className="pt-6 pb-4 px-6 overflow-y-auto min-h-0 flex-1">
             <div className="text-center space-y-3">
               {currentStep.id === "welcome" ? (
-                <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/GTLLcfWCzgSCNGXQ.png" alt="AT" className="mx-auto w-14 h-14 object-contain" />
+                <img loading="lazy" src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/GTLLcfWCzgSCNGXQ.png" alt="AT" className="mx-auto w-14 h-14 object-contain" />
               ) : (
                 <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 flex items-center justify-center">
                   <Icon className="w-7 h-7 text-blue-400" />

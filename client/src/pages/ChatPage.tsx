@@ -617,7 +617,8 @@ function ConversationSidebar({
           className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
           title="New conversation"
         >
-          <Plus className="h-4 w-4" />
+                  <span className="sr-only">Add</span>
+                  <Plus className="h-4 w-4" />
         </button>
       </div>
     );
@@ -629,7 +630,8 @@ function ConversationSidebar({
         <h3 className="text-sm font-semibold">Conversations</h3>
         <div className="flex items-center gap-1">
           <button onClick={onNew} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" title="New conversation" aria-label="New conversation">
-            <Plus className="h-4 w-4" />
+                  <span className="sr-only">Add</span>
+                  <Plus className="h-4 w-4" />
           </button>
           <button onClick={onToggle} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" title="Collapse sidebar" aria-label="Collapse sidebar">
             <PanelLeftClose className="h-4 w-4" />
@@ -819,7 +821,8 @@ function MobileConversationDrawer({
               <Plus className="h-4 w-4" />
             </button>
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors" aria-label="Close sidebar">
-              <X className="h-4 w-4" />
+                  <span className="sr-only">Close</span>
+                  <X className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -1833,7 +1836,8 @@ export default function ChatPage() {
                 title="New conversation"
                 aria-label="New conversation"
               >
-                <Plus className="h-4.5 w-4.5" />
+                  <span className="sr-only">Add</span>
+                  <Plus className="h-4.5 w-4.5" />
               </button>
             )}
           </div>

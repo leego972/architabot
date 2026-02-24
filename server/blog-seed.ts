@@ -3,6 +3,7 @@ import { blogPosts, blogCategories } from "../drizzle/schema";
 import { eq, sql } from "drizzle-orm";
 import seedData from "./blog-seed-data.json";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("BlogSeed");
 
 interface SeedPost {
@@ -74,10 +75,10 @@ export async function seedBlogPosts(): Promise<number> {
       });
 
       inserted++;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Skip duplicates silently
-      if (err?.code === "ER_DUP_ENTRY") continue;
-      log.error(`[BlogSeed] Failed to insert "${post.slug}":`, { error: err?.message });
+      if ((err as any)?.code === "ER_DUP_ENTRY") continue;
+      log.error(`[BlogSeed] Failed to insert "${post.slug}":`, { error: getErrorMessage(err) });
     }
   }
 
@@ -117,7 +118,7 @@ export async function seedBlogPosts(): Promise<number> {
             .set({ postCount: count })
             .where(eq(blogCategories.slug, cat));
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Ignore category errors
       }
     }

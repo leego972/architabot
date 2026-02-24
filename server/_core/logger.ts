@@ -3,9 +3,12 @@
  * 
  * Provides levelled logging with timestamps, module tags, and JSON output
  * in production. Respects LOG_LEVEL environment variable.
+ * Automatically includes request correlation IDs when available.
  * 
  * Levels: debug < info < warn < error < silent
  */
+
+import { getCorrelationId } from "./correlation";
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
 
@@ -34,15 +37,17 @@ const isProd = () => process.env.NODE_ENV === 'production';
 
 function formatMessage(level: string, module: string, message: string, data?: Record<string, unknown>): string {
   const ts = new Date().toISOString();
+  const cid = getCorrelationId();
   if (isProd()) {
     // JSON structured logging for production (Cloud Run, Railway, etc.)
-    return JSON.stringify({ ts, level, module, msg: message, ...data });
+    return JSON.stringify({ ts, level, module, ...(cid ? { cid } : {}), msg: message, ...data });
   }
   // Human-readable for development
   const color = LEVEL_COLORS[level] || '';
   const tag = module ? `[${module}]` : '';
+  const cidTag = cid ? ` (${cid})` : '';
   const extra = data ? ` ${JSON.stringify(data)}` : '';
-  return `${color}${ts} ${level.toUpperCase().padEnd(5)}${RESET} ${tag} ${message}${extra}`;
+  return `${color}${ts} ${level.toUpperCase().padEnd(5)}${RESET} ${tag}${cidTag} ${message}${extra}`;
 }
 
 function shouldLog(level: LogLevel): boolean {

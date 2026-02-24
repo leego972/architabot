@@ -14,6 +14,7 @@
 
 import { invokeLLM } from "./_core/llm";
 import type { CodeReviewIssue, CodeReviewReport } from "./security-tools";
+import { getErrorMessage } from "./_core/errors.js";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -250,10 +251,10 @@ export async function fixAllVulnerabilities(
             : "Fix produced no code changes.",
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       skipped.push({
         title: issue.title,
-        reason: `Error during fix: ${err.message || "Unknown error"}`,
+        reason: `Error during fix: ${getErrorMessage(err) || "Unknown error"}`,
       });
     }
   }

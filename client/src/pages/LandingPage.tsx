@@ -239,11 +239,11 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#060611] text-white overflow-x-hidden">
       <ArchibaldWizard />
       {/* ── Navigation ─────────────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#060611]/80 backdrop-blur-xl">
+      <nav aria-label="Navigation" className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#060611]/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/XqBVYWONhvkWzLDU.png" alt="AT" className="h-9 w-9 object-contain" />
+              <img loading="lazy" src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/XqBVYWONhvkWzLDU.png" alt="AT" className="h-9 w-9 object-contain" />
               <span className="text-lg font-bold tracking-tight">Archibald Titan</span>
             </div>
             <div className="hidden md:flex items-center gap-8">
@@ -996,7 +996,7 @@ export default function LandingPage() {
             {/* Brand */}
             <div className="md:col-span-2">
               <div className="flex items-center gap-3 mb-4">
-                <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/XqBVYWONhvkWzLDU.png" alt="AT" className="h-8 w-8 object-contain" />
+                <img loading="lazy" src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/XqBVYWONhvkWzLDU.png" alt="AT" className="h-8 w-8 object-contain" />
                 <span className="text-base font-bold tracking-tight">Archibald Titan</span>
               </div>
               <p className="text-sm text-white/40 max-w-sm leading-relaxed">
@@ -1005,7 +1005,7 @@ export default function LandingPage() {
               {/* Social Links */}
               <div className="mt-4 flex items-center gap-4">
                 <a href="https://www.snapchat.com/add/archibaldtitan" target="_blank" rel="noopener noreferrer" className="group" title="Add us on Snapchat">
-                  <img src="/snapchat-qr.png" alt="Snapchat QR" className="h-10 w-10 rounded-md opacity-60 group-hover:opacity-100 transition-opacity" />
+                  <img loading="lazy" src="/snapchat-qr.png" alt="Snapchat QR" className="h-10 w-10 rounded-md opacity-60 group-hover:opacity-100 transition-opacity" />
                 </a>
                 <a href="https://github.com/archibaldtitan" target="_blank" rel="noopener noreferrer" className="text-white/30 hover:text-white/70 transition-colors" title="GitHub">
                   <Github className="h-5 w-5" />

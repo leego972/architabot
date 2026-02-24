@@ -33,6 +33,7 @@ import {
 import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
 import { storagePut } from "./storage";
 import { scrapeProductCatalog, type CatalogResult, type ScrapedProduct, type SiteType } from "./product-scraper";
+import { getErrorMessage } from "./_core/errors.js";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -466,11 +467,11 @@ export async function researchTarget(
     if (metaDesc) {
       pageContent = `Meta description: ${metaDesc[1]}\n\n${pageContent}`;
     }
-  } catch (err: any) {
-    await updateProjectStatus(projectId, "error", `Failed to fetch ${targetUrl}: ${err.message}`, {
-      errorMessage: err.message,
+  } catch (err: unknown) {
+    await updateProjectStatus(projectId, "error", `Failed to fetch ${targetUrl}: ${getErrorMessage(err)}`, {
+      errorMessage: getErrorMessage(err),
     });
-    throw new Error(`Failed to fetch ${targetUrl}: ${err.message}`);
+    throw new Error(`Failed to fetch ${targetUrl}: ${getErrorMessage(err)}`);
   }
 
   // ═══ SAFETY CHECK: Block prohibited content ═══
@@ -498,8 +499,8 @@ export async function researchTarget(
       },
     });
     appendBuildLog(projectId, { step: 0, status: "running", message: `Catalog scraped: ${catalogResult.products.length} products, ${catalogResult.downloadedImages.length} images, ${catalogResult.pagesScraped} pages`, timestamp: new Date().toISOString() });
-  } catch (err: any) {
-    appendBuildLog(projectId, { step: 0, status: "running", message: `Catalog scrape warning: ${err.message} — falling back to basic extraction`, timestamp: new Date().toISOString() });
+  } catch (err: unknown) {
+    appendBuildLog(projectId, { step: 0, status: "running", message: `Catalog scrape warning: ${getErrorMessage(err)} — falling back to basic extraction`, timestamp: new Date().toISOString() });
   }
 
   // ═══ EXTRACT IMAGES from all pages (fallback + supplement) ═══
@@ -1022,11 +1023,11 @@ export async function executeBuild(
         for (const file of fileContents) {
           await sandboxWriteFile(sandboxId, userId, file.path, file.content);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         appendBuildLog(projectId, {
           step: stepNum + 1,
           status: "error",
-          message: `File generation failed: ${err.message}`,
+          message: `File generation failed: ${getErrorMessage(err)}`,
           timestamp: new Date().toISOString(),
         });
         // Continue with commands even if file generation partially fails
@@ -1050,11 +1051,11 @@ export async function executeBuild(
             timestamp: new Date().toISOString(),
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         appendBuildLog(projectId, {
           step: stepNum + 1,
           status: "error",
-          message: `Command error: ${cmd} — ${err.message}`,
+          message: `Command error: ${cmd} — ${getErrorMessage(err)}`,
           timestamp: new Date().toISOString(),
         });
       }
@@ -1188,11 +1189,11 @@ export async function executeBuild(
       message: `Persisted ${builtFiles.length} files to cloud storage`,
       timestamp: new Date().toISOString(),
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     appendBuildLog(projectId, {
       step: plan.buildSteps.length + 2,
       status: "error",
-      message: `Persistence warning: ${err.message}`,
+      message: `Persistence warning: ${getErrorMessage(err)}`,
       timestamp: new Date().toISOString(),
     });
   }
@@ -1681,12 +1682,12 @@ export async function pushToGithub(
     });
 
     return { success: true, repoUrl, message: `Pushed ${treeItems.length} files to ${repoUrl}` };
-  } catch (err: any) {
-    await updateProjectStatus(projectId, "build_complete", `GitHub push failed: ${err.message}`);
+  } catch (err: unknown) {
+    await updateProjectStatus(projectId, "build_complete", `GitHub push failed: ${getErrorMessage(err)}`);
     appendBuildLog(projectId, {
       step: 99,
       status: "error",
-      message: `GitHub push failed: ${err.message}`,
+      message: `GitHub push failed: ${getErrorMessage(err)}`,
       timestamp: new Date().toISOString(),
     });
     throw err;

@@ -12,6 +12,7 @@ import { getDb } from "./db";
 import { credentialImports, vaultItems } from "../drizzle/schema";
 import { logAudit } from "./audit-log-db";
 import crypto from "crypto";
+import { getErrorMessage } from "./_core/errors.js";
 
 // ─── AES-256 encryption (same as vault) ─────────────────────────
 const VAULT_KEY = process.env.JWT_SECRET?.slice(0, 32).padEnd(32, "0") || "archibald-titan-vault-key-32char";
@@ -201,8 +202,8 @@ export const importRouter = router({
       let parsed: ParsedCredential[];
       try {
         parsed = parser(input.csvText);
-      } catch (e: any) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Failed to parse CSV: ${e.message}` });
+      } catch (e: unknown) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Failed to parse CSV: ${getErrorMessage(e)}` });
       }
 
       if (parsed.length === 0) {
@@ -246,9 +247,9 @@ export const importRouter = router({
             notes: `Imported from ${input.source}${cred.url ? ` - ${cred.url}` : ""}`,
           });
           importedCount++;
-        } catch (e: any) {
+        } catch (e: unknown) {
           errorCount++;
-          errors.push(`${cred.name}: ${e.message}`);
+          errors.push(`${cred.name}: ${getErrorMessage(e)}`);
         }
       }
 

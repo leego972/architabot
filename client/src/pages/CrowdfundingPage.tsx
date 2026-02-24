@@ -63,7 +63,7 @@ function CampaignCard({ campaign, onClick }: { campaign: any; onClick: () => voi
     >
       <div className="h-40 relative overflow-hidden bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-pink-600/20">
         {campaign.imageUrl ? (
-          <img src={campaign.imageUrl} alt={campaign.title} className="w-full h-full object-cover" />
+          <img loading="lazy" src={campaign.imageUrl} alt={campaign.title} className="w-full h-full object-cover" />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <Rocket className="h-12 w-12 text-blue-400/30" />
@@ -327,7 +327,7 @@ function CampaignDetailView({ campaignId }: { campaignId: number }) {
           <Card className="overflow-hidden">
             <div className="h-48 bg-gradient-to-br from-blue-600/20 via-purple-600/20 to-pink-600/20 relative">
               {campaign.imageUrl ? (
-                <img src={campaign.imageUrl} alt={campaign.title} className="w-full h-full object-cover" />
+                <img loading="lazy" src={campaign.imageUrl} alt={campaign.title} className="w-full h-full object-cover" />
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center"><Rocket className="h-16 w-16 text-blue-400/30" /></div>
               )}

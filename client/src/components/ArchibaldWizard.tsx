@@ -602,7 +602,8 @@ export default function ArchibaldWizard() {
               className="w-5 h-5 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center hover:bg-red-900/80 transition-colors cursor-pointer"
               title="Dismiss Archibald"
             >
-              <X className="w-3 h-3 text-slate-300" />
+                  <span className="sr-only">Close</span>
+                  <X className="w-3 h-3 text-slate-300" />
             </button>
           </div>
 

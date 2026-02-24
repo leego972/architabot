@@ -1,3 +1,4 @@
+import { getErrorMessage } from "./_core/errors.js";
 /**
  * Domain Service — GoDaddy domain search, purchase, and DNS configuration
  *
@@ -285,11 +286,11 @@ export async function purchaseDomain(
       orderId: result.orderId?.toString(),
       message: `Domain ${domain} purchased successfully!`,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       success: false,
       domain,
-      message: `Domain purchase error: ${err.message}`,
+      message: `Domain purchase error: ${getErrorMessage(err)}`,
     };
   }
 }
@@ -345,7 +346,7 @@ export async function configureDNS(
       });
       if (!resp.ok) {
         const err = await resp.json() as any;
-        return { success: false, message: `Failed to set A records: ${err.message || resp.status}`, records };
+        return { success: false, message: `Failed to set A records: ${getErrorMessage(err) || resp.status}`, records };
       }
     }
 
@@ -365,7 +366,7 @@ export async function configureDNS(
       });
       if (!resp.ok) {
         const err = await resp.json() as any;
-        return { success: false, message: `Failed to set CNAME records: ${err.message || resp.status}`, records };
+        return { success: false, message: `Failed to set CNAME records: ${getErrorMessage(err) || resp.status}`, records };
       }
     }
 
@@ -374,10 +375,10 @@ export async function configureDNS(
       message: `DNS configured for ${domain} → ${platform}. Records may take up to 48 hours to propagate.`,
       records,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       success: false,
-      message: `DNS configuration error: ${err.message}`,
+      message: `DNS configuration error: ${getErrorMessage(err)}`,
       records,
     };
   }

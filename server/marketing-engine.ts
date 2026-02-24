@@ -39,6 +39,7 @@ import {
   type PerformanceMetrics,
 } from "./marketing-channels";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("MarketingEngine");
 
 // ============================================
@@ -712,9 +713,9 @@ export async function executeCampaign(params: {
         externalPostId: Object.values(results).find((r) => r.success)?.platformId || null,
         publishedAt: new Date(),
       });
-    } catch (err: any) {
-      log.error(`[Marketing] Failed to execute content for ${content.platform}:`, { error: String(err.message) });
-      results[`error_${content.platform}`] = { success: false, error: err.message };
+    } catch (err: unknown) {
+      log.error(`[Marketing] Failed to execute content for ${content.platform}:`, { error: String(getErrorMessage(err)) });
+      results[`error_${content.platform}`] = { success: false, error: getErrorMessage(err) };
     }
   }
 
@@ -998,8 +999,8 @@ export async function runAutonomousCycle(): Promise<{
         contentPublished++;
         log.info(`[Marketing] Published to ${channel.name}: ${content.headline}`);
       }
-    } catch (err: any) {
-      log.error(`[Marketing] Failed to publish to ${channel.name}:`, { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error(`[Marketing] Failed to publish to ${channel.name}:`, { error: String(getErrorMessage(err)) });
     }
   }
 
@@ -1026,8 +1027,8 @@ export async function runAutonomousCycle(): Promise<{
 
       campaignsOptimized++;
       log.info(`[Marketing] Optimized campaign: ${campaign.name}`);
-    } catch (err: any) {
-      log.error(`[Marketing] Failed to optimize campaign ${campaign.name}:`, { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error(`[Marketing] Failed to optimize campaign ${campaign.name}:`, { error: String(getErrorMessage(err)) });
     }
   }
 
@@ -1084,8 +1085,8 @@ export async function runAutonomousCycle(): Promise<{
 
       budgetReallocated = true;
       log.info("[Marketing] Budget reallocated based on performance data");
-    } catch (err: any) {
-      log.error("[Marketing] Budget reallocation failed:", { error: String(err.message) });
+    } catch (err: unknown) {
+      log.error("[Marketing] Budget reallocation failed:", { error: String(getErrorMessage(err)) });
     }
   }
 

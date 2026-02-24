@@ -265,7 +265,7 @@ function DashboardLayoutContent({
             <CreditBalanceWidget />
           </div>
         </div>
-        <main className="flex-1 p-4">{children}</main>
+        <main id="main-content" className="flex-1 p-4">{children}</main>
       </SidebarInset>
     </>
   );

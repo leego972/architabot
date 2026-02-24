@@ -11,6 +11,7 @@ import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
 import { detectCloneComplexity, getClonePrice, type CloneComplexity } from "../shared/pricing";
 import { searchDomains, getDomainPrice, purchaseDomain, configureDNS } from "./domain-service";
 import { deployProject, getDeploymentStatus, selectPlatform } from "./deploy-service";
+import { getErrorMessage } from "./_core/errors.js";
 import {
   createProject,
   getProject,
@@ -100,7 +101,7 @@ export const replicateRouter = router({
             message: `GitHub PAT is missing required scopes: ${missing.join(", ")}. Please create a new PAT with all scopes: repo, workflow, delete_repo, admin:repo_hook`,
           });
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (e instanceof TRPCError) throw e;
         throw new TRPCError({ code: "BAD_REQUEST", message: "Could not validate GitHub PAT — network error. Please try again." });
       }
@@ -118,10 +119,10 @@ export const replicateRouter = router({
       const isAdmin = ctx.user.role === "admin";
       try {
         enforceCloneSafety(input.targetUrl, input.targetName, isAdmin);
-      } catch (e: any) {
+      } catch (e: unknown) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: e.message || "This website cannot be cloned due to safety restrictions.",
+          message: getErrorMessage(e) || "This website cannot be cloned due to safety restrictions.",
         });
       }
 
@@ -130,8 +131,8 @@ export const replicateRouter = router({
       // The initial credit hold ensures the user has credits for the base cost.
       try {
         await consumeCredits(ctx.user.id, "clone_action" as any, "Website clone: " + input.targetUrl);
-      } catch (e: any) {
-        throw new TRPCError({ code: "FORBIDDEN", message: e.message || "Insufficient credits for clone action" });
+      } catch (e: unknown) {
+        throw new TRPCError({ code: "FORBIDDEN", message: getErrorMessage(e) || "Insufficient credits for clone action" });
       }
 
       const project = await createProject(ctx.user.id, input.targetUrl, input.targetName, {
@@ -261,8 +262,8 @@ export const replicateRouter = router({
       try {
         const suggestions = await searchDomains(input.keyword, input.maxResults || 3);
         return { success: true, domains: suggestions };
-      } catch (err: any) {
-        return { success: false, domains: [], message: err.message };
+      } catch (err: unknown) {
+        return { success: false, domains: [], message: getErrorMessage(err) };
       }
     }),
 

@@ -14,7 +14,9 @@ import { randomUUID } from "crypto";
 import { seedMarketplaceWithMerchants } from "./marketplace-seed";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
+import { safeDDLStatement } from "./_core/sql-sanitize.js";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("MarketplaceRouter");
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -795,10 +797,11 @@ export const marketplaceRouter = router({
       const results: string[] = [];
       for (const stmt of input.statements) {
         try {
-          const [rows] = await database.execute(sql.raw(stmt));
+          const safeStmt = safeDDLStatement(stmt);
+          const [rows] = await database.execute(sql.raw(safeStmt));
           results.push(`OK: ${JSON.stringify(rows).substring(0, 200)}`);
-        } catch (e: any) {
-          results.push(`ERR: ${e.message?.substring(0, 150)}`);
+        } catch (e: unknown) {
+          results.push(`ERR: ${getErrorMessage(e)?.substring(0, 150)}`);
         }
       }
       return { results };
@@ -813,8 +816,8 @@ export const marketplaceRouter = router({
       const [cols] = await database.execute(sql.raw("SHOW COLUMNS FROM marketplace_listings"));
       const [count] = await database.execute(sql.raw("SELECT COUNT(*) as cnt FROM marketplace_listings"));
       return { columns: cols, count };
-    } catch (e: any) {
-      return { error: e.message };
+    } catch (e: unknown) {
+      return { error: getErrorMessage(e) };
     }
   }),
 
@@ -831,7 +834,7 @@ export const marketplaceRouter = router({
     ];
     const results: string[] = [];
     for (const ddl of drops) {
-      try { await database.execute(sql.raw(ddl)); results.push(`DROP: OK`); } catch (e: any) { results.push(`DROP: ${e.message?.substring(0, 80)}`); }
+      try { await database.execute(sql.raw(ddl)); results.push(`DROP: OK`); } catch (e: unknown) { results.push(`DROP: ${getErrorMessage(e)?.substring(0, 80)}`); }
     }
     // Now recreate
     const creates = [
@@ -845,9 +848,9 @@ export const marketplaceRouter = router({
         await database.execute(sql.raw(ddl));
         const t = ddl.match(/`(\w+)`/)?.[1] || "?";
         results.push(`CREATE ${t}: OK`);
-      } catch (e: any) {
+      } catch (e: unknown) {
         const t = ddl.match(/`(\w+)`/)?.[1] || "?";
-        results.push(`CREATE ${t}: ${e.message?.substring(0, 80)}`);
+        results.push(`CREATE ${t}: ${getErrorMessage(e)?.substring(0, 80)}`);
       }
     }
     return { results };
@@ -871,9 +874,9 @@ export const marketplaceRouter = router({
         await database.execute(sql.raw(ddl));
         const tableName = ddl.match(/`(\w+)`/)?.[1] || "unknown";
         results.push(`${tableName}: OK`);
-      } catch (e: any) {
+      } catch (e: unknown) {
         const tableName = ddl.match(/`(\w+)`/)?.[1] || "unknown";
-        results.push(`${tableName}: ${e.message?.substring(0, 100)}`);
+        results.push(`${tableName}: ${getErrorMessage(e)?.substring(0, 100)}`);
       }
     }
     return { tables: results };
@@ -1083,9 +1086,9 @@ export const marketplaceRouter = router({
             },
           });
           stripeConnectAccountId = account.id;
-        } catch (err: any) {
-          log.error("[Payout] Stripe Connect account creation failed:", { error: String(err.message) });
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create Stripe Connect account: " + err.message });
+        } catch (err: unknown) {
+          log.error("[Payout] Stripe Connect account creation failed:", { error: String(getErrorMessage(err)) });
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create Stripe Connect account: " + getErrorMessage(err) });
         }
       }
 
@@ -1122,8 +1125,8 @@ export const marketplaceRouter = router({
             type: "account_onboarding",
           });
           onboardingUrl = accountLink.url;
-        } catch (err: any) {
-          log.warn("[Payout] Stripe onboarding link failed:", { error: String(err.message) });
+        } catch (err: unknown) {
+          log.warn("[Payout] Stripe onboarding link failed:", { error: String(getErrorMessage(err)) });
         }
       }
 
@@ -1310,16 +1313,16 @@ export const marketplaceRouter = router({
       `CREATE TABLE IF NOT EXISTS \`marketplace_reviews\` (\`id\` int AUTO_INCREMENT NOT NULL, \`listingId\` int NOT NULL, \`purchaseId\` int NOT NULL, \`reviewerId\` int NOT NULL, \`rating\` int NOT NULL, \`title\` varchar(256), \`comment\` text, \`sellerRating\` int, \`helpful\` int NOT NULL DEFAULT 0, \`createdAt\` timestamp NOT NULL DEFAULT (now()), \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT \`marketplace_reviews_id\` PRIMARY KEY(\`id\`))`,
     ];
     for (const ddl of tableDDLs) {
-      try { await database.execute(sql.raw(ddl)); } catch (e: any) { log.warn("[Seed] Table DDL:", { error: String(e.message?.substring(0, 100)) }); }
+      try { await database.execute(sql.raw(ddl)); } catch (e: unknown) { log.warn("[Seed] Table DDL:", { error: String(getErrorMessage(e)?.substring(0, 100)) }); }
     }
 
     // Step 2: Seed data
     try {
       const result = await seedMarketplaceWithMerchants();
       return result;
-    } catch (e: any) {
-      log.error("[Marketplace] Seed failed:", { error: String(e.message) });
-      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Seed failed: " + e.message });
+    } catch (e: unknown) {
+      log.error("[Marketplace] Seed failed:", { error: String(getErrorMessage(e)) });
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Seed failed: " + getErrorMessage(e) });
     }
   }),
 });

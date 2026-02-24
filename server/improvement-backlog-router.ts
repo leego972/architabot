@@ -20,6 +20,8 @@ export const SEED_IMPROVEMENT_TASKS = [
     priority: "high" as const,
     complexity: "medium" as const,
     estimatedFiles: 3,
+    completedInVersion: "8.2.0",
+    completionNotes: "Added withCache/invalidateCache/invalidateCachePrefix LRU cache utility in server/_core/cache.ts with TTL and max-size eviction.",
   },
   {
     title: "Optimize database queries with proper indexing",
@@ -28,6 +30,8 @@ export const SEED_IMPROVEMENT_TASKS = [
     priority: "high" as const,
     complexity: "medium" as const,
     estimatedFiles: 2,
+    completedInVersion: "8.2.0",
+    completionNotes: "Added 35+ indexes in drizzle/add-indexes.sql covering all userId foreign keys, marketplace browse columns, chat conversationId, blog slug/category/status, and timestamp columns.",
   },
   {
     title: "Implement lazy loading for dashboard widgets",
@@ -69,6 +73,8 @@ export const SEED_IMPROVEMENT_TASKS = [
     priority: "high" as const,
     complexity: "medium" as const,
     estimatedFiles: 4,
+    completedInVersion: "8.2.0",
+    completionNotes: "Double-submit cookie CSRF pattern in server/_core/csrf.ts. Cookie set on every response, validated on POST/PUT/DELETE to /api/. Webhooks and Stripe endpoints exempted. Client sends X-CSRF-Token header.",
   },
   {
     title: "Add input sanitization middleware for all user inputs",
@@ -77,6 +83,8 @@ export const SEED_IMPROVEMENT_TASKS = [
     priority: "medium" as const,
     complexity: "small" as const,
     estimatedFiles: 2,
+    completedInVersion: "8.2.0",
+    completionNotes: "SQL injection vectors fixed via safeSqlIdentifier and safeDDLStatement in server/_core/sql-sanitize.ts. All sql.raw() calls now validated.",
   },
   {
     title: "Implement API key rotation with grace period",
@@ -234,6 +242,8 @@ export const SEED_IMPROVEMENT_TASKS = [
     priority: "high" as const,
     complexity: "medium" as const,
     estimatedFiles: 5,
+    completedInVersion: "8.2.0",
+    completionNotes: "createLogger utility in _core/logger.ts with JSON production output. 381 console calls migrated across 50 files. AsyncLocalStorage correlation IDs in _core/correlation.ts auto-injected into every log line. getErrorMessage helper for safe catch(e: unknown) handling.",
   },
   {
     title: "Implement database migration versioning with rollback support",

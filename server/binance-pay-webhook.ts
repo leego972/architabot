@@ -9,6 +9,7 @@ import { getDb } from "./db";
 import { cryptoPayments } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("BinancePayWebhook");
 
 export function registerBinancePayWebhook(app: Express): void {
@@ -152,8 +153,8 @@ export function registerBinancePayWebhook(app: Express): void {
 
         // Always return SUCCESS to acknowledge receipt
         res.json({ returnCode: "SUCCESS", returnMessage: null });
-      } catch (err: any) {
-        log.error("[BinancePay Webhook] Error:", { error: String(err.message) });
+      } catch (err: unknown) {
+        log.error("[BinancePay Webhook] Error:", { error: String(getErrorMessage(err)) });
         // Still return SUCCESS to prevent Binance from retrying endlessly
         res.json({ returnCode: "SUCCESS", returnMessage: null });
       }

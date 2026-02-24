@@ -13,6 +13,7 @@
  */
 
 import type { CloneComplexity } from "../shared/pricing";
+import { getErrorMessage } from "./_core/errors.js";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -172,13 +173,13 @@ export async function deployToVercel(
       customDomain,
       message: `Deployed to Vercel successfully! ${customDomain ? `Custom domain ${customDomain} configured.` : ""}`,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       success: false,
       platform: "vercel",
       deploymentId: "",
       deploymentUrl: "",
-      message: `Vercel deployment error: ${err.message}`,
+      message: `Vercel deployment error: ${getErrorMessage(err)}`,
     };
   }
 }
@@ -234,8 +235,8 @@ export async function getVercelDeploymentStatus(deploymentId: string): Promise<D
       readyAt: data.ready ? new Date(data.ready).toISOString() : undefined,
       errorMessage: data.errorMessage,
     };
-  } catch (err: any) {
-    return { state: "error", errorMessage: err.message };
+  } catch (err: unknown) {
+    return { state: "error", errorMessage: getErrorMessage(err) };
   }
 }
 
@@ -420,13 +421,13 @@ export async function deployToRailway(
       customDomain,
       message: `Deployed to Railway successfully! ${customDomain ? `Custom domain ${customDomain} configured.` : `Available at ${deploymentUrl}`}`,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       success: false,
       platform: "railway",
       deploymentId: "",
       deploymentUrl: "",
-      message: `Railway deployment error: ${err.message}`,
+      message: `Railway deployment error: ${getErrorMessage(err)}`,
     };
   }
 }
@@ -499,8 +500,8 @@ export async function getRailwayDeploymentStatus(projectId: string): Promise<Dep
       url: domain ? `https://${domain}` : undefined,
       createdAt: deployment.createdAt,
     };
-  } catch (err: any) {
-    return { state: "error", errorMessage: err.message };
+  } catch (err: unknown) {
+    return { state: "error", errorMessage: getErrorMessage(err) };
   }
 }
 

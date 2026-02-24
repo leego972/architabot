@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createLogger } from "./_core/logger.js";
+import { getErrorMessage } from "./_core/errors.js";
 const log = createLogger("SandboxSecurityTest");
 
 // ─── Sandbox Engine Tests ──────────────────────────────────────────
@@ -136,8 +137,8 @@ describe("Sandbox Engine", () => {
       try {
         await executeCommand(sandbox.id, 2, "echo 'unauthorized'");
         // If it doesn't throw, the result should indicate failure
-      } catch (err: any) {
-        expect(err.message).toContain("not found");
+      } catch (err: unknown) {
+        expect(getErrorMessage(err)).toContain("not found");
       }
     });
   });
