@@ -14,6 +14,13 @@ contextBridge.exposeInMainWorld("titanDesktop", {
     ipcRenderer.on("mode-changed", (_event, mode) => callback(mode));
     return () => ipcRenderer.removeAllListeners("mode-changed");
   },
+  // Bundle sync
+  checkBundleSync: () => ipcRenderer.invoke("check-bundle-sync"),
+  getSyncStatus: () => ipcRenderer.invoke("get-sync-status"),
+  onBundleSynced: (callback) => {
+    ipcRenderer.on("bundle-synced", (_event, manifest) => callback(manifest));
+    return () => ipcRenderer.removeAllListeners("bundle-synced");
+  },
   // Auto-updater
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   downloadUpdate: () => ipcRenderer.invoke("download-update"),

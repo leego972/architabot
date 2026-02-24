@@ -26,6 +26,7 @@ import { registerBinancePayWebhook } from "../binance-pay-webhook";
 import { registerSeoRoutes, startScheduledSeo } from "../seo-engine";
 import { registerChatStreamRoutes } from "../chat-stream";
 import { registerMarketplaceFileRoutes } from "../marketplace-files";
+import { registerBundleSyncRoutes } from "../bundle-sync";
 import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
 import { csrfCookieMiddleware, csrfValidationMiddleware } from "./csrf";
@@ -142,6 +143,8 @@ async function startServer() {
   registerReleaseUploadRoute(app);
   // Auto-update feed for electron-updater (latest.yml endpoints)
   registerUpdateFeedRoutes(app);
+  // Desktop bundle sync — serves latest web client for auto-sync
+  registerBundleSyncRoutes(app);
   // Voice audio upload endpoint
   registerVoiceUploadRoute(app);
   // Marketplace file upload/download endpoints

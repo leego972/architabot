@@ -33,6 +33,7 @@ const EXEMPT_PATHS = [
   "/api/stripe-webhook",
   "/api/binance-pay/webhook",
   "/api/health",
+  "/api/desktop/",
 ];
 
 /** Check if a path is exempt from CSRF */

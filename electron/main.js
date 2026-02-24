@@ -2,7 +2,7 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, dialog } = 
 const path = require("path");
 const fs = require("fs");
 const { autoUpdater } = require("electron-updater");
-const { startServer, stopServer, getPort, DATA_DIR, REMOTE_URL } = require("./local-server");
+const { startServer, stopServer, getPort, DATA_DIR, REMOTE_URL, checkAndSyncBundle, setSendToMainWindow } = require("./local-server");
 
 const APP_NAME = "Archibald Titan";
 const MODE_PATH = path.join(DATA_DIR, "mode.json");
@@ -162,6 +162,25 @@ async function createWindow() {
     }
     updateTrayMenu();
     return currentMode;
+  });
+
+  // Bundle sync IPC handlers
+  ipcMain.handle("check-bundle-sync", () => {
+    checkAndSyncBundle();
+    return { checking: true };
+  });
+  ipcMain.handle("get-sync-status", async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:" + getPort() + "/api/desktop/sync-status");
+      return await res.json();
+    } catch { return { status: "unknown" }; }
+  });
+
+  // Wire up bundle sync notifications to renderer
+  setSendToMainWindow((channel, data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, data);
+    }
   });
 
   // Auto-updater IPC handlers

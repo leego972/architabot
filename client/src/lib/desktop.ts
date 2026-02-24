@@ -13,6 +13,10 @@ declare global {
       getMode: () => Promise<"online" | "offline">;
       setMode: (mode: "online" | "offline") => Promise<string>;
       onModeChange: (callback: (mode: string) => void) => () => void;
+      // Bundle sync
+      checkBundleSync: () => Promise<{ checking: boolean }>;
+      getSyncStatus: () => Promise<{ status: string; version?: string | null; lastCheck?: string | null; error?: string | null }>;
+      onBundleSynced: (callback: (manifest: { version: string; hash: string }) => void) => () => void;
       // Auto-updater
       checkForUpdates: () => Promise<{ checking: boolean }>;
       downloadUpdate: () => Promise<{ downloading: boolean }>;

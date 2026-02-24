@@ -23,6 +23,111 @@ const REMOTE_URL = "https://architabot-f68pur9a.manus.space";
 let db = null, server = null, port = 0;
 let cachedLicense = null;
 
+// ─── Bundle Sync ────────────────────────────────────────────────────
+const BUNDLE_DIR = path.join(DATA_DIR, "bundle");
+const BUNDLE_VERSION_PATH = path.join(DATA_DIR, "bundle-version.json");
+let syncStatus = { status: "idle", version: null, lastCheck: null, error: null };
+
+function getLocalBundleVersion() {
+  try {
+    if (fs.existsSync(BUNDLE_VERSION_PATH)) {
+      return JSON.parse(fs.readFileSync(BUNDLE_VERSION_PATH, "utf8"));
+    }
+  } catch {}
+  return null;
+}
+
+function saveLocalBundleVersion(manifest) {
+  fs.writeFileSync(BUNDLE_VERSION_PATH, JSON.stringify(manifest, null, 2));
+}
+
+async function checkAndSyncBundle() {
+  try {
+    syncStatus = { ...syncStatus, status: "checking", lastCheck: new Date().toISOString() };
+    console.log("[BundleSync] Checking for updates...");
+
+    const res = await fetch(REMOTE_URL + "/api/desktop/bundle-manifest");
+    if (!res.ok) {
+      syncStatus = { ...syncStatus, status: "idle", error: "Manifest fetch failed: " + res.status };
+      return;
+    }
+    const manifest = await res.json();
+    const local = getLocalBundleVersion();
+
+    // Skip if same hash
+    if (local && local.hash === manifest.hash) {
+      syncStatus = { ...syncStatus, status: "up-to-date", version: manifest.version };
+      console.log("[BundleSync] Already up to date (" + manifest.version + ")");
+      return;
+    }
+
+    // Download new bundle
+    console.log("[BundleSync] New version available: " + manifest.version + " (hash: " + manifest.hash + ")");
+    syncStatus = { ...syncStatus, status: "downloading", version: manifest.version };
+
+    const tarRes = await fetch(REMOTE_URL + "/api/desktop/bundle.tar.gz");
+    if (!tarRes.ok) {
+      syncStatus = { ...syncStatus, status: "error", error: "Download failed: " + tarRes.status };
+      return;
+    }
+
+    const tarBuffer = Buffer.from(await tarRes.arrayBuffer());
+    console.log("[BundleSync] Downloaded " + (tarBuffer.length / 1024 / 1024).toFixed(1) + "MB");
+
+    // Extract to a temp dir first, then swap
+    const tmpDir = path.join(DATA_DIR, "bundle-tmp-" + Date.now());
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+    const tmpTar = path.join(DATA_DIR, "bundle-download.tar.gz");
+    fs.writeFileSync(tmpTar, tarBuffer);
+
+    const { execSync } = require("child_process");
+    try {
+      execSync(`tar -xzf "${tmpTar}" -C "${tmpDir}"`, { timeout: 30000 });
+    } catch (e) {
+      syncStatus = { ...syncStatus, status: "error", error: "Extract failed: " + e.message };
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+      try { fs.unlinkSync(tmpTar); } catch {}
+      return;
+    }
+
+    // Verify extraction produced an index.html
+    if (!fs.existsSync(path.join(tmpDir, "index.html"))) {
+      syncStatus = { ...syncStatus, status: "error", error: "Invalid bundle: no index.html" };
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+      try { fs.unlinkSync(tmpTar); } catch {}
+      return;
+    }
+
+    // Atomic swap: remove old bundle, rename tmp to bundle
+    syncStatus = { ...syncStatus, status: "installing" };
+    const oldBundle = path.join(DATA_DIR, "bundle-old-" + Date.now());
+    if (fs.existsSync(BUNDLE_DIR)) {
+      fs.renameSync(BUNDLE_DIR, oldBundle);
+    }
+    fs.renameSync(tmpDir, BUNDLE_DIR);
+
+    // Clean up
+    try { fs.rmSync(oldBundle, { recursive: true, force: true }); } catch {}
+    try { fs.unlinkSync(tmpTar); } catch {}
+
+    // Save version info
+    saveLocalBundleVersion(manifest);
+    syncStatus = { status: "synced", version: manifest.version, lastCheck: new Date().toISOString(), error: null };
+    console.log("[BundleSync] Successfully synced to v" + manifest.version);
+
+    // Notify renderer
+    if (typeof sendToMainWindow === "function") sendToMainWindow("bundle-synced", manifest);
+  } catch (e) {
+    console.error("[BundleSync] Error:", e.message);
+    syncStatus = { ...syncStatus, status: "error", error: e.message };
+  }
+}
+
+// Allow main.js to set a callback for notifying the renderer
+let sendToMainWindow = null;
+function setSendToMainWindow(fn) { sendToMainWindow = fn; }
+
 // ─── Device ID ──────────────────────────────────────────────────────
 function getDeviceId() {
   const idPath = path.join(DATA_DIR, "device-id");
@@ -205,7 +310,17 @@ function startServer() {
     if (fs.existsSync(publicDir)) app.use(express.static(publicDir));
 
     // ── Health ──
-    app.get("/api/health", (_, res) => res.json({ status: "ok", mode: "desktop", version: "8.0.0" }));
+    app.get("/api/health", (_, res) => {
+      const bundleVer = getLocalBundleVersion();
+      res.json({ status: "ok", mode: "desktop", version: "8.2.0", bundleVersion: bundleVer?.version || "built-in", bundleHash: bundleVer?.hash || null });
+    });
+
+    // ── Bundle Sync Status ──
+    app.get("/api/desktop/sync-status", (_, res) => res.json(syncStatus));
+    app.post("/api/desktop/sync-now", async (_, res) => {
+      checkAndSyncBundle();
+      res.json({ started: true });
+    });
 
     // ── Mode: Get/Set online/offline ──
     app.get("/api/desktop/mode", (_, res) => {
@@ -767,15 +882,33 @@ function startServer() {
       }
     });
 
+    // ── Serve synced bundle static assets ──
+    // Priority: synced bundle > built-in public > remote proxy
+    app.use((req, res, next) => {
+      if (req.path.startsWith("/api/")) return next();
+      // Try synced bundle first
+      if (fs.existsSync(BUNDLE_DIR)) {
+        const filePath = path.join(BUNDLE_DIR, req.path);
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          return res.sendFile(filePath);
+        }
+      }
+      next();
+    });
+
     // ── SPA fallback ──
-    // If local public/index.html exists (built with build.sh), serve it.
-    // Otherwise, proxy the frontend from the remote server so the app works
-    // even without running build.sh (e.g., downloaded pre-built binaries).
+    // Priority: synced bundle > built-in public > remote proxy
     app.get("*", async (req, res) => {
       if (req.path.startsWith("/api/")) return res.status(404).json({ error: "Not found" });
-      const idx = path.join(publicDir, "index.html");
-      if (fs.existsSync(idx)) {
-        return res.sendFile(idx);
+      // 1. Synced bundle (auto-updated from server)
+      const syncedIdx = path.join(BUNDLE_DIR, "index.html");
+      if (fs.existsSync(syncedIdx)) {
+        return res.sendFile(syncedIdx);
+      }
+      // 2. Built-in bundle (shipped with installer)
+      const builtInIdx = path.join(publicDir, "index.html");
+      if (fs.existsSync(builtInIdx)) {
+        return res.sendFile(builtInIdx);
       }
       // No local frontend — proxy from remote server
       try {
@@ -793,7 +926,15 @@ function startServer() {
       }
     });
 
-    server = app.listen(0, "127.0.0.1", () => { port = server.address().port; console.log("[Titan] http://127.0.0.1:" + port); resolve(port); });
+    server = app.listen(0, "127.0.0.1", () => {
+      port = server.address().port;
+      console.log("[Titan] http://127.0.0.1:" + port);
+      resolve(port);
+
+      // Start bundle sync: check immediately, then every 30 minutes
+      setTimeout(() => checkAndSyncBundle(), 3000);
+      setInterval(() => checkAndSyncBundle(), 30 * 60 * 1000);
+    });
   });
 }
 
@@ -804,4 +945,4 @@ function stopServer() {
   }
 }
 function getPort() { return port; }
-module.exports = { startServer, stopServer, getPort, DATA_DIR, REMOTE_URL };
+module.exports = { startServer, stopServer, getPort, DATA_DIR, REMOTE_URL, checkAndSyncBundle, setSendToMainWindow };
