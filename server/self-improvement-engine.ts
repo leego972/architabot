@@ -177,9 +177,7 @@ function recordFailure(): void {
   _consecutiveFailures++;
   if (_consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
     _circuitBreakerLockedUntil = Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS;
-    console.error(
-      `[AntiSelfBreak] CIRCUIT BREAKER TRIPPED — ${_consecutiveFailures} consecutive failures. Modifications locked for ${CIRCUIT_BREAKER_COOLDOWN_MS / 60000} minutes.`
-    );
+    log.error(`[AntiSelfBreak] CIRCUIT BREAKER TRIPPED — ${_consecutiveFailures} consecutive failures. Modifications locked for ${CIRCUIT_BREAKER_COOLDOWN_MS / 60000} minutes.`);
   }
 }
 
@@ -189,7 +187,7 @@ function recordFailure(): void {
 export function resetCircuitBreaker(): void {
   _consecutiveFailures = 0;
   _circuitBreakerLockedUntil = 0;
-  console.log("[AntiSelfBreak] Circuit breaker reset by admin.");
+  log.info("[AntiSelfBreak] Circuit breaker reset by admin.");
 }
 
 /**
@@ -293,9 +291,7 @@ function isProtected(filePath: string): boolean {
           (p) => realRelative === p || realRelative.startsWith(p)
         );
         if (realProtected) {
-          console.warn(
-            `[AntiSelfBreak] Symlink bypass attempt detected: ${normalized} -> ${realRelative} (PROTECTED)`
-          );
+          log.warn(`[AntiSelfBreak] Symlink bypass attempt detected: ${normalized} -> ${realRelative} (PROTECTED)`);
           return true;
         }
       }
@@ -758,9 +754,7 @@ export async function applyModifications(
 
   if (!health.healthy) {
     // Step 6: Auto-rollback
-    console.error(
-      "[SelfImprovement] Health check FAILED after modifications. Rolling back..."
-    );
+    log.error("[SelfImprovement] Health check FAILED after modifications. Rolling back...");
     const rollbackResult = await rollbackToSnapshot(snapshot.snapshotId!);
 
     // Mark all modifications as rolled back
@@ -1271,7 +1265,7 @@ export async function requestRestart(
     if (isProduction) {
       // In production (Railway), exit with code 0 to trigger auto-restart.
       // Railway will restart the container automatically.
-      console.log(`[SelfImprovement] Restarting in production: ${reason}`);
+      log.info(`[SelfImprovement] Restarting in production: ${reason}`);
       // Delay slightly to allow the response to be sent first
       setTimeout(() => {
         process.exit(0);
@@ -1434,6 +1428,8 @@ export function getAllowedDirectories(): string[] {
 // ─── TypeScript Type Checking ───────────────────────────────────────
 
 import { execSync } from "child_process";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("SelfImprovementEngine");
 
 /**
  * Run the TypeScript compiler in check-only mode (tsc --noEmit).
@@ -1616,7 +1612,7 @@ export function enableDeferredMode(): void {
   _deferredMode = true;
   _stagedChanges.length = 0;
   _pendingRestart = null;
-  console.log("[SelfImprovement] Deferred mode ENABLED — file writes will be staged");
+  log.info("[SelfImprovement] Deferred mode ENABLED — file writes will be staged");
 }
 
 /**
@@ -1626,7 +1622,7 @@ export function disableDeferredMode(): void {
   _deferredMode = false;
   _stagedChanges.length = 0;
   _pendingRestart = null;
-  console.log("[SelfImprovement] Deferred mode DISABLED");
+  log.info("[SelfImprovement] Deferred mode DISABLED");
 }
 
 /**
@@ -1681,7 +1677,7 @@ export async function flushStagedChanges(): Promise<{
     return { flushed: false, fileCount: 0, files: [], restartTriggered: false, errors: [] };
   }
 
-  console.log(`[SelfImprovement] Flushing ${_stagedChanges.length} staged change(s) to disk...`);
+  log.info(`[SelfImprovement] Flushing ${_stagedChanges.length} staged change(s) to disk...`);
 
   const errors: string[] = [];
   const flushedFiles: string[] = [];
@@ -1710,7 +1706,7 @@ export async function flushStagedChanges(): Promise<{
       }
     } catch (err) {
       const msg = `Failed to flush ${change.filePath}: ${err instanceof Error ? err.message : String(err)}`;
-      console.error(`[SelfImprovement] ${msg}`);
+      log.error(`[SelfImprovement] ${msg}`);
       errors.push(msg);
     }
   }
@@ -1726,17 +1722,17 @@ export async function flushStagedChanges(): Promise<{
         await db.execute(
           sql`UPDATE self_modification_log SET description = REPLACE(description, ' [STAGED \u2014 pending flush]', '') WHERE description LIKE '%[STAGED%pending flush]%'`
         );
-        console.log(`[SelfImprovement] Cleaned up STAGED labels in modification log`);
+        log.info(`[SelfImprovement] Cleaned up STAGED labels in modification log`);
       }
     } catch (cleanupErr) {
-      console.warn(`[SelfImprovement] Could not clean STAGED labels:`, cleanupErr);
+      log.warn(`[SelfImprovement] Could not clean STAGED labels:`, { detail: cleanupErr });
     }
   }
 
   // Handle pending restart
   let restartTriggered = false;
   if (_pendingRestart) {
-    console.log(`[SelfImprovement] Triggering deferred restart: ${_pendingRestart.reason}`);
+    log.info(`[SelfImprovement] Triggering deferred restart: ${_pendingRestart.reason}`);
     await requestRestart(_pendingRestart.reason, _pendingRestart.userId);
     _pendingRestart = null;
     restartTriggered = true;
@@ -1745,7 +1741,7 @@ export async function flushStagedChanges(): Promise<{
   // Disable deferred mode
   _deferredMode = false;
 
-  console.log(`[SelfImprovement] Flush complete: ${flushedFiles.length} file(s) written`);
+  log.info(`[SelfImprovement] Flush complete: ${flushedFiles.length} file(s) written`);
 
   return {
     flushed: true,
@@ -1886,7 +1882,7 @@ export async function applyModificationsDeferred(
   // Anti-Self-Break: Record rate limit for deferred changes too
   recordRateLimit(modifications.length);
 
-  console.log(`[SelfImprovement] Staged ${results.filter(r => r.applied).length} change(s) — will flush after conversation ends`);
+  log.info(`[SelfImprovement] Staged ${results.filter(r => r.applied).length} change(s) — will flush after conversation ends`);
 
   return {
     success: true,
@@ -1961,7 +1957,7 @@ export async function pushToGitHub(
     // Ensure git repo exists (production containers don't have .git)
     const gitDir = path.join(PROJECT_ROOT, ".git");
     if (!fs.existsSync(gitDir)) {
-      console.log("[SelfImprovement] No .git directory found — initializing fresh repo");
+      log.info("[SelfImprovement] No .git directory found — initializing fresh repo");
       execSync("git init", { cwd: PROJECT_ROOT, encoding: "utf-8" });
       execSync('git config user.email "archibaldtitan@gmail.com"', { cwd: PROJECT_ROOT, encoding: "utf-8" });
       execSync('git config user.name "Archibald Titan"', { cwd: PROJECT_ROOT, encoding: "utf-8" });
@@ -1975,9 +1971,9 @@ export async function pushToGitHub(
         // Reset to the fetched state but keep our working tree changes
         execSync("git reset --soft origin/main 2>&1", { cwd: PROJECT_ROOT, encoding: "utf-8" });
       } catch (fetchErr: any) {
-        console.warn(`[SelfImprovement] Could not fetch from origin: ${fetchErr.message}`);
+        log.warn(`[SelfImprovement] Could not fetch from origin: ${fetchErr.message}`);
       }
-      console.log("[SelfImprovement] Git repo initialized successfully");
+      log.info("[SelfImprovement] Git repo initialized successfully");
     } else {
       // Configure git user (repo already exists)
       execSync('git config user.email "archibaldtitan@gmail.com"', { cwd: PROJECT_ROOT, encoding: "utf-8" });
@@ -2035,9 +2031,9 @@ export async function pushToGitHub(
           timeout: 30000,
         });
         pushedRepos.push(repo.name);
-        console.log(`[SelfImprovement] Pushed to ${repo.name} (${commitHash})`);
+        log.info(`[SelfImprovement] Pushed to ${repo.name} (${commitHash})`);
       } catch (pushErr: any) {
-        console.error(`[SelfImprovement] Failed to push to ${repo.name}: ${pushErr.message}`);
+        log.error(`[SelfImprovement] Failed to push to ${repo.name}: ${pushErr.message}`);
       }
     }
 
@@ -2063,7 +2059,7 @@ export async function pushToGitHub(
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    console.error(`[SelfImprovement] GitHub push failed: ${errorMsg}`);
+    log.error(`[SelfImprovement] GitHub push failed: ${errorMsg}`);
     return {
       success: false,
       pushedRepos: [],

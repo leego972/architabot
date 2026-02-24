@@ -3,6 +3,8 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { createPool } from "mysql2";
 import { InsertUser, users, companies, InsertCompany, businessPlans, InsertBusinessPlan, grantOpportunities, InsertGrantOpportunity, grantApplications, InsertGrantApplication, grantMatches, InsertGrantMatch, crowdfundingCampaigns, InsertCrowdfundingCampaign, crowdfundingRewards, InsertCrowdfundingReward, crowdfundingContributions, InsertCrowdfundingContribution, crowdfundingUpdates, InsertCrowdfundingUpdate, marketplaceListings, InsertMarketplaceListing, marketplacePurchases, InsertMarketplacePurchase, marketplaceReviews, InsertMarketplaceReview, sellerProfiles, InsertSellerProfile, sellerPayoutMethods, InsertSellerPayoutMethod } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("Database");
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: ReturnType<typeof createPool> | null = null;
 // Lazily create the drizzle instance with a connection pool for resilience.
@@ -18,7 +20,7 @@ export async function getDb() {
       });
       _db = drizzle(_pool);
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      log.warn("[Database] Failed to connect:", { error: String(error) });
       _db = null;
       _pool = null;
     }
@@ -33,7 +35,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+    log.warn("[Database] Cannot upsert user: database not available");
     return;
   }
 
@@ -70,7 +72,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       // Auto-promote owner by email match
       values.role = 'admin';
       updateSet.role = 'admin';
-      console.log(`[Database] Auto-promoted user to admin by email match: ${user.email}`);
+      log.info(`[Database] Auto-promoted user to admin by email match: ${user.email}`);
     }
 
     if (!values.lastSignedIn) {
@@ -92,7 +94,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       // Column may not exist pre-migration — silently ignore
     }
   } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
+    log.error("[Database] Failed to upsert user:", { error: String(error) });
     throw error;
   }
 }
@@ -100,7 +102,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
+    log.warn("[Database] Cannot get user: database not available");
     return undefined;
   }
 

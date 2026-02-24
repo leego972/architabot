@@ -31,6 +31,8 @@ import {
   type InsertSandbox,
 } from "../drizzle/schema";
 import { storagePut } from "./storage";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("SandboxEngine");
 
 const execAsync = promisify(exec);
 
@@ -519,7 +521,7 @@ export async function persistWorkspace(
 
     return url;
   } catch (err: any) {
-    console.error(`[Sandbox] Failed to persist workspace ${sandboxId}:`, err.message);
+    log.error(`[Sandbox] Failed to persist workspace ${sandboxId}:`, { error: String(err.message) });
     return null;
   }
 }

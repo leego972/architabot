@@ -24,6 +24,8 @@ import {
 } from "../drizzle/schema";
 import { randomBytes } from "crypto";
 import { notifyOwner } from "./_core/notification";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("AffiliateDiscoveryEngine");
 
 // ─── Kill Switch ──────────────────────────────────────────────────────
 const KILL_SWITCH_CODE = "AFKL7X9M2Q"; // 10-char alphanumeric kill switch
@@ -32,7 +34,7 @@ let isKilled = false;
 export function triggerKillSwitch(code: string): boolean {
   if (code === KILL_SWITCH_CODE) {
     isKilled = true;
-    console.log("[AffiliateDiscovery] KILL SWITCH ACTIVATED — all discovery operations halted");
+    log.info("[AffiliateDiscovery] KILL SWITCH ACTIVATED — all discovery operations halted");
     return true;
   }
   return false;
@@ -41,7 +43,7 @@ export function triggerKillSwitch(code: string): boolean {
 export function resetKillSwitch(code: string): boolean {
   if (code === KILL_SWITCH_CODE) {
     isKilled = false;
-    console.log("[AffiliateDiscovery] Kill switch reset — operations resumed");
+    log.info("[AffiliateDiscovery] Kill switch reset — operations resumed");
     return true;
   }
   return false;
@@ -194,7 +196,7 @@ export async function runDiscoveryCycle(
   durationMs: number;
 }> {
   if (isKilled) {
-    console.log("[AffiliateDiscovery] Kill switch active — skipping discovery cycle");
+    log.info("[AffiliateDiscovery] Kill switch active — skipping discovery cycle");
     return { batchId: "", programsDiscovered: 0, programsApproved: 0, applicationsGenerated: 0, errors: ["Kill switch active"], durationMs: 0 };
   }
 
@@ -214,7 +216,7 @@ export async function runDiscoveryCycle(
     status: "running",
   });
 
-  console.log(`[AffiliateDiscovery] Starting ${runType} discovery cycle (batch: ${batchId})`);
+  log.info(`[AffiliateDiscovery] Starting ${runType} discovery cycle (batch: ${batchId})`);
 
   let totalDiscovered = 0;
   let totalApproved = 0;
@@ -258,7 +260,7 @@ export async function runDiscoveryCycle(
               if (scored.overallScore >= 80) {
                 try {
                   await promoteDiscoveryToPartner(program.id);
-                  console.log(`[AffiliateDiscovery] Auto-promoted high-scorer: ${program.name} (score: ${scored.overallScore})`);
+                  log.info(`[AffiliateDiscovery] Auto-promoted high-scorer: ${program.name} (score: ${scored.overallScore})`);
                 } catch (promoErr: any) {
                   errors.push(`Auto-promote failed for ${program.name}: ${promoErr.message}`);
                 }
@@ -290,7 +292,7 @@ export async function runDiscoveryCycle(
       })
       .where(eq(affiliateDiscoveryRuns.batchId, batchId));
 
-    console.log(`[AffiliateDiscovery] Cycle complete: ${totalDiscovered} discovered, ${totalApproved} approved, ${totalApplications} applications (${durationMs}ms)`);
+    log.info(`[AffiliateDiscovery] Cycle complete: ${totalDiscovered} discovered, ${totalApproved} approved, ${totalApplications} applications (${durationMs}ms)`);
 
     // Notify owner of results
     if (totalDiscovered > 0) {
@@ -312,7 +314,7 @@ export async function runDiscoveryCycle(
       })
       .where(eq(affiliateDiscoveryRuns.batchId, batchId));
 
-    console.error(`[AffiliateDiscovery] Cycle failed:`, err);
+    log.error(`[AffiliateDiscovery] Cycle failed:`, { error: String(err) });
     return { batchId, programsDiscovered: totalDiscovered, programsApproved: totalApproved, applicationsGenerated: totalApplications, errors: [...errors, err.message], durationMs };
   }
 }
@@ -444,10 +446,10 @@ Already known domains to EXCLUDE: ${Array.from(existingDomains).slice(0, 50).joi
 
         const insertId = Number(result[0].insertId);
         discovered.push({ id: insertId, name: prog.name });
-        console.log(`[AffiliateDiscovery] Found: ${prog.name} (${domain}) — ${vertical}`);
+        log.info(`[AffiliateDiscovery] Found: ${prog.name} (${domain}) — ${vertical}`);
       }
     } catch (err: any) {
-      console.error(`[AffiliateDiscovery] Query "${query}" failed:`, err.message);
+      log.error(`[AffiliateDiscovery] Query "${query}" failed:`, { error: String(err.message) });
     }
   }
 
@@ -538,7 +540,7 @@ Score this program's revenue potential and relevance to Titan users.`,
       })
       .where(eq(affiliateDiscoveries.id, discoveryId));
 
-    console.log(`[AffiliateDiscovery] Scored ${discovery.name}: revenue=${revenueScore}, relevance=${relevanceScore}, overall=${overallScore} → ${newStatus}`);
+    log.info(`[AffiliateDiscovery] Scored ${discovery.name}: revenue=${revenueScore}, relevance=${relevanceScore}, overall=${overallScore} → ${newStatus}`);
 
     return { revenueScore, relevanceScore, overallScore };
   } catch (err: any) {
@@ -638,7 +640,7 @@ Affiliate Program URL: ${discovery.affiliateProgramUrl || "N/A"}`,
       })
       .where(eq(affiliateDiscoveries.id, discoveryId));
 
-    console.log(`[AffiliateDiscovery] Application drafted for ${discovery.name}`);
+    log.info(`[AffiliateDiscovery] Application drafted for ${discovery.name}`);
     return email;
   } catch (err: any) {
     // Fallback template
@@ -721,7 +723,7 @@ export async function promoteDiscoveryToPartner(discoveryId: number): Promise<nu
     .set({ promotedToPartnerId: partnerId, status: "accepted" })
     .where(eq(affiliateDiscoveries.id, discoveryId));
 
-  console.log(`[AffiliateDiscovery] Promoted ${discovery.name} to partner #${partnerId}`);
+  log.info(`[AffiliateDiscovery] Promoted ${discovery.name} to partner #${partnerId}`);
   return partnerId;
 }
 
@@ -865,11 +867,11 @@ export function startScheduledDiscovery(): void {
         .limit(1);
 
       if (!recentRun) {
-        console.log("[AffiliateDiscovery] Daily scheduled run triggered");
+        log.info("[AffiliateDiscovery] Daily scheduled run triggered");
         try {
           await runDiscoveryCycle("scheduled");
         } catch (err: any) {
-          console.error("[AffiliateDiscovery] Scheduled run failed:", err.message);
+          log.error("[AffiliateDiscovery] Scheduled run failed:", { error: String(err.message) });
         }
       }
     }
@@ -888,14 +890,14 @@ export function startScheduledDiscovery(): void {
       .limit(1);
 
     if (!recentRun) {
-      console.log("[AffiliateDiscovery] Startup discovery run triggered");
+      log.info("[AffiliateDiscovery] Startup discovery run triggered");
       try {
         await runDiscoveryCycle("startup");
       } catch (err: any) {
-        console.error("[AffiliateDiscovery] Startup run failed:", err.message);
+        log.error("[AffiliateDiscovery] Startup run failed:", { error: String(err.message) });
       }
     }
   }, 5 * 60 * 1000);
 
-  console.log("[AffiliateDiscovery] Scheduled discovery active — runs DAILY at 6 AM UTC + on startup");
+  log.info("[AffiliateDiscovery] Scheduled discovery active — runs DAILY at 6 AM UTC + on startup");
 }

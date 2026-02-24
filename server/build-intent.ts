@@ -588,7 +588,7 @@ newEndpoint: protectedProcedure
       });
       return { success: true, id: result.insertId };
     } catch (error) {
-      console.error('Operation failed:', error);
+      log.error('Operation failed:', { error: String(error) });
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Operation failed' });
     }
   }),
@@ -827,6 +827,8 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("BuildIntent");
 
 const app = express();
 

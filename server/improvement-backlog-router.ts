@@ -5,6 +5,8 @@ import { getDb } from "./db";
 import { TRPCError } from "@trpc/server";
 import { desc, eq, sql, and } from "drizzle-orm";
 import { improvementTasks } from "../drizzle/schema";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("ImprovementBacklogRouter");
 
 // ─── Curated Improvement Task Seed Data ──────────────────────────────
 // These are the improvements Titan should work on to improve itself.

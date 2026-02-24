@@ -15,6 +15,8 @@ import {
   type PoolName,
   type SystemTag,
 } from "./key-pool";
+import { createLogger } from "./logger.js";
+const log = createLogger("LLM");
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -434,7 +436,7 @@ async function _invokeLLMWithRetry(
   const apiKey = usingUserKey ? params.userApiKey! : (keyHandle ? keyHandle.key : getLegacyApiKey());
 
   if (usingUserKey) {
-    console.log(`[LLM] Using user's personal API key (system=${systemTag}, model=${model})`);
+    log.info("Using user's personal API key", { system: systemTag, model });
   }
 
   // Add fetch timeout to prevent hanging requests (5 minutes for chat, 2 minutes for background)
@@ -489,16 +491,14 @@ async function _invokeLLMWithRetry(
 
       // Fall back to gpt-4.1-nano after 2 retries on gpt-4.1-mini
       if (attempt >= 2 && modelPreference === "strong" && useOpenAI) {
-        console.log(`[LLM] ${systemTag}: falling back to gpt-4.1-nano after ${attempt + 1} retries`);
+        log.info(`[LLM] ${systemTag}: falling back to gpt-4.1-nano after ${attempt + 1} retries`);
         const fallbackParams = { ...params, model: "fast" as const };
         await new Promise((r) => setTimeout(r, waitMs));
         return _invokeLLMWithRetry(fallbackParams, priority, 0);
       }
 
-      console.log(
-        `[LLM] ${systemTag}: 429 rate limited (attempt ${attempt + 1}/${maxRetries}), ` +
-        `waiting ${Math.round(waitMs / 1000)}s`
-      );
+      log.info(`[LLM] ${systemTag}: 429 rate limited (attempt ${attempt + 1}/${maxRetries}), ` +
+        `waiting ${Math.round(waitMs / 1000)}s`);
 
       await new Promise((r) => setTimeout(r, waitMs));
       return _invokeLLMWithRetry(params, priority, attempt + 1);

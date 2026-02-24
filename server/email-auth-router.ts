@@ -17,6 +17,8 @@ import { COOKIE_NAME, ONE_YEAR_MS } from "../shared/const";
 import { ENV } from "./_core/env";
 import { notifyOwner } from "./_core/notification";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email-service";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("EmailAuthRouter");
 
 const SALT_ROUNDS = 12;
 const MIN_PASSWORD_LENGTH = 8;
@@ -181,7 +183,7 @@ export function registerEmailAuthRoutes(app: Express) {
         const existingUsers = await db.select({ id: users.id }).from(users).limit(1);
         if (existingUsers.length === 0) {
           role = "admin";
-          console.log(`[EmailAuth] First user auto-promoted to admin: ${normalizedEmail}`);
+          log.info(`[EmailAuth] First user auto-promoted to admin: ${normalizedEmail}`);
         }
       }
 
@@ -231,7 +233,7 @@ export function registerEmailAuthRoutes(app: Express) {
           linkedAt: new Date(),
           lastUsedAt: new Date(),
         }).catch(() => {
-          console.warn("[Email Auth] Failed to auto-link email provider");
+          log.warn("[Email Auth] Failed to auto-link email provider");
         });
       }
 
@@ -243,7 +245,7 @@ export function registerEmailAuthRoutes(app: Express) {
         name?.trim() || normalizedEmail.split("@")[0],
         verifyUrl
       ).catch(() => {
-        console.warn("[Email Auth] Failed to send verification email");
+        log.warn("[Email Auth] Failed to send verification email");
       });
 
       return res.json({
@@ -258,7 +260,7 @@ export function registerEmailAuthRoutes(app: Express) {
         } : null,
       });
     } catch (error: any) {
-      console.error("[Email Auth] Registration failed:", error);
+      log.error("[Email Auth] Registration failed:", { error: String(error) });
       return res.status(500).json({ error: "Registration failed. Please try again." });
     }
   });
@@ -319,10 +321,10 @@ export function registerEmailAuthRoutes(app: Express) {
         user.name || user.email!,
         resetUrl
       ).catch(() => {
-        console.warn("[Password Reset] Failed to send email");
+        log.warn("[Password Reset] Failed to send email");
       });
 
-      console.log(`[Password Reset] Token generated for ${user.email}: ${resetUrl}`);
+      log.info(`[Password Reset] Token generated for ${user.email}: ${resetUrl}`);
 
       return res.json({
         success: true,
@@ -332,7 +334,7 @@ export function registerEmailAuthRoutes(app: Express) {
         resetUrl,
       });
     } catch (error: any) {
-      console.error("[Password Reset] Request failed:", error);
+      log.error("[Password Reset] Request failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to process password reset request. Please try again." });
     }
   });
@@ -389,7 +391,7 @@ export function registerEmailAuthRoutes(app: Express) {
         email: userResult[0]?.email || "your account",
       });
     } catch (error: any) {
-      console.error("[Password Reset] Token verification failed:", error);
+      log.error("[Password Reset] Token verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to verify token", valid: false });
     }
   });
@@ -453,14 +455,14 @@ export function registerEmailAuthRoutes(app: Express) {
         .set({ usedAt: new Date() })
         .where(eq(passwordResetTokens.id, resetToken.id));
 
-      console.log(`[Password Reset] Password successfully reset for userId: ${resetToken.userId}`);
+      log.info(`[Password Reset] Password successfully reset for userId: ${resetToken.userId}`);
 
       return res.json({
         success: true,
         message: "Your password has been reset successfully. You can now sign in with your new password.",
       });
     } catch (error: any) {
-      console.error("[Password Reset] Reset failed:", error);
+      log.error("[Password Reset] Reset failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to reset password. Please try again." });
     }
   });
@@ -553,7 +555,7 @@ export function registerEmailAuthRoutes(app: Express) {
         user.id === 1
       )) {
         loginUpdate.role = "admin";
-        console.log(`[EmailAuth] Auto-promoted user to admin on login: ${normalizedEmail}`);
+        log.info(`[EmailAuth] Auto-promoted user to admin on login: ${normalizedEmail}`);
       }
       await db
         .update(users)
@@ -595,7 +597,7 @@ export function registerEmailAuthRoutes(app: Express) {
         },
       });
     } catch (error: any) {
-      console.error("[Email Auth] Login failed:", error);
+      log.error("[Email Auth] Login failed:", { error: String(error) });
       return res.status(500).json({ error: "Login failed. Please try again." });
     }
   });
@@ -662,7 +664,7 @@ export function registerEmailAuthRoutes(app: Express) {
 
       return res.json({ success: true, message: "Password changed successfully" });
     } catch (error: any) {
-      console.error("[Email Auth] Change password failed:", error);
+      log.error("[Email Auth] Change password failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to change password. Please try again." });
     }
   });
@@ -716,7 +718,7 @@ export function registerEmailAuthRoutes(app: Express) {
         .where(eq(users.id, sessionUser.id));
       return res.json({ success: true, message: "Password set successfully. You can now use it to log in to the desktop app." });
     } catch (error: any) {
-      console.error("[Email Auth] Set password failed:", error);
+      log.error("[Email Auth] Set password failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to set password. Please try again." });
     }
   });
@@ -787,7 +789,7 @@ export function registerEmailAuthRoutes(app: Express) {
 
       return res.json({ success: true, user: updated[0] || null });
     } catch (error: any) {
-      console.error("[Email Auth] Update profile failed:", error);
+      log.error("[Email Auth] Update profile failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to update profile. Please try again." });
     }
   });
@@ -840,7 +842,7 @@ export function registerEmailAuthRoutes(app: Express) {
         })
         .where(eq(users.id, user.id));
 
-      console.log(`[Email Auth] Email verified for userId: ${user.id}, email: ${user.email}`);
+      log.info(`[Email Auth] Email verified for userId: ${user.id}, email: ${user.email}`);
 
       // Notify owner of new verified user
       await notifyOwner({
@@ -853,7 +855,7 @@ export function registerEmailAuthRoutes(app: Express) {
         message: "Your email has been verified successfully! You can now access all features.",
       });
     } catch (error: any) {
-      console.error("[Email Auth] Email verification failed:", error);
+      log.error("[Email Auth] Email verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Verification failed. Please try again.", verified: false });
     }
   });
@@ -909,12 +911,12 @@ export function registerEmailAuthRoutes(app: Express) {
         user.name || normalizedEmail.split("@")[0],
         verifyUrl
       ).catch(() => {
-        console.warn("[Email Auth] Failed to resend verification email");
+        log.warn("[Email Auth] Failed to resend verification email");
       });
 
       return res.json({ success: true, message: "If an account exists with that email, a verification link has been sent." });
     } catch (error: any) {
-      console.error("[Email Auth] Resend verification failed:", error);
+      log.error("[Email Auth] Resend verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to resend verification. Please try again." });
     }
   });
@@ -1041,7 +1043,7 @@ export function registerEmailAuthRoutes(app: Express) {
         },
       });
     } catch (error: any) {
-      console.error("[Email Auth] 2FA verification failed:", error);
+      log.error("[Email Auth] 2FA verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Two-factor verification failed. Please try again." });
     }
   });

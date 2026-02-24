@@ -19,6 +19,8 @@ import { storagePut } from "./storage";
 import { getDb } from "./db";
 import { marketingContent, marketingActivityLog, blogPosts } from "../drizzle/schema";
 import { eq, desc, and, isNotNull, sql } from "drizzle-orm";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("TiktokContentService");
 
 // ============================================
 // TYPES
@@ -97,7 +99,7 @@ export async function queryCreatorInfo(): Promise<TikTokCreatorInfo | null> {
 
     const data = await response.json() as any;
     if (data.error?.code !== "ok") {
-      console.error("[TikTok Content] Creator info error:", data.error);
+      log.error("[TikTok Content] Creator info error:", { detail: data.error });
       return null;
     }
 
@@ -111,7 +113,7 @@ export async function queryCreatorInfo(): Promise<TikTokCreatorInfo | null> {
       maxVideoPostDurationSec: data.data?.max_video_post_duration_sec,
     };
   } catch (err: any) {
-    console.error("[TikTok Content] Failed to query creator info:", err.message);
+    log.error("[TikTok Content] Failed to query creator info:", { error: String(err.message) });
     return null;
   }
 }
@@ -171,7 +173,7 @@ export async function postVideoByUrl(params: {
       publishId: data.data?.publish_id,
     };
   } catch (err: any) {
-    console.error("[TikTok Content] Video post failed:", err.message);
+    log.error("[TikTok Content] Video post failed:", { error: String(err.message) });
     return { success: false, error: err.message };
   }
 }
@@ -237,7 +239,7 @@ export async function postPhotos(params: {
       publishId: data.data?.publish_id,
     };
   } catch (err: any) {
-    console.error("[TikTok Content] Photo post failed:", err.message);
+    log.error("[TikTok Content] Photo post failed:", { error: String(err.message) });
     return { success: false, error: err.message };
   }
 }
@@ -263,7 +265,7 @@ export async function getPostStatus(publishId: string): Promise<TikTokPostStatus
     const data = await response.json() as any;
 
     if (data.error?.code !== "ok") {
-      console.error("[TikTok Content] Status check error:", data.error);
+      log.error("[TikTok Content] Status check error:", { detail: data.error });
       return null;
     }
 
@@ -273,7 +275,7 @@ export async function getPostStatus(publishId: string): Promise<TikTokPostStatus
       publiclyAvailable: data.data?.publicly_available,
     };
   } catch (err: any) {
-    console.error("[TikTok Content] Status check failed:", err.message);
+    log.error("[TikTok Content] Status check failed:", { error: String(err.message) });
     return null;
   }
 }
@@ -343,7 +345,7 @@ Return JSON with these fields:
     const plan = JSON.parse((response.choices[0].message.content as string) || "{}");
     return plan as TikTokContentPlan;
   } catch (err: any) {
-    console.error("[TikTok Content] Plan generation failed:", err.message);
+    log.error("[TikTok Content] Plan generation failed:", { error: String(err.message) });
     return null;
   }
 }
@@ -376,7 +378,7 @@ export async function generateCarouselImages(plan: TikTokContentPlan): Promise<s
         imageUrls.push(s3Url);
       }
     } catch (err: any) {
-      console.error("[TikTok Content] Image generation failed:", err.message);
+      log.error("[TikTok Content] Image generation failed:", { error: String(err.message) });
     }
   }
 
@@ -449,7 +451,7 @@ export async function runTikTokContentPipeline(): Promise<{
   const blogPost = unpostedBlog!;
 
   // Step 2: Generate content plan
-  console.log(`[TikTok Content] Generating content plan for: ${blogPost.title}`);
+  log.info(`[TikTok Content] Generating content plan for: ${blogPost.title}`);
   const plan = await generateTikTokContentPlan({
     title: blogPost.title,
     excerpt: blogPost.excerpt || "",
@@ -460,7 +462,7 @@ export async function runTikTokContentPipeline(): Promise<{
   }
 
   // Step 3: Generate carousel images
-  console.log(`[TikTok Content] Generating ${plan.contentType === "photo_carousel" ? "carousel images" : "video script"}`);
+  log.info(`[TikTok Content] Generating ${plan.contentType === "photo_carousel" ? "carousel images" : "video script"}`);
 
   let postResult: TikTokPostResult;
   let imageUrls: string[] = [];

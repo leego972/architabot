@@ -7,6 +7,8 @@ import type { Express, Request, Response } from "express";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import { createContext } from "./_core/context";
 import crypto from "crypto";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("VoiceRouter");
 
 /**
  * Voice transcription tRPC router
@@ -107,14 +109,14 @@ export function registerVoiceUploadRoute(app: Express) {
               const { url } = await storagePut(fileKey, fileBuffer, fileMimeType);
               res.json({ url, mimeType: fileMimeType, size: fileBuffer.length });
             } catch (err) {
-              console.error("[Voice Upload] S3 upload failed:", err);
+              log.error("[Voice Upload] S3 upload failed:", { error: String(err) });
               res.status(500).json({ error: "Failed to upload audio" });
             }
             resolve();
           });
 
           bb.on("error", (err: Error) => {
-            console.error("[Voice Upload] Busboy error:", err);
+            log.error("[Voice Upload] Busboy error:", { error: String(err) });
             res.status(500).json({ error: "Failed to process upload" });
             resolve();
           });
@@ -150,13 +152,13 @@ export function registerVoiceUploadRoute(app: Express) {
             const { url } = await storagePut(fileKey, audioBuffer, mimeType);
             res.json({ url, mimeType, size: audioBuffer.length });
           } catch (err) {
-            console.error("[Voice Upload] S3 upload failed:", err);
+            log.error("[Voice Upload] S3 upload failed:", { error: String(err) });
             res.status(500).json({ error: "Failed to upload audio" });
           }
         });
       }
     } catch (err) {
-      console.error("[Voice Upload] Error:", err);
+      log.error("[Voice Upload] Error:", { error: String(err) });
       if (!res.headersSent) {
         res.status(500).json({ error: "Internal server error" });
       }

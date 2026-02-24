@@ -11,6 +11,8 @@ import { getDb } from "./db";
 import { notificationChannels } from "../drizzle/schema";
 import { getUserPlan, enforceFeature } from "./subscription-gate";
 import { logAudit } from "./audit-log-db";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("NotificationChannelsRouter");
 
 // ─── Event Types for Notifications ────────────────────────────────
 export const NOTIFICATION_EVENT_TYPES = [
@@ -147,13 +149,13 @@ async function sendNotification(
     if (channel.type === "email" && channel.emailAddress) {
       // Email notifications would use the existing email service
       // For now, log the notification
-      console.log(`[Notification] Email to ${channel.emailAddress}: ${event}`, details);
+      log.info(`[Notification] Email to ${channel.emailAddress}: ${event}`, { detail: details });
       return true;
     }
 
     return false;
   } catch (err) {
-    console.error(`[Notification] Failed to send to channel ${channel.id}:`, err);
+    log.error(`[Notification] Failed to send to channel ${channel.id}:`, { error: String(err) });
     return false;
   }
 }

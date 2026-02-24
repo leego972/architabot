@@ -25,6 +25,8 @@ import { notifyOwner } from "./_core/notification";
 import { blogPosts } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import type { Express, Request, Response } from "express";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("SeoEngine");
 
 // ─── Configuration ──────────────────────────────────────────────────
 
@@ -51,7 +53,7 @@ export function triggerSeoKillSwitch(code: string): boolean {
   if (code === KILL_CODE) {
     isKilled = true;
     logSeoEvent("kill_switch", "SEO kill switch activated");
-    console.log("[SEO] KILL SWITCH ACTIVATED — all SEO operations halted");
+    log.info("[SEO] KILL SWITCH ACTIVATED — all SEO operations halted");
     return true;
   }
   return false;
@@ -61,7 +63,7 @@ export function resetSeoKillSwitch(code: string): boolean {
   if (code === KILL_CODE) {
     isKilled = false;
     logSeoEvent("kill_switch", "SEO kill switch reset");
-    console.log("[SEO] Kill switch reset — SEO operations resumed");
+    log.info("[SEO] Kill switch reset — SEO operations resumed");
     return true;
   }
   return false;
@@ -580,7 +582,7 @@ export async function generateSitemapXml(): Promise<string> {
       logSeoEvent("sitemap", `Generated sitemap with ${PUBLIC_PAGES.length + posts.length} URLs`);
     }
   } catch (err) {
-    console.error("[SEO] Failed to add blog posts to sitemap:", err);
+    log.error("[SEO] Failed to add blog posts to sitemap:", { error: String(err) });
   }
 
   xml += `</urlset>`;
@@ -630,7 +632,7 @@ export async function generateRssFeed(): Promise<string> {
       }
     }
   } catch (err) {
-    console.error("[SEO] RSS feed generation error:", err);
+    log.error("[SEO] RSS feed generation error:", { error: String(err) });
   }
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -982,7 +984,7 @@ Return JSON: {"metaTitle": "...", "metaDescription": "...", "keywords": ["..."]}
     metaDescription = parsed.metaDescription || metaDescription;
     keywords = parsed.keywords || [];
   } catch (err) {
-    console.error("[SEO] Blog post LLM optimization failed, using defaults:", err);
+    log.error("[SEO] Blog post LLM optimization failed, using defaults:", { error: String(err) });
     keywords = title
       .toLowerCase()
       .split(/\s+/)
@@ -1246,7 +1248,7 @@ Analyze the competitive landscape and identify SEO opportunities.`,
     logSeoEvent("competitor_analysis", `Analyzed ${parsed.competitors?.length || 0} competitors`);
     return { ...parsed, analyzedAt: Date.now() };
   } catch (err: any) {
-    console.error("[SEO] Competitor analysis failed:", err.message);
+    log.error("[SEO] Competitor analysis failed:", { error: String(err.message) });
     return {
       competitors: [
         {
@@ -1334,7 +1336,7 @@ Focus on topics that:
       return briefs.map((b: any) => ({ ...b, generatedAt: Date.now() }));
     }
   } catch (err: any) {
-    console.error("[SEO] Content brief generation failed:", err.message);
+    log.error("[SEO] Content brief generation failed:", { error: String(err.message) });
   }
 
   // Fallback briefs
@@ -1789,7 +1791,7 @@ Analyze and provide keyword recommendations for SEO optimization.`,
     );
     return { ...analysis, generatedAt: Date.now() };
   } catch (err: any) {
-    console.error("[SEO] Keyword analysis failed:", err.message);
+    log.error("[SEO] Keyword analysis failed:", { error: String(err.message) });
     return {
       primaryKeywords: [
         { keyword: "AI credential manager", volume: "medium", difficulty: "low", opportunity: "high" },
@@ -1897,7 +1899,7 @@ ${PUBLIC_PAGES.map(
     }
     logSeoEvent("meta_optimization", `Generated ${optimizations.length} meta tag optimizations`);
   } catch (err: any) {
-    console.error("[SEO] Meta optimization failed:", err.message);
+    log.error("[SEO] Meta optimization failed:", { error: String(err.message) });
   }
 
   return optimizations;
@@ -2030,7 +2032,7 @@ export async function submitToIndexNow(urls: string[]): Promise<{ success: boole
     logSeoEvent("indexnow", `Submitted ${urls.length} URLs to IndexNow`, { status: response.status });
     return { success, submitted: urls.length };
   } catch (err: any) {
-    console.error("[SEO] IndexNow submission failed:", err.message);
+    log.error("[SEO] IndexNow submission failed:", { error: String(err.message) });
     return { success: false, submitted: 0 };
   }
 }
@@ -2210,7 +2212,7 @@ export function registerSeoRoutes(app: Express): void {
     }
 
     logSeoEvent("ping", "Pinged search engines", results);
-    console.log("[SEO] Search engine ping results:", results);
+    log.info("[SEO] Search engine ping results:", { detail: results });
     res.json({ pinged: results, sitemapUrl: `${SITE_URL}/sitemap.xml` });
   });
 
@@ -2258,9 +2260,7 @@ export function registerSeoRoutes(app: Express): void {
     });
   }
 
-  console.log(
-    "[SEO v3] Routes registered: /sitemap.xml, /robots.txt, /.well-known/security.txt, /feed.xml, /api/seo/*, redirects"
-  );
+  log.info("[SEO v3] Routes registered: /sitemap.xml, /robots.txt, /.well-known/security.txt, /feed.xml, /api/seo/*, redirects");
 }
 
 // ─── Scheduled SEO Optimization ─────────────────────────────────────
@@ -2270,20 +2270,18 @@ let cachedReport: SeoReport | null = null;
 
 export async function runScheduledSeoOptimization(): Promise<SeoReport | null> {
   if (isKilled) {
-    console.log("[SEO] Kill switch active — skipping optimization run");
+    log.info("[SEO] Kill switch active — skipping optimization run");
     return null;
   }
 
-  console.log("[SEO] Starting scheduled optimization run...");
+  log.info("[SEO] Starting scheduled optimization run...");
 
   try {
     const report = await generateSeoReport();
     cachedReport = report;
     lastOptimizationRun = Date.now();
 
-    console.log(
-      `[SEO] Optimization complete — Score: ${report.score.overall}/100, Issues: ${report.score.issues.length}, Keywords: ${report.keywords.primaryKeywords.length}`
-    );
+    log.info(`[SEO] Optimization complete — Score: ${report.score.overall}/100, Issues: ${report.score.issues.length}, Keywords: ${report.keywords.primaryKeywords.length}`);
 
     // Notify owner with summary
     await notifyOwner({
@@ -2308,7 +2306,7 @@ export async function runScheduledSeoOptimization(): Promise<SeoReport | null> {
 
     return report;
   } catch (err: any) {
-    console.error("[SEO] Scheduled optimization failed:", err.message);
+    log.error("[SEO] Scheduled optimization failed:", { error: String(err.message) });
     logSeoEvent("error", `Scheduled optimization failed: ${err.message}`);
     return null;
   }
@@ -2334,14 +2332,14 @@ export function startScheduledSeo(): void {
   // COST OPTIMIZATION: Do NOT run on startup.
   // Every Railway deploy triggers a restart which was burning API credits.
   // Instead, run the first analysis after 6 hours (gives time for organic traffic).
-  console.log("[SEO v3] Skipping startup analysis (cost optimization). First run in 6h, then daily.");
+  log.info("[SEO v3] Skipping startup analysis (cost optimization). First run in 6h, then daily.");
 
   setTimeout(async () => {
     try {
-      console.log("[SEO v3] Running first scheduled SEO analysis...");
+      log.info("[SEO v3] Running first scheduled SEO analysis...");
       await runScheduledSeoOptimization();
     } catch (err: any) {
-      console.error("[SEO v3] First analysis failed:", err.message);
+      log.error("[SEO v3] First analysis failed:", { error: String(err.message) });
     }
   }, 6 * 60 * 60 * 1000); // 6 hours after deploy
 
@@ -2350,7 +2348,7 @@ export function startScheduledSeo(): void {
     try {
       await runScheduledSeoOptimization();
     } catch (err: any) {
-      console.error("[SEO v3] Scheduled run failed:", err.message);
+      log.error("[SEO v3] Scheduled run failed:", { error: String(err.message) });
     }
   }, ONE_DAY);
 }

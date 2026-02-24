@@ -38,6 +38,8 @@ import {
   type ChannelId,
   type PerformanceMetrics,
 } from "./marketing-channels";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("MarketingEngine");
 
 // ============================================
 // TYPES
@@ -247,7 +249,7 @@ Generate the content now. Make it genuinely compelling — not corporate fluff.`
       });
       imageUrl = imgResult.url;
     } catch (err) {
-      console.error("[Marketing] Image generation failed:", err);
+      log.error("[Marketing] Image generation failed:", { error: String(err) });
       // Fallback to default campaign image if generation fails
       imageUrl = TITAN_BRAND.defaultCampaignImage;
     }
@@ -515,7 +517,7 @@ export async function executeCampaign(params: {
           });
           imageUrl = imgResult.url;
         } catch {
-          console.warn("[Marketing] Image generation failed, continuing without image");
+          log.warn("[Marketing] Image generation failed, continuing without image");
         }
       }
 
@@ -711,7 +713,7 @@ export async function executeCampaign(params: {
         publishedAt: new Date(),
       });
     } catch (err: any) {
-      console.error(`[Marketing] Failed to execute content for ${content.platform}:`, err.message);
+      log.error(`[Marketing] Failed to execute content for ${content.platform}:`, { error: String(err.message) });
       results[`error_${content.platform}`] = { success: false, error: err.message };
     }
   }
@@ -889,7 +891,7 @@ export async function runAutonomousCycle(): Promise<{
 }> {
   const db = await getDb();
   if (!db) {
-    console.log("[Marketing] Database not available, skipping cycle");
+    log.info("[Marketing] Database not available, skipping cycle");
     return { contentGenerated: 0, contentPublished: 0, campaignsOptimized: 0, budgetReallocated: false };
   }
   const dbAny = db as any;
@@ -898,7 +900,7 @@ export async function runAutonomousCycle(): Promise<{
   let campaignsOptimized = 0;
   let budgetReallocated = false;
 
-  console.log("[Marketing] Starting autonomous cycle...");
+  log.info("[Marketing] Starting autonomous cycle...");
 
   // 1. Check if marketing is enabled
   const settings = await dbAny.query.marketingSettings.findFirst({
@@ -906,7 +908,7 @@ export async function runAutonomousCycle(): Promise<{
   });
 
   if (settings?.value !== "true") {
-    console.log("[Marketing] Marketing engine is disabled, skipping cycle");
+    log.info("[Marketing] Marketing engine is disabled, skipping cycle");
     return { contentGenerated: 0, contentPublished: 0, campaignsOptimized: 0, budgetReallocated: false };
   }
 
@@ -917,7 +919,7 @@ export async function runAutonomousCycle(): Promise<{
   const monthlyBudget = parseFloat(budgetSetting?.value || "0");
 
   if (monthlyBudget <= 0) {
-    console.log("[Marketing] No budget set, skipping paid campaigns");
+    log.info("[Marketing] No budget set, skipping paid campaigns");
   }
 
   // 3. Generate and publish organic content for connected channels
@@ -994,10 +996,10 @@ export async function runAutonomousCycle(): Promise<{
 
       if (result?.success) {
         contentPublished++;
-        console.log(`[Marketing] Published to ${channel.name}: ${content.headline}`);
+        log.info(`[Marketing] Published to ${channel.name}: ${content.headline}`);
       }
     } catch (err: any) {
-      console.error(`[Marketing] Failed to publish to ${channel.name}:`, err.message);
+      log.error(`[Marketing] Failed to publish to ${channel.name}:`, { error: String(err.message) });
     }
   }
 
@@ -1023,9 +1025,9 @@ export async function runAutonomousCycle(): Promise<{
         .where(eq(marketingCampaigns.id, campaign.id));
 
       campaignsOptimized++;
-      console.log(`[Marketing] Optimized campaign: ${campaign.name}`);
+      log.info(`[Marketing] Optimized campaign: ${campaign.name}`);
     } catch (err: any) {
-      console.error(`[Marketing] Failed to optimize campaign ${campaign.name}:`, err.message);
+      log.error(`[Marketing] Failed to optimize campaign ${campaign.name}:`, { error: String(err.message) });
     }
   }
 
@@ -1081,15 +1083,13 @@ export async function runAutonomousCycle(): Promise<{
       });
 
       budgetReallocated = true;
-      console.log("[Marketing] Budget reallocated based on performance data");
+      log.info("[Marketing] Budget reallocated based on performance data");
     } catch (err: any) {
-      console.error("[Marketing] Budget reallocation failed:", err.message);
+      log.error("[Marketing] Budget reallocation failed:", { error: String(err.message) });
     }
   }
 
-  console.log(
-    `[Marketing] Autonomous cycle complete: ${contentGenerated} generated, ${contentPublished} published, ${campaignsOptimized} optimized`
-  );
+  log.info(`[Marketing] Autonomous cycle complete: ${contentGenerated} generated, ${contentPublished} published, ${campaignsOptimized} optimized`);
 
   return { contentGenerated, contentPublished, campaignsOptimized, budgetReallocated };
 }

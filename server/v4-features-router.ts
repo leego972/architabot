@@ -21,6 +21,8 @@ import { invokeLLM } from "./_core/llm";
 import { getUserPlan, enforceFeature } from "./subscription-gate";
 import { logAudit } from "./audit-log-db";
 import crypto from "crypto";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("V4FeaturesRouter");
 
 // ─── Known credential patterns for leak scanning ─────────────────
 const CREDENTIAL_PATTERNS: Record<string, { regex: RegExp; type: string; severity: "critical" | "high" | "medium" | "low" }> = {
@@ -234,7 +236,7 @@ Rules:
           }
         }
       } catch (error) {
-        console.error("[LeakScanner] AI scan failed, using fallback:", error);
+        log.error("[LeakScanner] AI scan failed, using fallback:", { error: String(error) });
         // Fallback: generate basic findings
         totalSourcesScanned = input.scanType === "full" ? 200 : input.scanType === "quick" ? 25 : 10;
       }
@@ -530,7 +532,7 @@ Return ONLY valid JSON.`;
 
         throw new Error("Empty AI response");
       } catch (error) {
-        console.error("[Onboarding] AI analysis failed:", error);
+        log.error("[Onboarding] AI analysis failed:", { error: String(error) });
 
         // Fallback: basic URL analysis
         const hostname = new URL(input.url).hostname;

@@ -4,6 +4,8 @@
  * reCAPTCHA v2/v3, hCaptcha, and image CAPTCHAs automatically.
  */
 import type { Page } from "playwright";
+import { createLogger } from "../_core/logger.js";
+const log = createLogger("CaptchaSolver");
 
 export type CaptchaService = "2captcha" | "anticaptcha" | null;
 
@@ -210,7 +212,7 @@ export async function detectAndSolveCaptcha(
   });
 
   if (recaptchaV2SiteKey) {
-    console.log("[CAPTCHA] Detected reCAPTCHA v2, solving...");
+    log.info("[CAPTCHA] Detected reCAPTCHA v2, solving...");
     const result =
       config.service === "2captcha"
         ? await solve2Captcha(recaptchaV2SiteKey, pageUrl, config.apiKey, "recaptcha_v2")
@@ -243,7 +245,7 @@ export async function detectAndSolveCaptcha(
   });
 
   if (recaptchaV3SiteKey) {
-    console.log("[CAPTCHA] Detected reCAPTCHA v3, solving...");
+    log.info("[CAPTCHA] Detected reCAPTCHA v3, solving...");
     const result =
       config.service === "2captcha"
         ? await solve2Captcha(recaptchaV3SiteKey, pageUrl, config.apiKey, "recaptcha_v3")
@@ -265,7 +267,7 @@ export async function detectAndSolveCaptcha(
   });
 
   if (hcaptchaSiteKey) {
-    console.log("[CAPTCHA] Detected hCaptcha, solving...");
+    log.info("[CAPTCHA] Detected hCaptcha, solving...");
     const result =
       config.service === "2captcha"
         ? await solve2Captcha(hcaptchaSiteKey, pageUrl, config.apiKey, "hcaptcha")
@@ -302,7 +304,7 @@ export async function detectAndSolveCaptcha(
   });
 
   if (imageCaptchaBase64 && config.service === "2captcha") {
-    console.log("[CAPTCHA] Detected image CAPTCHA, solving...");
+    log.info("[CAPTCHA] Detected image CAPTCHA, solving...");
     return solveImageCaptcha2Captcha(imageCaptchaBase64, config.apiKey);
   }
 

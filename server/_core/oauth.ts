@@ -6,6 +6,8 @@ import { getDb } from "../db";
 import { identityProviders, users } from "../../drizzle/schema";
 import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
+import { createLogger } from "./logger.js";
+const log = createLogger("OAuth");
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
@@ -58,7 +60,7 @@ async function autoLinkProvider(
       });
     }
   } catch (error) {
-    console.error("[OAuth] Failed to auto-link provider:", error);
+    log.error("[OAuth] Failed to auto-link provider:", { error: String(error) });
     // Non-fatal — don't block login
   }
 }
@@ -117,7 +119,7 @@ export function registerOAuthRoutes(app: Express) {
 
       res.redirect(302, "/dashboard");
     } catch (error) {
-      console.error("[OAuth] Callback failed", error);
+      log.error("[OAuth] Callback failed", { error: String(error) });
       res.status(500).json({ error: "OAuth callback failed" });
     }
   });

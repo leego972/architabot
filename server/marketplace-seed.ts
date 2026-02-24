@@ -7,6 +7,8 @@ import { getDb } from "./db";
 import { users, sellerProfiles, marketplaceListings } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("MarketplaceSeed");
 
 function generateUid() {
   return crypto.randomBytes(16).toString("hex");
@@ -838,7 +840,7 @@ export async function seedMarketplaceWithMerchants(): Promise<{ merchants: numbe
         });
       }
     } catch (e: any) {
-      console.warn(`[Marketplace Seed] Failed to create merchant "${bot.name}":`, e.message);
+      log.warn(`[Marketplace Seed] Failed to create merchant "${bot.name}":`, { error: String(e.message) });
     }
   }
 
@@ -896,6 +898,6 @@ export async function seedMarketplaceWithMerchants(): Promise<{ merchants: numbe
     }
   }
 
-  console.log(`[Marketplace Seed] Created ${merchantsCreated} merchants, ${listingsCreated} listings, ${skipped} skipped, ${errors.length} errors`);
+  log.info(`[Marketplace Seed] Created ${merchantsCreated} merchants, ${listingsCreated} listings, ${skipped} skipped, ${errors.length} errors`);
   return { merchants: merchantsCreated, listings: listingsCreated, skipped, attempted, errors: errors.slice(0, 10), merchantMap: Object.fromEntries(merchantUserIds) };
 }

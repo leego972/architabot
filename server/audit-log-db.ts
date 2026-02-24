@@ -5,6 +5,8 @@
 import { getDb } from "./db";
 import { auditLogs } from "../drizzle/schema";
 import { eq, desc, and, gte, lte, like, sql } from "drizzle-orm";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("AuditLogDb");
 
 export interface LogAuditParams {
   userId: number;
@@ -36,7 +38,7 @@ export async function logAudit(params: LogAuditParams): Promise<void> {
     });
   } catch (err) {
     // Audit logging should never break the main flow
-    console.error("[AuditLog] Failed to write:", err);
+    log.error("[AuditLog] Failed to write:", { error: String(err) });
   }
 }
 

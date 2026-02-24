@@ -15,6 +15,8 @@ import {
   PLATFORM_FEE_PERCENT,
   SUPPORTED_CRYPTO,
 } from "./binance-pay-service";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("GrantFinderRouter");
 
 // ==========================================
 // NO MORE FAKE SEED DATA
@@ -639,7 +641,7 @@ export const crowdfundingRouter = router({
           });
         }
       } catch (err) {
-        console.error("Failed to record manual crypto payment:", err);
+        log.error("Failed to record manual crypto payment:", { error: String(err) });
       }
       return {
         type: "manual" as const,
@@ -697,7 +699,7 @@ export const crowdfundingRouter = router({
           });
         }
       } catch (err) {
-        console.error("Failed to record crypto payment:", err);
+        log.error("Failed to record crypto payment:", { error: String(err) });
       }
 
       return {
@@ -713,7 +715,7 @@ export const crowdfundingRouter = router({
         creatorAmount,
       };
     } catch (error: any) {
-      console.error("Binance Pay order creation failed:", error);
+      log.error("Binance Pay order creation failed:", { error: String(error) });
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: `Crypto payment failed: ${error.message}`,

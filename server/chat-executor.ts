@@ -98,6 +98,8 @@ import {
 } from "./auto-fix-engine";
 import { invokeLLM } from "./_core/llm";
 import { sandboxes } from "../drizzle/schema";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("ChatExecutor");
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -491,7 +493,7 @@ export async function executeToolCall(
         return { success: false, error: `Unknown tool: ${toolName}` };
     }
   } catch (err: any) {
-    console.error(`[ChatExecutor] Error executing ${toolName}:`, err);
+    log.error(`[ChatExecutor] Error executing ${toolName}:`, { error: String(err) });
     return {
       success: false,
       error: err.message || `Failed to execute ${toolName}`,
@@ -3267,7 +3269,7 @@ async function execCreateFile(
       const result = await storagePut(s3Key, content, contentType);
       url = result.url;
     } catch (s3Err: any) {
-      console.warn("[CreateFile] S3 upload failed (non-fatal):", s3Err.message);
+      log.warn("[CreateFile] S3 upload failed (non-fatal):", { error: s3Err.message });
     }
 
     // Store in sandboxFiles table (reuse existing table)
@@ -3289,7 +3291,7 @@ async function execCreateFile(
       await sandboxWriteFileImpl(sbId, userId, `/home/sandbox/projects/${fileName}`, content);
     } catch (fsErr: any) {
       // Non-fatal: the file is still in S3 and the database
-      console.warn("[CreateFile] Sandbox filesystem write failed (non-fatal):", fsErr.message);
+      log.warn("[CreateFile] Sandbox filesystem write failed (non-fatal):", { error: fsErr.message });
     }
 
     return {
@@ -3304,7 +3306,7 @@ async function execCreateFile(
       },
     };
   } catch (err: any) {
-    console.error("[CreateFile] Error:", err);
+    log.error("[CreateFile] Error:", { error: String(err) });
     return { success: false, error: `Failed to create file: ${err.message}` };
   }
 }
@@ -3373,7 +3375,7 @@ async function execCreateGithubRepo(
       },
     };
   } catch (err: any) {
-    console.error("[CreateGithubRepo] Error:", err);
+    log.error("[CreateGithubRepo] Error:", { error: String(err) });
     return { success: false, error: `Failed to create repo: ${err.message}` };
   }
 }
@@ -3430,7 +3432,7 @@ async function execPushToGithub(
       },
     };
   } catch (err: any) {
-    console.error("[PushToGithub] Error:", err);
+    log.error("[PushToGithub] Error:", { error: String(err) });
     return { success: false, error: `Failed to push: ${err.message}` };
   }
 }

@@ -2,6 +2,8 @@ import { Express, Request, Response } from "express";
 import { createContext } from "./_core/context";
 import { storagePut } from "./storage";
 import crypto from "crypto";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("ChatUpload");
 
 /**
  * Express route for chat file upload
@@ -42,14 +44,14 @@ export function registerChatUploadRoute(app: Express) {
           const { url } = await storagePut(fileKey, fileBuffer, fileMimeType);
           res.json({ url, mimeType: fileMimeType, size: fileBuffer.length });
         } catch (err) {
-          console.error("[Chat Upload] S3 upload failed:", err);
+          log.error("[Chat Upload] S3 upload failed:", { error: String(err) });
           res.status(500).json({ error: "Failed to upload file" });
         }
       });
 
       req.pipe(bb);
     } catch (err) {
-      console.error("[Chat Upload] Error:", err);
+      log.error("[Chat Upload] Error:", { error: String(err) });
       if (!res.headersSent) {
         res.status(500).json({ error: "Internal server error" });
       }

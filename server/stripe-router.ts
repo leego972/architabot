@@ -9,6 +9,8 @@ import { PRICING_TIERS, CREDIT_PACKS, type PlanId } from "../shared/pricing";
 import { addCredits, processMonthlyRefill, getCreditBalance } from "./credit-service";
 import { sellerProfiles } from "../drizzle/schema";
 import type { Express, Request, Response } from "express";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("StripeRouter");
 
 // ─── Stripe Client ──────────────────────────────────────────────────
 
@@ -351,7 +353,7 @@ export const stripeRouter = router({
       cancel_at_period_end: true,
     });
 
-    console.log(`[Stripe] Subscription ${sub[0].stripeSubscriptionId} set to cancel at period end for user ${ctx.user.id}`);
+    log.info(`[Stripe] Subscription ${sub[0].stripeSubscriptionId} set to cancel at period end for user ${ctx.user.id}`);
 
     return { success: true, message: "Subscription will cancel at the end of your billing period. Your remaining credits are preserved." };
   }),
@@ -578,7 +580,7 @@ export const stripeRouter = router({
       };
     } catch (err) {
       // If columns don't exist yet (pre-migration), return safe defaults
-      console.warn('[getTrialStatus] Error (likely missing columns):', (err as Error).message);
+      log.warn('[getTrialStatus] Error (likely missing columns):', { error: (err as Error).message });
       return DEFAULT_STATUS;
     }
   }),
@@ -698,17 +700,17 @@ export function registerStripeWebhook(app: Express) {
 
         event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
       } catch (err: any) {
-        console.error("[Stripe Webhook] Signature verification failed:", err.message);
+        log.error("[Stripe Webhook] Signature verification failed:", { error: String(err.message) });
         return res.status(400).json({ error: "Webhook signature verification failed" });
       }
 
       // Handle test events
       if (event.id.startsWith("evt_test_")) {
-        console.log("[Stripe Webhook] Test event detected, returning verification response");
+        log.info("[Stripe Webhook] Test event detected, returning verification response");
         return res.json({ verified: true });
       }
 
-      console.log(`[Stripe Webhook] Received event: ${event.type} (${event.id})`);
+      log.info(`[Stripe Webhook] Received event: ${event.type} (${event.id})`);
 
       try {
         switch (event.type) {
@@ -738,10 +740,10 @@ export function registerStripeWebhook(app: Express) {
             break;
           }
           default:
-            console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+            log.info(`[Stripe Webhook] Unhandled event type: ${event.type}`);
         }
       } catch (err: any) {
-        console.error(`[Stripe Webhook] Error processing ${event.type}:`, err.message);
+        log.error(`[Stripe Webhook] Error processing ${event.type}:`, { error: String(err.message) });
       }
 
       res.json({ received: true });
@@ -762,10 +764,10 @@ export function registerStripeWebhook(app: Express) {
 
     try {
       const result = await processAllMonthlyRefills();
-      console.log(`[Cron] Monthly credit refill completed: ${result.processed} users processed, ${result.refilled} refilled`);
+      log.info(`[Cron] Monthly credit refill completed: ${result.processed} users processed, ${result.refilled} refilled`);
       res.json({ success: true, ...result });
     } catch (err: any) {
-      console.error("[Cron] Monthly refill error:", err.message);
+      log.error("[Cron] Monthly refill error:", { error: String(err.message) });
       res.status(500).json({ error: "Refill processing failed", message: err.message });
     }
   });
@@ -794,7 +796,7 @@ export async function processAllMonthlyRefills(): Promise<{ processed: number; r
       if (result) refilled++;
     } catch (err: any) {
       errors++;
-      console.error(`[Cron] Refill error for user ${bal.userId}:`, err.message);
+      log.error(`[Cron] Refill error for user ${bal.userId}:`, { error: String(err.message) });
     }
   }
 
@@ -826,7 +828,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         `Purchased ${pack?.name || "Credit Pack"}: +${credits} credits`,
         paymentIntentId
       );
-      console.log(`[Stripe Webhook] Credit pack purchased: user=${userId}, pack=${packId}, credits=${credits}`);
+      log.info(`[Stripe Webhook] Credit pack purchased: user=${userId}, pack=${packId}, credits=${credits}`);
     }
     return;
   }
@@ -840,7 +842,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const listingUid = session.metadata.listing_uid || "";
 
     if (!userId || !listingId) {
-      console.error("[Stripe Webhook] marketplace_purchase missing userId or listingId");
+      log.error("[Stripe Webhook] marketplace_purchase missing userId or listingId");
       return;
     }
 
@@ -851,13 +853,13 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     // Idempotency: check if already purchased (webhook might fire twice)
     const existingPurchase = await getPurchaseByBuyerAndListing(userId, listingId);
     if (existingPurchase) {
-      console.log(`[Stripe Webhook] marketplace_purchase already fulfilled: user=${userId}, listing=${listingId}`);
+      log.info(`[Stripe Webhook] marketplace_purchase already fulfilled: user=${userId}, listing=${listingId}`);
       return;
     }
 
     const listing = await getListingById(listingId);
     if (!listing) {
-      console.error(`[Stripe Webhook] marketplace_purchase listing not found: ${listingId}`);
+      log.error(`[Stripe Webhook] marketplace_purchase listing not found: ${listingId}`);
       return;
     }
 
@@ -916,7 +918,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     }).where(eqOp(marketplaceListings.id, listingId));
 
     const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || "";
-    console.log(`[Stripe Webhook] Marketplace purchase completed: buyer=${userId}, listing=${listingId} (${listingUid}), paid=$${(priceCents / 100).toFixed(2)}, seller_share=${sellerShareCredits} credits, payment_intent=${paymentIntentId}`);
+    log.info(`[Stripe Webhook] Marketplace purchase completed: buyer=${userId}, listing=${listingId} (${listingUid}), paid=$${(priceCents / 100).toFixed(2)}, seller_share=${sellerShareCredits} credits, payment_intent=${paymentIntentId}`);
     return;
   }
 
@@ -957,7 +959,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         });
       }
 
-      console.log(`[Stripe Webhook] Bazaar Seller registration (one-time) activated: user=${userId}, expires=${expiresAt.toISOString()}`);
+      log.info(`[Stripe Webhook] Bazaar Seller registration (one-time) activated: user=${userId}, expires=${expiresAt.toISOString()}`);
     }
     return;
   }
@@ -1006,7 +1008,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         });
       }
 
-      console.log(`[Stripe Webhook] Bazaar Seller subscription activated: user=${userId}, subscription=${subscriptionId}, expires=${expiresAt.toISOString()}`);
+      log.info(`[Stripe Webhook] Bazaar Seller subscription activated: user=${userId}, subscription=${subscriptionId}, expires=${expiresAt.toISOString()}`);
     }
     return;
   }
@@ -1021,7 +1023,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       : session.subscription?.id || "";
 
   if (!userId || !customerId) {
-    console.error("[Stripe Webhook] Missing userId or customerId in checkout session");
+    log.error("[Stripe Webhook] Missing userId or customerId in checkout session");
     return;
   }
 
@@ -1035,7 +1037,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       trialStartedAt: trialStart,
       trialEndsAt: trialEnd,
     }).where(eq(users.id, userId));
-    console.log(`[Stripe Webhook] Trial activated: user=${userId}, trial_ends=${trialEnd.toISOString()}`);
+    log.info(`[Stripe Webhook] Trial activated: user=${userId}, trial_ends=${trialEnd.toISOString()}`);
   }
 
   // Upsert subscription record
@@ -1074,12 +1076,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       "monthly_refill",
       `Initial ${tier.name} plan credits: +${tier.credits.monthlyAllocation} credits`
     );
-    console.log(`[Stripe Webhook] Initial credits granted: user=${userId}, plan=${planId}, credits=${tier.credits.monthlyAllocation}`);
+    log.info(`[Stripe Webhook] Initial credits granted: user=${userId}, plan=${planId}, credits=${tier.credits.monthlyAllocation}`);
   }
 
-  console.log(
-    `[Stripe Webhook] Checkout completed: user=${userId}, plan=${planId}, subscription=${subscriptionId}`
-  );
+  log.info(`[Stripe Webhook] Checkout completed: user=${userId}, plan=${planId}, subscription=${subscriptionId}`);
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
@@ -1096,7 +1096,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
           .update(sellerProfiles)
           .set({ sellerSubscriptionActive: false })
           .where(eq(sellerProfiles.userId, userId));
-        console.log(`[Stripe Webhook] Bazaar Seller subscription ${status} for user=${userId}`);
+        log.info(`[Stripe Webhook] Bazaar Seller subscription ${status} for user=${userId}`);
       } else if (status === "active") {
         const newExpiry = new Date();
         newExpiry.setFullYear(newExpiry.getFullYear() + 1);
@@ -1108,7 +1108,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
             sellerSubscriptionPaidAt: new Date(),
           })
           .where(eq(sellerProfiles.userId, userId));
-        console.log(`[Stripe Webhook] Bazaar Seller subscription renewed for user=${userId}`);
+        log.info(`[Stripe Webhook] Bazaar Seller subscription renewed for user=${userId}`);
       }
     }
     return;
@@ -1142,14 +1142,10 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   if (previousPlan && previousPlan !== planId && subRecord[0]) {
     const newTier = PRICING_TIERS.find((t) => t.id === planId);
     const oldTier = PRICING_TIERS.find((t) => t.id === previousPlan);
-    console.log(
-      `[Stripe Webhook] Plan changed: user=${subRecord[0].userId}, ${oldTier?.name || previousPlan} → ${newTier?.name || planId}`
-    );
+    log.info(`[Stripe Webhook] Plan changed: user=${subRecord[0].userId}, ${oldTier?.name || previousPlan} → ${newTier?.name || planId}`);
   }
 
-  console.log(
-    `[Stripe Webhook] Subscription updated: ${subscription.id}, status=${status}, plan=${planId}`
-  );
+  log.info(`[Stripe Webhook] Subscription updated: ${subscription.id}, status=${status}, plan=${planId}`);
 }
 
 /**
@@ -1172,7 +1168,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
           sellerSubscriptionStripeId: null,
         })
         .where(eq(sellerProfiles.userId, userId));
-      console.log(`[Stripe Webhook] Bazaar Seller subscription canceled for user=${userId}. Listings will be deactivated.`);
+      log.info(`[Stripe Webhook] Bazaar Seller subscription canceled for user=${userId}. Listings will be deactivated.`);
     }
     return;
   }
@@ -1194,9 +1190,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
 
   if (subRecord[0]) {
-    console.log(
-      `[Stripe Webhook] Subscription deleted for user=${subRecord[0].userId}. Credits preserved — no more monthly refills.`
-    );
+    log.info(`[Stripe Webhook] Subscription deleted for user=${subRecord[0].userId}. Credits preserved — no more monthly refills.`);
   }
 }
 
@@ -1220,7 +1214,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   if (!subId) {
     // Not a subscription invoice (could be a one-time credit pack purchase)
-    console.log(`[Stripe Webhook] Invoice paid (non-subscription): ${invoice.id}`);
+    log.info(`[Stripe Webhook] Invoice paid (non-subscription): ${invoice.id}`);
     return;
   }
 
@@ -1232,7 +1226,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     .limit(1);
 
   if (subRecord.length === 0) {
-    console.log(`[Stripe Webhook] Invoice paid but no matching subscription found: sub=${subId}`);
+    log.info(`[Stripe Webhook] Invoice paid but no matching subscription found: sub=${subId}`);
     return;
   }
 
@@ -1256,16 +1250,14 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
         `Auto-renewal credit refill (${tier?.name || planId} plan): +${allocation} credits`,
         typeof (invoice as any).payment_intent === "string" ? (invoice as any).payment_intent : (invoice as any).payment_intent?.id
       );
-      console.log(
-        `[Stripe Webhook] Auto-renewal refill: user=${userId}, plan=${planId}, credits=+${allocation}`
-      );
+      log.info(`[Stripe Webhook] Auto-renewal refill: user=${userId}, plan=${planId}, credits=+${allocation}`);
     }
   } else if (billingReason === "subscription_update") {
     // Plan was changed (upgrade/downgrade) — the proration invoice was paid
-    console.log(`[Stripe Webhook] Plan change invoice paid: user=${userId}, plan=${planId}`);
+    log.info(`[Stripe Webhook] Plan change invoice paid: user=${userId}, plan=${planId}`);
   } else {
     // First invoice (subscription_create) — credits already granted in handleCheckoutCompleted
-    console.log(`[Stripe Webhook] Initial invoice paid: user=${userId}, plan=${planId}, reason=${billingReason}`);
+    log.info(`[Stripe Webhook] Initial invoice paid: user=${userId}, plan=${planId}, reason=${billingReason}`);
   }
 }
 
@@ -1288,7 +1280,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       .set({ status: "past_due" })
       .where(eq(subscriptions.stripeSubscriptionId, subscriptionId));
 
-    console.log(`[Stripe Webhook] Invoice payment failed: ${invoice.id}, subscription marked past_due`);
+    log.info(`[Stripe Webhook] Invoice payment failed: ${invoice.id}, subscription marked past_due`);
   }
 }
 

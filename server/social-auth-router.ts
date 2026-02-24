@@ -22,6 +22,8 @@ import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { COOKIE_NAME, ONE_YEAR_MS } from "../shared/const";
 import { ENV } from "./_core/env";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("SocialAuthRouter");
 
 // ─── Origin Helpers ──────────────────────────────────────────────
 // Both archibaldtitan.com and manus.space are registered in Google/GitHub OAuth console.
@@ -165,7 +167,7 @@ async function findOrCreateOAuthUser(opts: {
       const updateFields: Record<string, unknown> = { lastSignedIn: new Date() };
       if (user[0].role !== "admin" && shouldBeAdmin(user[0].openId, user[0].email, user[0].id)) {
         updateFields.role = "admin";
-        console.log(`[Auth] Auto-promoted existing user to admin on login: ${user[0].email || user[0].openId}`);
+        log.info(`[Auth] Auto-promoted existing user to admin on login: ${user[0].email || user[0].openId}`);
       }
       await db.update(users).set(updateFields).where(eq(users.id, user[0].id));
       const effectiveRole = (updateFields.role as string) || user[0].role;
@@ -184,7 +186,7 @@ async function findOrCreateOAuthUser(opts: {
       const updateFields: Record<string, unknown> = { lastSignedIn: new Date() };
       if (existingUser[0].role !== "admin" && shouldBeAdmin(existingUser[0].openId, existingUser[0].email, existingUser[0].id)) {
         updateFields.role = "admin";
-        console.log(`[Auth] Auto-promoted existing user to admin on login: ${existingUser[0].email || existingUser[0].openId}`);
+        log.info(`[Auth] Auto-promoted existing user to admin on login: ${existingUser[0].email || existingUser[0].openId}`);
       }
       await db.update(users).set(updateFields).where(eq(users.id, existingUser[0].id));
       return { userId: existingUser[0].id, openId: existingUser[0].openId, name: existingUser[0].name || "", isNew: false };
@@ -204,7 +206,7 @@ async function findOrCreateOAuthUser(opts: {
     const existingUsers = await db.select({ id: users.id }).from(users).limit(1);
     if (existingUsers.length === 0) {
       role = "admin";
-      console.log(`[Auth] First user auto-promoted to admin: ${opts.email || openId}`);
+      log.info(`[Auth] First user auto-promoted to admin: ${opts.email || openId}`);
     }
   }
   const displayName = opts.name || (opts.email ? opts.email.split("@")[0] : "User");
@@ -238,19 +240,19 @@ async function issueSessionAndRedirect(
   // On Railway, callbackOrigin == publicOrigin (both archibaldtitan.com), so no cross-domain needed
   // Cross-domain only applies when running on manus.space with a different public domain
   const isCrossDomain = callbackOrigin !== publicOrigin;
-  console.log(`[Auth] publicOrigin=${publicOrigin}, callbackOrigin=${callbackOrigin}, isCrossDomain=${isCrossDomain}`);
+  log.info(`[Auth] publicOrigin=${publicOrigin}, callbackOrigin=${callbackOrigin}, isCrossDomain=${isCrossDomain}`);
 
   if (isCrossDomain) {
     const oneTimeToken = crypto.randomBytes(32).toString("hex");
     pendingTokens.set(oneTimeToken, { sessionToken, returnPath, expiresAt: Date.now() + 2 * 60 * 1000 });
-    console.log(`${logPrefix} ${logDetail} → user ${result.userId} (${result.isNew ? "new" : "existing"}) [cross-domain token issued]`);
+    log.info(`${logPrefix} ${logDetail} → user ${result.userId} (${result.isNew ? "new" : "existing"}) [cross-domain token issued]`);
     return res.redirect(302, `${publicOrigin}/api/auth/token-exchange?token=${oneTimeToken}&returnPath=${encodeURIComponent(returnPath)}`);
   } else {
     const cookieOptions = getSessionCookieOptions(req);
-    console.log(`[Auth] Cookie options: ${JSON.stringify(cookieOptions)}, cookieName=${COOKIE_NAME}, tokenLength=${sessionToken.length}`);
-    console.log(`[Auth] req.protocol=${req.protocol}, x-forwarded-proto=${req.headers['x-forwarded-proto']}, hostname=${req.hostname}`);
+    log.info(`[Auth] Cookie options: ${JSON.stringify(cookieOptions)}, cookieName=${COOKIE_NAME}, tokenLength=${sessionToken.length}`);
+    log.info(`[Auth] req.protocol=${req.protocol}, x-forwarded-proto=${req.headers['x-forwarded-proto']}, hostname=${req.hostname}`);
     res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-    console.log(`${logPrefix} ${logDetail} → user ${result.userId} (${result.isNew ? "new" : "existing"}) → redirecting to ${publicOrigin}${returnPath}`);
+    log.info(`${logPrefix} ${logDetail} → user ${result.userId} (${result.isNew ? "new" : "existing"}) → redirecting to ${publicOrigin}${returnPath}`);
     return res.redirect(302, `${publicOrigin}${returnPath}`);
   }
 }
@@ -268,19 +270,19 @@ export function registerSocialAuthRoutes(app: Express) {
 
     const pending = pendingTokens.get(token);
     if (!pending) {
-      console.warn("[Token Exchange] Invalid or expired token");
+      log.warn("[Token Exchange] Invalid or expired token");
       return res.redirect("/login?error=" + encodeURIComponent("Login session expired. Please try again."));
     }
     pendingTokens.delete(token);
 
     if (Date.now() > pending.expiresAt) {
-      console.warn("[Token Exchange] Token expired");
+      log.warn("[Token Exchange] Token expired");
       return res.redirect("/login?error=" + encodeURIComponent("Login session expired. Please try again."));
     }
 
     const cookieOptions = getSessionCookieOptions(req);
     res.cookie(COOKIE_NAME, pending.sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-    console.log(`[Token Exchange] Session cookie set, redirecting to ${returnPath}`);
+    log.info(`[Token Exchange] Session cookie set, redirecting to ${returnPath}`);
     return res.redirect(302, returnPath);
   });
 
@@ -325,7 +327,7 @@ export function registerSocialAuthRoutes(app: Express) {
 
       await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `GitHub login: ${ghUser.login} (${ghUser.email})`);
     } catch (error: any) {
-      console.error("[Social Auth] GitHub callback failed:", error);
+      log.error("[Social Auth] GitHub callback failed:", { error: String(error) });
       const publicOrigin = getPublicOrigin();
       res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("GitHub login failed. Please try again.")}`);
     }
@@ -375,7 +377,7 @@ export function registerSocialAuthRoutes(app: Express) {
 
       await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `Google login: ${googleUser.email}`);
     } catch (error: any) {
-      console.error("[Social Auth] Google callback failed:", error);
+      log.error("[Social Auth] Google callback failed:", { error: String(error) });
       const publicOrigin = getPublicOrigin();
       res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("Google login failed. Please try again.")}`);
     }

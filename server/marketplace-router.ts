@@ -14,6 +14,8 @@ import { randomUUID } from "crypto";
 import { seedMarketplaceWithMerchants } from "./marketplace-seed";
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("MarketplaceRouter");
 
 // ─── Constants ───────────────────────────────────────────────────
 const SELLER_ANNUAL_FEE_USD = 1200; // $12.00 in cents
@@ -94,7 +96,7 @@ Tags: ${tags}`,
       };
     }
   } catch (e) {
-    console.warn("[Marketplace] AI review failed, defaulting to pending:", e);
+    log.warn("[Marketplace] AI review failed, defaulting to pending:", { error: String(e) });
   }
   return { riskCategory: "safe", reviewNotes: "AI review unavailable — pending manual review", autoApprove: false };
 }
@@ -1082,7 +1084,7 @@ export const marketplaceRouter = router({
           });
           stripeConnectAccountId = account.id;
         } catch (err: any) {
-          console.error("[Payout] Stripe Connect account creation failed:", err.message);
+          log.error("[Payout] Stripe Connect account creation failed:", { error: String(err.message) });
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create Stripe Connect account: " + err.message });
         }
       }
@@ -1121,7 +1123,7 @@ export const marketplaceRouter = router({
           });
           onboardingUrl = accountLink.url;
         } catch (err: any) {
-          console.warn("[Payout] Stripe onboarding link failed:", err.message);
+          log.warn("[Payout] Stripe onboarding link failed:", { error: String(err.message) });
         }
       }
 
@@ -1308,7 +1310,7 @@ export const marketplaceRouter = router({
       `CREATE TABLE IF NOT EXISTS \`marketplace_reviews\` (\`id\` int AUTO_INCREMENT NOT NULL, \`listingId\` int NOT NULL, \`purchaseId\` int NOT NULL, \`reviewerId\` int NOT NULL, \`rating\` int NOT NULL, \`title\` varchar(256), \`comment\` text, \`sellerRating\` int, \`helpful\` int NOT NULL DEFAULT 0, \`createdAt\` timestamp NOT NULL DEFAULT (now()), \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT \`marketplace_reviews_id\` PRIMARY KEY(\`id\`))`,
     ];
     for (const ddl of tableDDLs) {
-      try { await database.execute(sql.raw(ddl)); } catch (e: any) { console.warn("[Seed] Table DDL:", e.message?.substring(0, 100)); }
+      try { await database.execute(sql.raw(ddl)); } catch (e: any) { log.warn("[Seed] Table DDL:", { error: String(e.message?.substring(0, 100)) }); }
     }
 
     // Step 2: Seed data
@@ -1316,7 +1318,7 @@ export const marketplaceRouter = router({
       const result = await seedMarketplaceWithMerchants();
       return result;
     } catch (e: any) {
-      console.error("[Marketplace] Seed failed:", e.message);
+      log.error("[Marketplace] Seed failed:", { error: String(e.message) });
       throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Seed failed: " + e.message });
     }
   }),

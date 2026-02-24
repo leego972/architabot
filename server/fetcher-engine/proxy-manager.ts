@@ -7,6 +7,8 @@ import { eq, and, asc, desc } from "drizzle-orm";
 import { getDb } from "../db";
 import { fetcherProxies, type FetcherProxy, type InsertFetcherProxy } from "../../drizzle/schema";
 import { encrypt, decrypt } from "../fetcher-db";
+import { createLogger } from "../_core/logger.js";
+const log = createLogger("ProxyManager");
 
 // ─── Provider Proxy Requirements ─────────────────────────────────────
 // Defines which providers need residential proxies to bypass bot detection
@@ -349,7 +351,7 @@ export async function selectProxyForProvider(
       candidates = typeFiltered;
     } else {
       // No matching type — warn but try any healthy proxy
-      console.warn(`[ProxyManager] No ${requirement.proxyTypes.join("/")} proxy available for ${providerId}. Using best available.`);
+      log.warn(`[ProxyManager] No ${requirement.proxyTypes.join("/")} proxy available for ${providerId}. Using best available.`);
     }
   }
 

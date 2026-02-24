@@ -1,3 +1,6 @@
+import { createLogger } from "./logger.js";
+const log = createLogger("KeyPool");
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  * OpenAI Dedicated Key-Per-System Manager v3
@@ -123,8 +126,8 @@ export function initKeyPool(): void {
   }
 
   // Log the system → key assignments
-  console.log(`[KeyPool] ═══ Dedicated Key-Per-System v3 ═══`);
-  console.log(`[KeyPool] Discovered ${allKeys.size} API keys`);
+  log.info(`[KeyPool] ═══ Dedicated Key-Per-System v3 ═══`);
+  log.info(`[KeyPool] Discovered ${allKeys.size} API keys`);
 
   for (const [system, config] of Object.entries(systemKeys)) {
     const primaryKey = allKeys.get(config.primary);
@@ -132,9 +135,9 @@ export function initKeyPool(): void {
 
     if (primaryKey) {
       const fb = fallbackKey ? ` (fallback: ${fallbackKey.label})` : "";
-      console.log(`[KeyPool]   ${system.padEnd(15)} → ${primaryKey.label}${fb}`);
+      log.info(`[KeyPool]   ${system.padEnd(15)} → ${primaryKey.label}${fb}`);
     } else {
-      console.warn(`[KeyPool]   ${system.padEnd(15)} → MISSING (${config.primary} not set!)`);
+      log.warn(`[KeyPool]   ${system.padEnd(15)} → MISSING (${config.primary} not set!)`);
     }
   }
 
@@ -181,7 +184,7 @@ export function acquireKey(system: SystemTag | PoolName): { key: string; index: 
         if (!fbInCooldown) {
           fallbackEntry.activeRequests++;
           fallbackEntry.totalRequests++;
-          console.log(`[KeyPool] ${tag}: primary in cooldown, using fallback ${fallbackEntry.label}`);
+          log.info(`[KeyPool] ${tag}: primary in cooldown, using fallback ${fallbackEntry.label}`);
           return { key: fallbackEntry.key, index: 1, envVar: config.fallback };
         }
       }
@@ -190,7 +193,7 @@ export function acquireKey(system: SystemTag | PoolName): { key: string; index: 
     // Both in cooldown — use primary anyway (best effort)
     primaryEntry.activeRequests++;
     primaryEntry.totalRequests++;
-    console.warn(`[KeyPool] ${tag}: all keys in cooldown, using primary anyway`);
+    log.warn(`[KeyPool] ${tag}: all keys in cooldown, using primary anyway`);
     return { key: primaryEntry.key, index: 0, envVar: config.primary };
   }
 
@@ -200,7 +203,7 @@ export function acquireKey(system: SystemTag | PoolName): { key: string; index: 
     if (fallbackEntry) {
       fallbackEntry.activeRequests++;
       fallbackEntry.totalRequests++;
-      console.warn(`[KeyPool] ${tag}: primary missing, using fallback ${fallbackEntry.label}`);
+      log.warn(`[KeyPool] ${tag}: primary missing, using fallback ${fallbackEntry.label}`);
       return { key: fallbackEntry.key, index: 1, envVar: config.fallback };
     }
   }
@@ -210,7 +213,7 @@ export function acquireKey(system: SystemTag | PoolName): { key: string; index: 
   if (anyKey) {
     anyKey.activeRequests++;
     anyKey.totalRequests++;
-    console.warn(`[KeyPool] ${tag}: no dedicated key found, using ${anyKey.label} as last resort`);
+    log.warn(`[KeyPool] ${tag}: no dedicated key found, using ${anyKey.label} as last resort`);
     return { key: anyKey.key, index: -1, envVar: anyKey.envVar };
   }
 
@@ -247,10 +250,8 @@ export function reportRateLimit(index: number, envVar?: string): void {
       entry.total429s++;
       entry.lastRateLimitedAt = Date.now();
       entry.cooldownMs = Math.min(BASE_COOLDOWN_MS * Math.pow(2, entry.consecutive429s - 1), MAX_COOLDOWN_MS);
-      console.log(
-        `[KeyPool] ${entry.label} rate limited (429 #${entry.consecutive429s}), ` +
-        `cooldown ${Math.round(entry.cooldownMs / 1000)}s`
-      );
+      log.info(`[KeyPool] ${entry.label} rate limited (429 #${entry.consecutive429s}), ` +
+        `cooldown ${Math.round(entry.cooldownMs / 1000)}s`);
     }
   }
 }

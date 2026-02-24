@@ -54,6 +54,8 @@ import {
   enforceFeature,
   getAllowedProviders,
 } from "./subscription-gate";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("FetcherRouter");
 
 export const fetcherRouter = router({
   // ─── Plan Usage ────────────────────────────────────────────────
@@ -132,7 +134,7 @@ export const fetcherRouter = router({
 
       // Start the real browser automation asynchronously
       executeJob(job.id, ctx.user.id).catch((err) => {
-        console.error(`[Fetcher] Job ${job.id} execution error:`, err);
+        log.error(`[Fetcher] Job ${job.id} execution error:`, { error: String(err) });
       });
 
       return job;

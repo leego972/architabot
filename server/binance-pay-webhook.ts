@@ -8,6 +8,8 @@ import { verifyWebhookSignature, parseWebhookData, isBinancePayConfigured } from
 import { getDb } from "./db";
 import { cryptoPayments } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("BinancePayWebhook");
 
 export function registerBinancePayWebhook(app: Express): void {
   // Register BEFORE express.json() for raw body access (same pattern as Stripe)
@@ -33,7 +35,7 @@ export function registerBinancePayWebhook(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         if (!isBinancePayConfigured()) {
-          console.warn("[BinancePay Webhook] Received webhook but Binance Pay not configured");
+          log.warn("[BinancePay Webhook] Received webhook but Binance Pay not configured");
           res.json({ returnCode: "SUCCESS", returnMessage: null });
           return;
         }
@@ -45,14 +47,14 @@ export function registerBinancePayWebhook(app: Express): void {
         const rawBody = (req as any).rawBody || JSON.stringify(req.body);
 
         if (!timestamp || !nonce || !signature) {
-          console.error("[BinancePay Webhook] Missing signature headers");
+          log.error("[BinancePay Webhook] Missing signature headers");
           res.status(400).json({ returnCode: "FAIL", returnMessage: "Missing headers" });
           return;
         }
 
         const isValid = verifyWebhookSignature(timestamp, nonce, rawBody, signature);
         if (!isValid) {
-          console.error("[BinancePay Webhook] Invalid signature");
+          log.error("[BinancePay Webhook] Invalid signature");
           res.status(401).json({ returnCode: "FAIL", returnMessage: "Invalid signature" });
           return;
         }
@@ -61,20 +63,20 @@ export function registerBinancePayWebhook(app: Express): void {
         const payload = req.body;
         const { bizType, bizStatus, data } = parseWebhookData(payload);
 
-        console.log(`[BinancePay Webhook] Received: bizType=${bizType}, bizStatus=${bizStatus}`);
+        log.info(`[BinancePay Webhook] Received: bizType=${bizType}, bizStatus=${bizStatus}`);
 
         if (bizType === "PAY" && bizStatus === "PAY_SUCCESS") {
           // Payment successful — update crypto_payments record and campaign
           const merchantTradeNo = data.merchantTradeNo;
           if (!merchantTradeNo) {
-            console.error("[BinancePay Webhook] No merchantTradeNo in webhook data");
+            log.error("[BinancePay Webhook] No merchantTradeNo in webhook data");
             res.json({ returnCode: "SUCCESS", returnMessage: null });
             return;
           }
 
           const db = await getDb();
           if (!db) {
-            console.error("[BinancePay Webhook] Database not available");
+            log.error("[BinancePay Webhook] Database not available");
             res.json({ returnCode: "SUCCESS", returnMessage: null });
             return;
           }
@@ -114,7 +116,7 @@ export function registerBinancePayWebhook(app: Express): void {
                 })
                 .where(eq(crowdfundingCampaigns.id, payment.campaignId));
 
-              console.log(`[BinancePay Webhook] Campaign #${payment.campaignId} updated: +$${payment.creatorAmount}, backers=${newBackers}`);
+              log.info(`[BinancePay Webhook] Campaign #${payment.campaignId} updated: +$${payment.creatorAmount}, backers=${newBackers}`);
             }
 
             // Record platform revenue
@@ -129,11 +131,11 @@ export function registerBinancePayWebhook(app: Express): void {
                 description: `Platform fee from crypto contribution to campaign #${payment.campaignId}`,
               });
             } catch (err) {
-              console.error("[BinancePay Webhook] Failed to record revenue:", err);
+              log.error("[BinancePay Webhook] Failed to record revenue:", { error: String(err) });
             }
           }
 
-          console.log(`[BinancePay Webhook] Payment ${merchantTradeNo} completed successfully`);
+          log.info(`[BinancePay Webhook] Payment ${merchantTradeNo} completed successfully`);
         } else if (bizType === "PAY" && bizStatus === "PAY_CLOSED") {
           // Payment expired or cancelled
           const merchantTradeNo = data.merchantTradeNo;
@@ -145,18 +147,18 @@ export function registerBinancePayWebhook(app: Express): void {
                 .where(eq(cryptoPayments.merchantTradeNo, merchantTradeNo));
             }
           }
-          console.log(`[BinancePay Webhook] Payment closed/expired`);
+          log.info(`[BinancePay Webhook] Payment closed/expired`);
         }
 
         // Always return SUCCESS to acknowledge receipt
         res.json({ returnCode: "SUCCESS", returnMessage: null });
       } catch (err: any) {
-        console.error("[BinancePay Webhook] Error:", err.message);
+        log.error("[BinancePay Webhook] Error:", { error: String(err.message) });
         // Still return SUCCESS to prevent Binance from retrying endlessly
         res.json({ returnCode: "SUCCESS", returnMessage: null });
       }
     }
   );
 
-  console.log("[BinancePay] Webhook registered at /api/webhooks/binance-pay");
+  log.info("[BinancePay] Webhook registered at /api/webhooks/binance-pay");
 }

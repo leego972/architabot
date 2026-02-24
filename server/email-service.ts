@@ -7,6 +7,8 @@
  */
 
 import { notifyOwner } from "./_core/notification";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("EmailService");
 
 export interface EmailOptions {
   to: string;
@@ -106,10 +108,10 @@ export async function sendPasswordResetEmail(
       title: `Password Reset for ${email}`,
       content: `User ${name || email} (${email}) requested a password reset.\n\nReset link: ${resetUrl}\n\nThis link expires in 1 hour.\n\nPlease forward this to the user or they can use the link directly if they have access to the app.`,
     });
-    console.log(`[Email Service] Password reset email queued for ${email}`);
+    log.info(`[Email Service] Password reset email queued for ${email}`);
     return true;
   } catch (error) {
-    console.error(`[Email Service] Failed to send password reset email to ${email}:`, error);
+    log.error(`[Email Service] Failed to send password reset email to ${email}:`, { error: String(error) });
     return false;
   }
 }
@@ -154,10 +156,10 @@ export async function sendVerificationEmail(
       title: `Email Verification for ${email}`,
       content: `New user ${name || email} (${email}) registered and needs email verification.\n\nVerification link: ${verifyUrl}\n\nThis link expires in 24 hours.`,
     });
-    console.log(`[Email Service] Verification email queued for ${email}`);
+    log.info(`[Email Service] Verification email queued for ${email}`);
     return true;
   } catch (error) {
-    console.error(`[Email Service] Failed to send verification email to ${email}:`, error);
+    log.error(`[Email Service] Failed to send verification email to ${email}:`, { error: String(error) });
     return false;
   }
 }
@@ -200,10 +202,10 @@ export async function sendWelcomeEmail(
       title: `New Verified User: ${name || email}`,
       content: `${name || email} (${email}) has verified their email and is now an active user.`,
     });
-    console.log(`[Email Service] Welcome email queued for ${email}`);
+    log.info(`[Email Service] Welcome email queued for ${email}`);
     return true;
   } catch (error) {
-    console.error(`[Email Service] Failed to send welcome email to ${email}:`, error);
+    log.error(`[Email Service] Failed to send welcome email to ${email}:`, { error: String(error) });
     return false;
   }
 }

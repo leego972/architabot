@@ -38,6 +38,8 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { notifyOwner } from "./_core/notification";
 import { invokeLLM } from "./_core/llm";
 import { getSettings } from "./fetcher-db";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("AffiliateSignupEngine");
 
 // ─── Business Details ────────────────────────────────────────────────
 // All personal details loaded from environment variables — NEVER hardcode in source
@@ -64,12 +66,12 @@ let signupKilled = false;
 
 export function triggerSignupKillSwitch(): void {
   signupKilled = true;
-  console.log("[AffiliateSignup] KILL SWITCH ACTIVATED — all signup operations halted");
+  log.info("[AffiliateSignup] KILL SWITCH ACTIVATED — all signup operations halted");
 }
 
 export function resetSignupKillSwitch(): void {
   signupKilled = false;
-  console.log("[AffiliateSignup] Kill switch reset — signup operations resumed");
+  log.info("[AffiliateSignup] Kill switch reset — signup operations resumed");
 }
 
 export function isSignupKilled(): boolean {
@@ -369,7 +371,7 @@ Return ONLY valid JSON matching the schema.`,
     if (!content || typeof content !== "string") throw new Error("No LLM response");
     return JSON.parse(content);
   } catch (err) {
-    console.error("[AffiliateSignup] LLM form analysis failed, falling back to heuristic:", err);
+    log.error("[AffiliateSignup] LLM form analysis failed, falling back to heuristic:", { error: String(err) });
     return fallbackFormAnalysis(page);
   }
 }
@@ -563,7 +565,7 @@ async function signupForProgram(
 
         await humanDelay(300, 800);
       } catch (fieldErr) {
-        console.warn(`[AffiliateSignup] Failed to fill field ${field.selector}:`, fieldErr);
+        log.warn(`[AffiliateSignup] Failed to fill field ${field.selector}:`, { detail: fieldErr });
       }
     }
 
@@ -584,9 +586,9 @@ async function signupForProgram(
           signupUrl,
           signedUpAt: new Date(),
         });
-        console.log(`[AffiliateSignup] Credentials stored for ${domain}`);
+        log.info(`[AffiliateSignup] Credentials stored for ${domain}`);
       } catch (pwErr) {
-        console.warn("[AffiliateSignup] Failed to fill password:", pwErr);
+        log.warn("[AffiliateSignup] Failed to fill password:", { detail: pwErr });
       }
     }
 
@@ -598,7 +600,7 @@ async function signupForProgram(
         });
         await humanDelay(300, 600);
       } catch {
-        console.warn("[AffiliateSignup] Failed to check terms checkbox");
+        log.warn("[AffiliateSignup] Failed to check terms checkbox");
       }
     }
 
@@ -820,7 +822,7 @@ export async function runSignupBatch(options?: {
     return { attempted: 0, succeeded: 0, failed: 0, pending: 0, results: [] };
   }
 
-  console.log(`[AffiliateSignup] Starting batch signup for ${applications.length} programs`);
+  log.info(`[AffiliateSignup] Starting batch signup for ${applications.length} programs`);
 
   const results: Array<{ programName: string; status: string; message: string; requiresManual: boolean }> = [];
   let succeeded = 0;
@@ -835,13 +837,13 @@ export async function runSignupBatch(options?: {
 
     const signupUrl = discovery.affiliateProgramUrl || `https://${discovery.domain}`;
 
-    console.log(`[AffiliateSignup] Attempting signup: ${discovery.name} (${signupUrl})`);
+    log.info(`[AffiliateSignup] Attempting signup: ${discovery.name} (${signupUrl})`);
 
     const result = await signupForProgram(
       signupUrl,
       discovery.name,
       captchaConfig,
-      (status) => console.log(`[AffiliateSignup] ${discovery.name}: ${status}`)
+      (status) => log.info(`[AffiliateSignup] ${discovery.name}: ${status}`)
     );
 
     // Update application status
@@ -886,7 +888,7 @@ export async function runSignupBatch(options?: {
             .where(eq(affiliatePartners.id, existing[0].id));
         }
       } catch (promoteErr) {
-        console.error(`[AffiliateSignup] Failed to promote ${discovery.name}:`, promoteErr);
+        log.error(`[AffiliateSignup] Failed to promote ${discovery.name}:`, { detail: promoteErr });
       }
     }
 
@@ -914,19 +916,19 @@ export async function runSignupBatch(options?: {
   // Auto-retry failed signups with a different browser profile (max 1 retry)
   const failedResults = results.filter(r => r.status === "rejected" && !r.requiresManual);
   if (failedResults.length > 0 && failedResults.length <= 3) {
-    console.log(`[AffiliateSignup] Retrying ${failedResults.length} failed signups with different browser profile...`);
+    log.info(`[AffiliateSignup] Retrying ${failedResults.length} failed signups with different browser profile...`);
     await humanDelay(10000, 15000); // Wait before retry
     
     for (const failedApp of applications.filter(a => results.find(r => r.programName === a.discovery.name && r.status === "rejected"))) {
       if (signupKilled) break;
       const retryUrl = failedApp.discovery.affiliateProgramUrl || `https://${failedApp.discovery.domain}`;
-      console.log(`[AffiliateSignup] RETRY: ${failedApp.discovery.name}`);
+      log.info(`[AffiliateSignup] RETRY: ${failedApp.discovery.name}`);
       
       const retryResult = await signupForProgram(
         retryUrl,
         failedApp.discovery.name,
         captchaConfig,
-        (status) => console.log(`[AffiliateSignup] RETRY ${failedApp.discovery.name}: ${status}`)
+        (status) => log.info(`[AffiliateSignup] RETRY ${failedApp.discovery.name}: ${status}`)
       );
 
       if (retryResult.success) {
@@ -940,7 +942,7 @@ export async function runSignupBatch(options?: {
         
         if (retryResult.requiresManualStep) pending++; else succeeded++;
         failed--;
-        console.log(`[AffiliateSignup] RETRY SUCCESS: ${failedApp.discovery.name}`);
+        log.info(`[AffiliateSignup] RETRY SUCCESS: ${failedApp.discovery.name}`);
       }
       await humanDelay(5000, 10000);
     }
@@ -954,7 +956,7 @@ export async function runSignupBatch(options?: {
     content: summary + "\n\nDetails:\n" + results.map(r => `• ${r.programName}: ${r.status} — ${r.message}`).join("\n"),
   });
 
-  console.log(`[AffiliateSignup] Batch complete: ${succeeded} succeeded, ${pending} pending, ${failed} failed`);
+  log.info(`[AffiliateSignup] Batch complete: ${succeeded} succeeded, ${pending} pending, ${failed} failed`);
 
   return { attempted: applications.length, succeeded, failed, pending, results };
 }
@@ -970,7 +972,7 @@ export async function runSignupBatch(options?: {
 export async function autoSignupAfterDiscovery(adminUserId?: number): Promise<void> {
   if (signupKilled) return;
   
-  console.log("[AffiliateSignup] Auto-signup triggered after discovery cycle");
+  log.info("[AffiliateSignup] Auto-signup triggered after discovery cycle");
   
   // Wait a bit for discovery to fully complete
   await new Promise(resolve => setTimeout(resolve, 30000));
@@ -980,9 +982,9 @@ export async function autoSignupAfterDiscovery(adminUserId?: number): Promise<vo
       limit: 5, // Process top 5 pending applications
       adminUserId,
     });
-    console.log(`[AffiliateSignup] Auto-signup complete: ${result.succeeded} succeeded, ${result.pending} pending, ${result.failed} failed`);
+    log.info(`[AffiliateSignup] Auto-signup complete: ${result.succeeded} succeeded, ${result.pending} pending, ${result.failed} failed`);
   } catch (err: any) {
-    console.error("[AffiliateSignup] Auto-signup failed:", err.message);
+    log.error("[AffiliateSignup] Auto-signup failed:", { error: String(err.message) });
   }
 }
 
@@ -1005,16 +1007,16 @@ export function startScheduledSignups(): void {
       .limit(1);
 
     if (pendingApps.length > 0) {
-      console.log("[AffiliateSignup] Scheduled signup batch triggered");
+      log.info("[AffiliateSignup] Scheduled signup batch triggered");
       try {
         await runSignupBatch({ limit: 5 });
       } catch (err: any) {
-        console.error("[AffiliateSignup] Scheduled signup failed:", err.message);
+        log.error("[AffiliateSignup] Scheduled signup failed:", { error: String(err.message) });
       }
     }
   }, EIGHT_HOURS);
 
-  console.log("[AffiliateSignup] Scheduled signup active — runs every 8 hours for pending applications");
+  log.info("[AffiliateSignup] Scheduled signup active — runs every 8 hours for pending applications");
 }
 
 // ─── Get Signup Status ───────────────────────────────────────────────

@@ -12,6 +12,8 @@
  */
 
 import { ENV } from "./_core/env";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("MarketingChannels");
 
 // ============================================
 // TYPES
@@ -81,7 +83,7 @@ async function apiCall(
       if (response.status === 429) {
         // Rate limited — exponential backoff
         const waitMs = retryDelay * Math.pow(2, attempt);
-        console.warn(`[Marketing] Rate limited on ${url}, waiting ${waitMs}ms`);
+        log.warn(`[Marketing] Rate limited on ${url}, waiting ${waitMs}ms`);
         await new Promise((r) => setTimeout(r, waitMs));
         continue;
       }
@@ -190,7 +192,7 @@ export const metaAdapter = {
         url: `https://facebook.com/${data.id}`,
       };
     } catch (err: any) {
-      console.error("[Meta FB] Post failed:", err.message);
+      log.error("[Meta FB] Post failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -238,7 +240,7 @@ export const metaAdapter = {
         url: `https://instagram.com/p/${publish.id}`,
       };
     } catch (err: any) {
-      console.error("[Meta IG] Post failed:", err.message);
+      log.error("[Meta IG] Post failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -368,7 +370,7 @@ export const metaAdapter = {
         platformAdId: ad.id,
       };
     } catch (err: any) {
-      console.error("[Meta Ads] Campaign creation failed:", err.message);
+      log.error("[Meta Ads] Campaign creation failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -401,7 +403,7 @@ export const metaAdapter = {
         cpm: parseFloat(insight.cpm || "0"),
       };
     } catch (err: any) {
-      console.error("[Meta] Metrics fetch failed:", err.message);
+      log.error("[Meta] Metrics fetch failed:", { error: String(err.message) });
       return null;
     }
   },
@@ -579,7 +581,7 @@ export const googleAdsAdapter = {
         platformAdId: adResp.results[0].resourceName,
       };
     } catch (err: any) {
-      console.error("[Google Ads] Campaign creation failed:", err.message);
+      log.error("[Google Ads] Campaign creation failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -629,7 +631,7 @@ export const googleAdsAdapter = {
         cpm: parseInt(row.averageCpm || "0") / 1_000_000,
       };
     } catch (err: any) {
-      console.error("[Google Ads] Metrics fetch failed:", err.message);
+      log.error("[Google Ads] Metrics fetch failed:", { error: String(err.message) });
       return null;
     }
   },
@@ -735,7 +737,7 @@ export const xAdapter = {
         url: `https://x.com/i/status/${data.data?.id}`,
       };
     } catch (err: any) {
-      console.error("[X] Tweet failed:", err.message);
+      log.error("[X] Tweet failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -769,7 +771,7 @@ export const xAdapter = {
       const data = await response.json();
       return data.media_id_string || null;
     } catch (err: any) {
-      console.error("[X] Media upload failed:", err.message);
+      log.error("[X] Media upload failed:", { error: String(err.message) });
       return null;
     }
   },
@@ -803,7 +805,7 @@ export const xAdapter = {
         cpm: 0,
       };
     } catch (err: any) {
-      console.error("[X] Metrics fetch failed:", err.message);
+      log.error("[X] Metrics fetch failed:", { error: String(err.message) });
       return null;
     }
   },
@@ -881,7 +883,7 @@ export const linkedinAdapter = {
         url: `https://linkedin.com/feed/update/${data.id}`,
       };
     } catch (err: any) {
-      console.error("[LinkedIn] Post failed:", err.message);
+      log.error("[LinkedIn] Post failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -951,7 +953,7 @@ export const linkedinAdapter = {
         platformAdSetId: campaign.id,
       };
     } catch (err: any) {
-      console.error("[LinkedIn Ads] Campaign creation failed:", err.message);
+      log.error("[LinkedIn Ads] Campaign creation failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -985,7 +987,7 @@ export const linkedinAdapter = {
         cpm: el.impressions ? (parseFloat(el.costInLocalCurrency || "0") / el.impressions) * 1000 : 0,
       };
     } catch (err: any) {
-      console.error("[LinkedIn] Metrics fetch failed:", err.message);
+      log.error("[LinkedIn] Metrics fetch failed:", { error: String(err.message) });
       return null;
     }
   },
@@ -1153,7 +1155,7 @@ export const snapchatAdapter = {
         platformAdId: adResp.ads?.[0]?.ad?.id,
       };
     } catch (err: any) {
-      console.error("[Snapchat] Campaign creation failed:", err.message);
+      log.error("[Snapchat] Campaign creation failed:", { error: String(err.message) });
       return { success: false, error: err.message };
     }
   },
@@ -1187,7 +1189,7 @@ export const snapchatAdapter = {
         cpm: stats.impressions ? ((stats.spend || 0) / 1_000_000 / stats.impressions) * 1000 : 0,
       };
     } catch (err: any) {
-      console.error("[Snapchat] Metrics fetch failed:", err.message);
+      log.error("[Snapchat] Metrics fetch failed:", { error: String(err.message) });
       return null;
     }
   },

@@ -50,6 +50,8 @@ import {
   incrementActiveJobs,
   decrementActiveJobs,
 } from "./safety-engine";
+import { createLogger } from "../_core/logger.js";
+const log = createLogger("Executor");
 
 // ─── Configuration ──────────────────────────────────────────────────
 const MAX_TASK_RETRIES = 3;
@@ -139,7 +141,7 @@ async function resolveProvider(providerId: string): Promise<{
       }
     }
   } catch (e) {
-    console.error(`[Fetcher] Failed to look up custom provider: ${providerId}`, e);
+    log.error(`[Fetcher] Failed to look up custom provider: ${providerId}`, { error: String(e) });
   }
 
   return null;
@@ -201,7 +203,7 @@ async function executeTaskWithRetry(
 
     try {
       // ── Log attempt ──
-      console.log(`[Fetcher] Task ${task.id}${attemptLabel}: Starting ${task.providerName}`);
+      log.info(`[Fetcher] Task ${task.id}${attemptLabel}: Starting ${task.providerName}`);
       await updateTaskStatus(
         task.id,
         isRetry ? "retrying" : "running",
@@ -212,7 +214,7 @@ async function executeTaskWithRetry(
       if (attempt === 0 || isRetry) {
         const conn = await checkConnectivity();
         if (!conn.ok) {
-          console.warn(`[Fetcher] Task ${task.id}: Connectivity check failed (${conn.error}), waiting before retry...`);
+          log.warn(`[Fetcher] Task ${task.id}: Connectivity check failed (${conn.error}), waiting before retry...`);
           await updateTaskStatus(task.id, "retrying", `Network connectivity issue — waiting to retry (${conn.error})`);
           // Wait longer for connectivity issues
           await humanDelay(5000, 10000);
@@ -223,7 +225,7 @@ async function executeTaskWithRetry(
             continue; // next retry attempt
           }
         } else {
-          console.log(`[Fetcher] Task ${task.id}: Network OK (${conn.latencyMs}ms latency)`);
+          log.info(`[Fetcher] Task ${task.id}: Network OK (${conn.latencyMs}ms latency)`);
         }
       }
 
@@ -239,33 +241,33 @@ async function executeTaskWithRetry(
         const proxyId = proxySelection.proxy?.id ?? null;
         // If we already tried this proxy and it failed, try to get a different one
         if (proxyId && triedProxyIds.has(proxyId) && isRetry) {
-          console.log(`[Fetcher] Task ${task.id}: Proxy ${proxyId} already failed, requesting rotation`);
+          log.info(`[Fetcher] Task ${task.id}: Proxy ${proxyId} already failed, requesting rotation`);
           // Still use it if it's the only one — better than nothing
           await updateTaskStatus(task.id, "retrying", `Rotating proxy for retry...`);
         }
         browserConfig.proxy = proxySelection.proxyConfig;
         selectedProxyId = proxyId;
         if (proxyId) triedProxyIds.add(proxyId);
-        console.log(`[Fetcher] Task ${task.id}: ${proxySelection.reason}`);
+        log.info(`[Fetcher] Task ${task.id}: ${proxySelection.reason}`);
       } else if (settings.proxyServer) {
         browserConfig.proxy = {
           server: settings.proxyServer,
           username: settings.proxyUsername || undefined,
           password: settings.proxyPassword || undefined,
         };
-        console.log(`[Fetcher] Task ${task.id}: Using legacy proxy from settings`);
+        log.info(`[Fetcher] Task ${task.id}: Using legacy proxy from settings`);
       } else if (requirement?.requiresProxy) {
         const errorMsg = `${task.providerName} requires a residential proxy (${requirement.reason}). Add one in Settings → Proxies.`;
         return { success: false, credentialCount: 0, error: errorMsg, shouldRetry: false };
       } else {
-        console.log(`[Fetcher] Task ${task.id}: Direct connection (no proxy)`);
+        log.info(`[Fetcher] Task ${task.id}: Direct connection (no proxy)`);
       }
 
       // ── Launch browser ──
       const launchStart = Date.now();
       const { browser: b, context, page, profile } = await launchStealthBrowser(browserConfig);
       browser = b;
-      console.log(`[Fetcher] Task ${task.id}: Browser launched in ${elapsed(launchStart)} (${profile.name})`);
+      log.info(`[Fetcher] Task ${task.id}: Browser launched in ${elapsed(launchStart)} (${profile.name})`);
 
       // Set default navigation timeout
       page.setDefaultNavigationTimeout(PAGE_LOAD_TIMEOUT_MS);
@@ -327,7 +329,7 @@ async function executeTaskWithRetry(
 
         if (canRetry) {
           const delay = calculateRetryDelay(attempt, category);
-          console.log(`[Fetcher] Task ${task.id}: Retryable failure (${category}), waiting ${Math.round(delay)}ms`);
+          log.info(`[Fetcher] Task ${task.id}: Retryable failure (${category}), waiting ${Math.round(delay)}ms`);
           await updateTaskStatus(task.id, "retrying", `${lastError} — retrying in ${Math.round(delay / 1000)}s...`);
           await new Promise(r => setTimeout(r, delay));
           continue;
@@ -341,7 +343,7 @@ async function executeTaskWithRetry(
       lastError = errorMsg;
       lastCategory = category;
 
-      console.error(`[Fetcher] Task ${task.id}${attemptLabel} error (${category}):`, errorMsg);
+      log.error(`[Fetcher] Task ${task.id}${attemptLabel} error (${category}):`, { detail: errorMsg });
       recordCircuitFailure(task.providerId, category);
 
       if (selectedProxyId) {
@@ -355,7 +357,7 @@ async function executeTaskWithRetry(
 
       if (canRetry) {
         const delay = calculateRetryDelay(attempt, category);
-        console.log(`[Fetcher] Task ${task.id}: ${category} error, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_TASK_RETRIES})`);
+        log.info(`[Fetcher] Task ${task.id}: ${category} error, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_TASK_RETRIES})`);
         await updateTaskStatus(task.id, "retrying", `${category} error: ${errorMsg} — retrying in ${Math.round(delay / 1000)}s...`);
         await new Promise(r => setTimeout(r, delay));
         continue;
@@ -393,13 +395,13 @@ export async function executeJob(jobId: number, userId: number): Promise<void> {
   incrementActiveJobs(userId);
 
   const jobStart = Date.now();
-  console.log(`[Fetcher] ═══ Job ${jobId} STARTED ═══`);
+  log.info(`[Fetcher] ═══ Job ${jobId} STARTED ═══`);
 
   try {
     // Check kill switch
     const killed = await isKillSwitchActive(userId);
     if (killed) {
-      console.log(`[Fetcher] Job ${jobId}: Kill switch active, cancelling`);
+      log.info(`[Fetcher] Job ${jobId}: Kill switch active, cancelling`);
       await updateJobStatus(jobId, "cancelled");
       decrementActiveJobs(userId);
       return;
@@ -409,7 +411,7 @@ export async function executeJob(jobId: number, userId: number): Promise<void> {
     const settings = await getSettings(userId);
     const job = await getJob(jobId, userId);
     if (!job) {
-      console.error(`[Fetcher] Job ${jobId}: Job not found`);
+      log.error(`[Fetcher] Job ${jobId}: Job not found`);
       await updateJobStatus(jobId, "failed");
       return;
     }
@@ -424,7 +426,7 @@ export async function executeJob(jobId: number, userId: number): Promise<void> {
     await updateJobStatus(jobId, "running");
 
     const tasks = await getJobTasks(jobId);
-    console.log(`[Fetcher] Job ${jobId}: ${tasks.length} task(s) to execute`);
+    log.info(`[Fetcher] Job ${jobId}: ${tasks.length} task(s) to execute`);
 
     let completedCount = 0;
     let failedCount = 0;
@@ -448,7 +450,7 @@ export async function executeJob(jobId: number, userId: number): Promise<void> {
         continue;
       }
 
-      console.log(`[Fetcher] Job ${jobId}: Task ${i + 1}/${tasks.length} — ${task.providerName}`);
+      log.info(`[Fetcher] Job ${jobId}: Task ${i + 1}/${tasks.length} — ${task.providerName}`);
 
       const result = await executeTaskWithRetry(
         task, job, password, userId, jobId,
@@ -483,12 +485,10 @@ export async function executeJob(jobId: number, userId: number): Promise<void> {
     }
 
     await updateJobStatus(jobId, finalStatus);
-    console.log(
-      `[Fetcher] ═══ Job ${jobId} FINISHED ═══ ` +
-      `Status: ${finalStatus} | ${completedCount}/${totalTasks} succeeded | ${elapsed(jobStart)}`
-    );
+    log.info(`[Fetcher] ═══ Job ${jobId} FINISHED ═══ ` +
+      `Status: ${finalStatus} | ${completedCount}/${totalTasks} succeeded | ${elapsed(jobStart)}`);
   } catch (err) {
-    console.error(`[Fetcher] Job ${jobId} FATAL error:`, err);
+    log.error(`[Fetcher] Job ${jobId} FATAL error:`, { error: String(err) });
     await updateJobStatus(jobId, "failed");
   } finally {
     runningJobs.delete(jobId);

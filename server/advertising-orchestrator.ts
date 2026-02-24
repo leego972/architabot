@@ -54,6 +54,8 @@ import {
 } from "../drizzle/schema";
 import { eq, desc, and, gte, sql, count } from "drizzle-orm";
 import { runTikTokContentPipeline, getTikTokContentStats, isTikTokContentConfigured } from "./tiktok-content-service";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("AdvertisingOrchestrator");
 
 // ============================================
 // CONSTANTS
@@ -1802,7 +1804,7 @@ function shouldSkipChannel(channel: string): boolean {
 
   // Skip channels with < 10% success rate (after 10+ attempts)
   if (perf.totalAttempts >= 10 && successRate < 0.1) {
-    console.log(`[AdvertisingOrchestrator] Throttling channel ${channel}: ${Math.round(successRate * 100)}% success rate`);
+    log.info(`[AdvertisingOrchestrator] Throttling channel ${channel}: ${Math.round(successRate * 100)}% success rate`);
     return true;
   }
 
@@ -1880,7 +1882,7 @@ export function recordABTestResult(testId: string, variant: "A" | "B", success: 
     if (diff > 0.15) {
       test.winner = aRate > bRate ? "A" : "B";
       test.confidence = Math.min(0.95, diff * 2);
-      console.log(`[A/B Test] Winner declared for ${test.channel}: Variant ${test.winner} (${Math.round(test.confidence * 100)}% confidence)`);
+      log.info(`[A/B Test] Winner declared for ${test.channel}: Variant ${test.winner} (${Math.round(test.confidence * 100)}% confidence)`);
     }
   }
 }
@@ -2138,7 +2140,7 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
   const now = new Date();
   const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
 
-  console.log("[AdvertisingOrchestrator] Starting autonomous advertising cycle v2 (with intelligence layer)...");
+  log.info("[AdvertisingOrchestrator] Starting autonomous advertising cycle v2 (with intelligence layer)...");
 
   // 0. Campaign Health Monitor (runs first to inform decisions)
   try {
@@ -2342,7 +2344,7 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       });
     }
   } catch (err: any) {
-    console.error("[AdvertisingOrchestrator] Failed to log cycle:", err.message);
+    log.error("[AdvertisingOrchestrator] Failed to log cycle:", { error: String(err.message) });
   }
 
   // Calculate metrics
@@ -2385,7 +2387,7 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     // Notification failure is non-critical
   }
 
-  console.log(`[AdvertisingOrchestrator] Cycle complete: ${successCount} success, ${failCount} failed, ${duration}ms`);
+  log.info(`[AdvertisingOrchestrator] Cycle complete: ${successCount} success, ${failCount} failed, ${duration}ms`);
 
   // Next run is tomorrow at 9 AM AEST
   const nextRun = new Date();
@@ -2413,21 +2415,21 @@ let advertisingInterval: ReturnType<typeof setInterval> | null = null;
  * Runs once daily at startup, then every 24 hours.
  */
 export function startAdvertisingScheduler(): void {
-  console.log("[AdvertisingOrchestrator] Starting autonomous advertising scheduler...");
+  log.info("[AdvertisingOrchestrator] Starting autonomous advertising scheduler...");
 
   // COST OPTIMIZATION: Do NOT run on startup.
   // Every Railway deploy triggers a restart which was burning API credits.
   // The cycle runs once every 24 hours on schedule only.
   // To run manually, use the admin dashboard trigger.
-  console.log("[AdvertisingOrchestrator] Skipping startup cycle (cost optimization). Next run in 24h.");
+  log.info("[AdvertisingOrchestrator] Skipping startup cycle (cost optimization). Next run in 24h.");
 
   // Run every 24 hours only
   advertisingInterval = setInterval(async () => {
     try {
-      console.log("[AdvertisingOrchestrator] Running scheduled advertising cycle...");
+      log.info("[AdvertisingOrchestrator] Running scheduled advertising cycle...");
       await runAdvertisingCycle();
     } catch (err: any) {
-      console.error("[AdvertisingOrchestrator] Scheduled cycle failed:", err.message);
+      log.error("[AdvertisingOrchestrator] Scheduled cycle failed:", { error: String(err.message) });
     }
   }, 24 * 60 * 60 * 1000);
 }
@@ -2439,7 +2441,7 @@ export function stopAdvertisingScheduler(): void {
   if (advertisingInterval) {
     clearInterval(advertisingInterval);
     advertisingInterval = null;
-    console.log("[AdvertisingOrchestrator] Scheduler stopped.");
+    log.info("[AdvertisingOrchestrator] Scheduler stopped.");
   }
 }
 

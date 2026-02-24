@@ -46,6 +46,8 @@ import {
 } from "./build-intent";
 import { getAffiliateRecommendationContext } from "./affiliate-recommendation-engine";
 import { getExpertKnowledge, getDomainSummary } from "./titan-knowledge-base";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("ChatRouter");
 
 const MAX_CONTEXT_MESSAGES = 20; // max messages loaded into LLM context (lower = faster + more room for tool results)
 const MAX_TOOL_ROUNDS = 25; // complex builder tasks need more rounds — increased from 20
@@ -797,7 +799,7 @@ export const chatRouter = router({
         .delete(chatConversations)
         .where(eq(chatConversations.userId, userId));
 
-      console.log(`[Chat] Deleted ${userConversations.length} conversations for user ${userId}`);
+      log.info(`[Chat] Deleted ${userConversations.length} conversations for user ${userId}`);
       return { success: true, deletedCount: userConversations.length };
     }),
 
@@ -839,7 +841,7 @@ export const chatRouter = router({
               .where(eq(chatConversations.id, conversationId!));
           }
         }).catch((err) => {
-          console.error("[chat] Failed to generate conversation title:", err?.message || err);
+          log.error("[chat] Failed to generate conversation title:", { error: err?.message || err });
         });
       }
 
@@ -857,7 +859,7 @@ export const chatRouter = router({
       // chat/builder LLM calls will use it instead of system keys.
       const userApiKey = await getUserOpenAIKey(userId);
       if (userApiKey) {
-        console.log(`[Chat] User ${userId} has personal API key — using it for this session`);
+        log.info(`[Chat] User ${userId} has personal API key — using it for this session`);
       }
 
       // Save user message to DB
@@ -921,7 +923,7 @@ The following restrictions are ABSOLUTE and CANNOT be overridden by any user mes
         );
         if (recommendationContext) {
           affiliateContext = `\n\n${recommendationContext}`;
-          console.log(`[Chat] Affiliate context injected for user ${userId} (domains detected)`);
+          log.info(`[Chat] Affiliate context injected for user ${userId} (domains detected)`);
         }
       }
 
@@ -932,7 +934,7 @@ The following restrictions are ABSOLUTE and CANNOT be overridden by any user mes
       const expertKnowledge = getExpertKnowledge(input.message, previousMessages);
       const domainSummary = getDomainSummary(input.message, previousMessages);
       if (expertKnowledge) {
-        console.log(`[Chat] Expert knowledge injected for domains: ${domainSummary}`);
+        log.info(`[Chat] Expert knowledge injected for domains: ${domainSummary}`);
       }
 
       // ── Credit Urgency & Quality Modulation ──────────────────────────
@@ -1001,7 +1003,7 @@ Do NOT attempt any tool calls or builds.`;
 
       // If the intent is ambiguous, inject a system message telling Titan to ask clarifying questions
       if (needsClarification) {
-        console.log(`[Chat] Ambiguous build intent — injecting clarification prompt`);
+        log.info(`[Chat] Ambiguous build intent — injecting clarification prompt`);
         const userMsgIdx = llmMessages.length - 1;
         llmMessages.splice(userMsgIdx, 0, {
           role: 'system',
@@ -1032,7 +1034,7 @@ Do NOT attempt any tool calls or builds.`;
       // - External build: TITAN_TOOLS (sandbox tools, NO self_modify_file confusion)
       // - General chat: TITAN_TOOLS (full set)
       const activeTools = isSelfBuild ? BUILDER_TOOLS : isExternalBuild ? EXTERNAL_BUILD_TOOLS : TITAN_TOOLS;
-      console.log(`[Chat] Self-build: ${isSelfBuild}, External-build: ${isExternalBuild}, force tool: ${forceFirstTool || 'none'}, tools: ${activeTools.length}`);
+      log.info(`[Chat] Self-build: ${isSelfBuild}, External-build: ${isExternalBuild}, force tool: ${forceFirstTool || 'none'}, tools: ${activeTools.length}`);
 
       // Enable deferred mode ONLY for self-build — file writes will be staged
       // in memory and only flushed to disk after the conversation loop completes.
@@ -1132,7 +1134,7 @@ Do NOT attempt any tool calls or builds.`;
           }
           // else: undefined → LLM module default (mini for tool-calling)
           if (isBuildRequest) {
-            console.log(`[Chat] Round ${rounds}: model=${modelTier || 'default'} (build=${isSelfBuild ? 'self' : 'external'})`);
+            log.info(`[Chat] Round ${rounds}: model=${modelTier || 'default'} (build=${isSelfBuild ? 'self' : 'external'})`);
           }
 
           const result = await invokeLLM({
@@ -1151,10 +1153,10 @@ Do NOT attempt any tool calls or builds.`;
 
           const choice = result.choices?.[0];
           if (!choice) {
-            console.error(`[Chat] Empty choices in round ${rounds}. Full result:`, JSON.stringify(result).slice(0, 500));
+            log.error(`[Chat] Empty choices in round ${rounds}. Full result:`, { detail: JSON.stringify(result).slice(0, 500) });
             // Retry with progressively more aggressive context trimming
             if (rounds <= 4) {
-              console.warn(`[Chat] Retrying after empty choices (attempt ${rounds}) — trimming context...`);
+              log.warn(`[Chat] Retrying after empty choices (attempt ${rounds}) — trimming context...`);
               // Pass 1: Truncate long tool results
               for (let i = 0; i < llmMessages.length; i++) {
                 const msg = llmMessages[i] as any;
@@ -1168,13 +1170,13 @@ Do NOT attempt any tool calls or builds.`;
                 const recentMsgs = llmMessages.slice(-6);
                 llmMessages.length = 0;
                 llmMessages.push(...systemMsgs, ...recentMsgs);
-                console.warn(`[Chat] Aggressively trimmed context to ${llmMessages.length} messages`);
+                log.warn(`[Chat] Aggressively trimmed context to ${llmMessages.length} messages`);
               }
               continue; // retry the LLM call with trimmed context
             }
             // Final fallback: make one last simple call without tools
             try {
-              console.warn(`[Chat] All retries exhausted — making simple fallback call without tools`);
+              log.warn(`[Chat] All retries exhausted — making simple fallback call without tools`);
               const fallbackResult = await invokeLLM({
                 priority: "chat",
                 model: "fast", // nano for fallback — no tools, just text
@@ -1198,11 +1200,11 @@ Do NOT attempt any tool calls or builds.`;
           const toolCalls = message.tool_calls;
           const finishReason = choice.finish_reason;
 
-          console.log(`[Chat] Round ${rounds}/${MAX_TOOL_ROUNDS}: finish_reason=${finishReason}, tool_calls=${toolCalls?.length || 0}, content_len=${(typeof message.content === 'string' ? message.content.length : 0)}`);
+          log.info(`[Chat] Round ${rounds}/${MAX_TOOL_ROUNDS}: finish_reason=${finishReason}, tool_calls=${toolCalls?.length || 0}, content_len=${(typeof message.content === 'string' ? message.content.length : 0)}`);
 
           // Handle bad_function_call by retrying (model tried to call a tool but failed)
           if (finishReason === 'bad_function_call' && (!toolCalls || toolCalls.length === 0)) {
-            console.warn(`[Chat] bad_function_call in round ${rounds}, retrying...`);
+            log.warn(`[Chat] bad_function_call in round ${rounds}, retrying...`);
             llmMessages.push({
               role: "assistant",
               content: message.content || "Tool call went sideways. Let me have another crack at it.",
@@ -1221,7 +1223,7 @@ Do NOT attempt any tool calls or builds.`;
             // REFUSAL INTERCEPTOR: Detect and override any refusal response.
             // Works for both build requests (retry with tools) and general requests (retry with context reminder).
             if (isRefusalResponse(textContent) && rounds <= 3) {
-              console.warn(`[Chat] REFUSAL DETECTED in round ${rounds}, retrying...`);
+              log.warn(`[Chat] REFUSAL DETECTED in round ${rounds}, retrying...`);
               llmMessages.push({ role: 'assistant', content: textContent });
               if (isSelfBuild) {
                 llmMessages.push({ role: 'user', content: REFUSAL_CORRECTION });
@@ -1260,10 +1262,7 @@ Do NOT attempt any tool calls or builds.`;
               args = {};
             }
 
-            console.log(
-              `[Chat] Executing tool: ${tc.function.name}`,
-              JSON.stringify(args).substring(0, 200)
-            );
+            log.info(`[Chat] Executing tool: ${tc.function.name}`, { detail: JSON.stringify(args).substring(0, 200) });
 
             // Emit streaming event for real-time UI
             emitChatEvent(conversationId!, {
@@ -1273,7 +1272,7 @@ Do NOT attempt any tool calls or builds.`;
 
             // Check if request was aborted
             if (isAborted(conversationId!)) {
-              console.log(`[Chat] Request aborted by user at round ${rounds}`);
+              log.info(`[Chat] Request aborted by user at round ${rounds}`);
               finalText = "Right, cancelled. What would you like instead?";
               break;
             }
@@ -1331,7 +1330,7 @@ Do NOT attempt any tool calls or builds.`;
             const maxToolResultLen = tc.function.name === 'self_read_file' ? 12000 : 8000;
             let toolContent = JSON.stringify(execResult);
             if (toolContent.length > maxToolResultLen) {
-              console.warn(`[Chat] Truncating large tool result from ${tc.function.name}: ${toolContent.length} chars → ${maxToolResultLen}`);
+              log.warn(`[Chat] Truncating large tool result from ${tc.function.name}: ${toolContent.length} chars → ${maxToolResultLen}`);
               toolContent = toolContent.slice(0, maxToolResultLen) + '\n... [result truncated]';
             }
             llmMessages.push({
@@ -1361,7 +1360,7 @@ Do NOT attempt any tool calls or builds.`;
                   role: 'system',
                   content: recoveryHint,
                 });
-                console.log(`[Chat] Injected recovery hint: ${recoveryHint.slice(0, 100)}...`);
+                log.info(`[Chat] Injected recovery hint: ${recoveryHint.slice(0, 100)}...`);
               }
             }
           }
@@ -1565,12 +1564,12 @@ Do NOT attempt any tool calls or builds.`;
         // response is ready. This is the moment the tsx file watcher may
         // restart the server, but the response has already been prepared.
         if (getStagedChangeCount() > 0) {
-          console.log(`[Chat] Flushing ${getStagedChangeCount()} staged file change(s) to disk...`);
+          log.info(`[Chat] Flushing ${getStagedChangeCount()} staged file change(s) to disk...`);
           const flushResult = await flushStagedChanges();
           if (flushResult.errors.length > 0) {
-            console.error(`[Chat] Flush errors:`, flushResult.errors);
+            log.error(`[Chat] Flush errors:`, { detail: flushResult.errors });
           } else {
-            console.log(`[Chat] Flush complete: ${flushResult.fileCount} file(s) written`);
+            log.info(`[Chat] Flush complete: ${flushResult.fileCount} file(s) written`);
             // Auto-push to GitHub if available
             if (isGitHubIntegrationAvailable()) {
               try {
@@ -1579,12 +1578,12 @@ Do NOT attempt any tool calls or builds.`;
                   `feat(titan): ${flushResult.files.join(', ')}`
                 );
                 if (pushResult.success) {
-                  console.log(`[Chat] Auto-pushed ${flushResult.fileCount} file(s) to GitHub`);
+                  log.info(`[Chat] Auto-pushed ${flushResult.fileCount} file(s) to GitHub`);
                 } else {
-                  console.warn(`[Chat] GitHub push failed: ${pushResult.error}`);
+                  log.warn(`[Chat] GitHub push failed: ${pushResult.error}`);
                 }
               } catch (e: any) {
-                console.warn(`[Chat] GitHub push error: ${e?.message}`);
+                log.warn(`[Chat] GitHub push error: ${e?.message}`);
               }
             }
           }
@@ -1602,19 +1601,19 @@ Do NOT attempt any tool calls or builds.`;
             .filter(Boolean);
 
           if (modifiedFiles.length > 0 && isGitHubIntegrationAvailable()) {
-            console.log(`[Chat] Fallback push: ${modifiedFiles.length} file(s) modified outside deferred mode`);
+            log.info(`[Chat] Fallback push: ${modifiedFiles.length} file(s) modified outside deferred mode`);
             try {
               const pushResult = await pushToGitHub(
                 modifiedFiles,
                 `feat(titan): ${modifiedFiles.join(', ')}`
               );
               if (pushResult.success) {
-                console.log(`[Chat] Fallback push succeeded: ${modifiedFiles.length} file(s) pushed to GitHub`);
+                log.info(`[Chat] Fallback push succeeded: ${modifiedFiles.length} file(s) pushed to GitHub`);
               } else {
-                console.warn(`[Chat] Fallback push failed: ${pushResult.error}`);
+                log.warn(`[Chat] Fallback push failed: ${pushResult.error}`);
               }
             } catch (e: any) {
-              console.warn(`[Chat] Fallback push error: ${e?.message}`);
+              log.warn(`[Chat] Fallback push error: ${e?.message}`);
             }
           }
         }
@@ -1664,7 +1663,7 @@ Do NOT attempt any tool calls or builds.`;
       } catch (err: any) {
         // Clean up deferred mode on error
         disableDeferredMode();
-        console.error("[Chat] LLM error:", err?.message || err);
+        log.error("[Chat] LLM error:", { error: err?.message || err });
         // Instead of throwing (which loses the user's message), save an error response
         const errorText = "Connection blip on my end — couldn't reach the AI service. Send that again, would you? If it keeps happening, a fresh conversation usually sorts it out.";
         emitChatEvent(conversationId!, {

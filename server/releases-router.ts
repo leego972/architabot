@@ -10,6 +10,8 @@ import type { Express, Request, Response } from "express";
 import { parse as parseCookieHeader } from "cookie";
 import { COOKIE_NAME } from "../shared/const";
 import { sdk } from "./_core/sdk";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("ReleasesRouter");
 
 // ─── Default seed release (shown when DB has no releases) ───────────
 
@@ -329,7 +331,7 @@ export function registerUpdateFeedRoutes(app: Express) {
       res.set("Content-Type", "text/yaml");
       res.send(yml);
     } catch (err: any) {
-      console.error("[Update Feed] Error:", err.message);
+      log.error("[Update Feed] Error:", { error: String(err.message) });
       res.status(500).send("Internal error");
     }
   });
@@ -345,7 +347,7 @@ export function registerUpdateFeedRoutes(app: Express) {
       res.set("Content-Type", "text/yaml");
       res.send(yml);
     } catch (err: any) {
-      console.error("[Update Feed] Error:", err.message);
+      log.error("[Update Feed] Error:", { error: String(err.message) });
       res.status(500).send("Internal error");
     }
   });
@@ -361,7 +363,7 @@ export function registerUpdateFeedRoutes(app: Express) {
       res.set("Content-Type", "text/yaml");
       res.send(yml);
     } catch (err: any) {
-      console.error("[Update Feed] Error:", err.message);
+      log.error("[Update Feed] Error:", { error: String(err.message) });
       res.status(500).send("Internal error");
     }
   });
@@ -481,7 +483,7 @@ export function registerReleaseUploadRoute(app: Express) {
         url,
       });
     } catch (err: any) {
-      console.error("[Release Upload Error]", err);
+      log.error("[Release Upload Error]", { error: String(err) });
       return res.status(500).json({ error: err.message || "Upload failed" });
     }
   });

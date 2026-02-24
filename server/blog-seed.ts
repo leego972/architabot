@@ -2,6 +2,8 @@ import { getDb } from "./db";
 import { blogPosts, blogCategories } from "../drizzle/schema";
 import { eq, sql } from "drizzle-orm";
 import seedData from "./blog-seed-data.json";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("BlogSeed");
 
 interface SeedPost {
   slug: string;
@@ -24,7 +26,7 @@ interface SeedPost {
 export async function seedBlogPosts(): Promise<number> {
   const db = await getDb();
   if (!db) {
-    console.log("[BlogSeed] DB not available, skipping");
+    log.info("[BlogSeed] DB not available, skipping");
     return 0;
   }
 
@@ -75,7 +77,7 @@ export async function seedBlogPosts(): Promise<number> {
     } catch (err: any) {
       // Skip duplicates silently
       if (err?.code === "ER_DUP_ENTRY") continue;
-      console.error(`[BlogSeed] Failed to insert "${post.slug}":`, err?.message);
+      log.error(`[BlogSeed] Failed to insert "${post.slug}":`, { error: err?.message });
     }
   }
 

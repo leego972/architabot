@@ -12,6 +12,8 @@
  */
 
 import { PROVIDERS } from "../../shared/fetcher";
+import { createLogger } from "../_core/logger.js";
+const log = createLogger("SafetyEngine");
 
 // ─── Error Classification ────────────────────────────────────────────
 
@@ -139,7 +141,7 @@ export function checkCircuit(providerId: string): { allowed: boolean; reason?: s
     if (elapsed >= CIRCUIT_DEFAULTS.resetTimeoutMs) {
       // Transition to half-open
       circuit.state = "half_open";
-      console.log(`[CircuitBreaker] ${providerId}: transitioning to half-open after ${Math.round(elapsed / 1000)}s`);
+      log.info(`[CircuitBreaker] ${providerId}: transitioning to half-open after ${Math.round(elapsed / 1000)}s`);
       return { allowed: true, reason: "Circuit half-open — test request allowed" };
     }
     const remainingMs = CIRCUIT_DEFAULTS.resetTimeoutMs - elapsed;
@@ -161,7 +163,7 @@ export function recordCircuitSuccess(providerId: string): void {
   circuit.failures = 0;
   circuit.state = "closed";
   circuit.openedAt = 0;
-  console.log(`[CircuitBreaker] ${providerId}: circuit closed (success)`);
+  log.info(`[CircuitBreaker] ${providerId}: circuit closed (success)`);
 }
 
 /**
@@ -181,14 +183,14 @@ export function recordCircuitFailure(providerId: string, errorCategory: ErrorCat
     // Test failed — reopen
     circuit.state = "open";
     circuit.openedAt = Date.now();
-    console.log(`[CircuitBreaker] ${providerId}: circuit re-opened (half-open test failed)`);
+    log.info(`[CircuitBreaker] ${providerId}: circuit re-opened (half-open test failed)`);
     return;
   }
 
   if (circuit.failures >= CIRCUIT_DEFAULTS.failureThreshold) {
     circuit.state = "open";
     circuit.openedAt = Date.now();
-    console.log(`[CircuitBreaker] ${providerId}: circuit OPENED after ${circuit.failures} consecutive failures`);
+    log.info(`[CircuitBreaker] ${providerId}: circuit OPENED after ${circuit.failures} consecutive failures`);
   }
 }
 
@@ -208,7 +210,7 @@ export function getCircuitBreakerSummary(): Record<string, { state: string; fail
  */
 export function resetCircuitBreaker(providerId: string): void {
   circuitBreakers.delete(providerId);
-  console.log(`[CircuitBreaker] ${providerId}: circuit manually reset`);
+  log.info(`[CircuitBreaker] ${providerId}: circuit manually reset`);
 }
 
 // ─── Retry with Exponential Backoff ──────────────────────────────────
@@ -282,9 +284,7 @@ export async function withRetry<T>(
       }
 
       const delayMs = calculateRetryDelay(attempt, category, config);
-      console.log(
-        `[Retry] ${options.providerId}: attempt ${attempt + 1}/${config.maxRetries} failed (${category}), retrying in ${Math.round(delayMs)}ms`
-      );
+      log.info(`[Retry] ${options.providerId}: attempt ${attempt + 1}/${config.maxRetries} failed (${category}), retrying in ${Math.round(delayMs)}ms`);
 
       options.onRetry?.(attempt + 1, err, category, delayMs);
       await new Promise((resolve) => setTimeout(resolve, delayMs));

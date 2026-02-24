@@ -9,6 +9,8 @@
  */
 
 import type { InsertCrowdfundingCampaign } from "../drizzle/schema";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("CrowdfundingAggregator");
 
 // System user ID for seeded external campaigns (userId=1 is typically the admin)
 const SYSTEM_USER_ID = 1;
@@ -554,7 +556,7 @@ export async function seedExternalCampaigns(
       await createCampaign(data);
       seeded++;
     } catch (err) {
-      console.error(`[Crowdfunding Aggregator] Failed to seed "${seed.title}":`, err);
+      log.error(`[Crowdfunding Aggregator] Failed to seed "${seed.title}":`, { error: String(err) });
       skipped++;
     }
   }

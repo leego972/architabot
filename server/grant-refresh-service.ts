@@ -11,6 +11,8 @@
  */
 
 import * as dbHelpers from "./db";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("GrantRefreshService");
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -109,7 +111,7 @@ async function fetchGrantsGovByCategory(
     });
 
     if (!response.ok) {
-      console.error(`[GrantRefresh] Grants.gov API error: ${response.status}`);
+      log.error(`[GrantRefresh] Grants.gov API error: ${response.status}`);
       return [];
     }
 
@@ -142,13 +144,13 @@ async function fetchGrantsGovByCategory(
       applicationDeadline: parseGrantsGovDate(hit.closeDate),
     }));
   } catch (error: any) {
-    console.error(`[GrantRefresh] Grants.gov fetch error for ${categoryCode}:`, error.message);
+    log.error(`[GrantRefresh] Grants.gov fetch error for ${categoryCode}:`, { error: String(error.message) });
     return [];
   }
 }
 
 async function fetchUSAGrants(industryFilter?: string): Promise<{ grants: DiscoveredGrant[]; errors: string[] }> {
-  console.log("[GrantRefresh] Fetching real grants from grants.gov API...");
+  log.info("[GrantRefresh] Fetching real grants from grants.gov API...");
   const errors: string[] = [];
   let allGrants: DiscoveredGrant[] = [];
 
@@ -218,7 +220,7 @@ async function fetchUSAGrants(industryFilter?: string): Promise<{ grants: Discov
   // Add curated US startup/R&D programs
   allGrants.push(...getUSStartupGrants());
 
-  console.log(`[GrantRefresh] Fetched ${allGrants.length} real grants from grants.gov + curated US programs`);
+  log.info(`[GrantRefresh] Fetched ${allGrants.length} real grants from grants.gov + curated US programs`);
   return { grants: allGrants, errors };
 }
 
@@ -329,7 +331,7 @@ function getUSStartupGrants(): DiscoveredGrant[] {
 const ARC_API = "https://dataportal.arc.gov.au/NCGP/API/grants";
 
 async function fetchAustralianGrants(industryFilter?: string): Promise<{ grants: DiscoveredGrant[]; errors: string[] }> {
-  console.log("[GrantRefresh] Fetching real grants from ARC DataPortal API...");
+  log.info("[GrantRefresh] Fetching real grants from ARC DataPortal API...");
   const errors: string[] = [];
   const allGrants: DiscoveredGrant[] = [];
 
@@ -400,7 +402,7 @@ function processARCData(data: any, errors: string[]): { grants: DiscoveredGrant[
     });
   }
 
-  console.log(`[GrantRefresh] Fetched ${grants.length} real grants from ARC DataPortal`);
+  log.info(`[GrantRefresh] Fetched ${grants.length} real grants from ARC DataPortal`);
   return { grants, errors };
 }
 
@@ -1418,10 +1420,10 @@ export async function refreshGrantsFromAPIs(): Promise<{
     allGrants.push(...usResult.grants);
     sources.push({ name: "Grants.gov (US Federal — Live API)", count: usResult.grants.length });
     if (usResult.errors.length > 0) {
-      console.warn("[grant-refresh] Grants.gov partial errors:", usResult.errors);
+      log.warn("[grant-refresh] Grants.gov partial errors:", { detail: usResult.errors });
     }
   } catch (err) {
-    console.error("[grant-refresh] Grants.gov API failed:", err);
+    log.error("[grant-refresh] Grants.gov API failed:", { error: String(err) });
     sources.push({ name: "Grants.gov (US Federal — Live API)", count: 0 });
   }
 
@@ -1534,7 +1536,7 @@ export async function refreshGrantsForCountry(
       const usResult = await fetchUSAGrants();
       grants.push(...usResult.grants);
     } catch (err) {
-      console.error("[grant-refresh] Grants.gov API failed:", err);
+      log.error("[grant-refresh] Grants.gov API failed:", { error: String(err) });
     }
   }
 
@@ -1548,7 +1550,7 @@ export async function refreshGrantsForCountry(
     const existing = await dbHelpers.listGrantOpportunities();
     existingTitles = new Set(existing.map((g: any) => g.title?.toLowerCase()));
   } catch (err) {
-    console.error("[grant-refresh] Failed to check existing grants:", err);
+    log.error("[grant-refresh] Failed to check existing grants:", { error: String(err) });
   }
 
   let inserted = 0;
@@ -1583,12 +1585,12 @@ export async function refreshGrantsForCountry(
       existingTitles.add(grant.title?.toLowerCase());
     } catch (err: any) {
       if (!err?.message?.includes("Duplicate")) {
-        console.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, err?.message);
+        log.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, { error: err?.message });
       }
     }
   }
 
-  console.log(`[grant-refresh] Country ${countryCode}: Inserted ${inserted} new grants out of ${grants.length} total`);
+  log.info(`[grant-refresh] Country ${countryCode}: Inserted ${inserted} new grants out of ${grants.length} total`);
   return { totalDiscovered: grants.length, totalUpdated: inserted };
 }
 
@@ -1604,7 +1606,7 @@ export async function refreshAllGrants(
     const existing = await dbHelpers.listGrantOpportunities();
     existingTitles = new Set(existing.map((g: any) => g.title?.toLowerCase()));
   } catch (err) {
-    console.error("[grant-refresh] Failed to check existing grants:", err);
+    log.error("[grant-refresh] Failed to check existing grants:", { error: String(err) });
   }
 
   let inserted = 0;
@@ -1645,12 +1647,12 @@ export async function refreshAllGrants(
     } catch (err: any) {
       // Skip duplicate key errors silently
       if (!err?.message?.includes("Duplicate")) {
-        console.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, err?.message);
+        log.error(`[grant-refresh] Failed to insert grant "${grant.title}":`, { error: err?.message });
       }
     }
   }
 
-  console.log(`[grant-refresh] Inserted ${inserted} new grants, skipped ${skipped} duplicates out of ${grants.length} total`);
+  log.info(`[grant-refresh] Inserted ${inserted} new grants, skipped ${skipped} duplicates out of ${grants.length} total`);
 
   return {
     totalDiscovered: grants.length,

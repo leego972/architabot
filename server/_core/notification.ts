@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { createLogger } from "./logger.js";
+const log = createLogger("Notification");
 
 export type NotificationPayload = {
   title: string;
@@ -70,7 +72,7 @@ export async function notifyOwner(
 
   // If Manus Forge is not available (Railway deployment), log to console
   if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-    console.log(`[Notification] ${title}: ${content}`);
+    log.info(`[Notification] ${title}: ${content}`);
     return true;
   }
 
@@ -90,15 +92,13 @@ export async function notifyOwner(
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      console.warn(
-        `[Notification] Failed (${response.status})${detail ? `: ${detail}` : ""}`
-      );
+      log.warn(`[Notification] Failed (${response.status})${detail ? `: ${detail}` : ""}`);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.warn("[Notification] Error:", error);
+    log.warn("[Notification] Error:", { error: String(error) });
     return false;
   }
 }

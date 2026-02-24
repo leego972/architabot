@@ -14,6 +14,8 @@ import {
 } from "../drizzle/schema";
 import { PROVIDERS } from "../shared/fetcher";
 import { invokeLLM } from "./_core/llm";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("V3FeaturesRouter");
 
 // ─── Feature 1: Scheduled Auto-Sync ────────────────────────────────
 
@@ -524,7 +526,7 @@ Return ONLY a valid JSON array, no other text.`;
 
       return { success: true, count: inserted };
     } catch (error) {
-      console.error("[SmartFetch] LLM recommendation generation failed:", error);
+      log.error("[SmartFetch] LLM recommendation generation failed:", { error: String(error) });
 
       // Fallback: generate rule-based recommendations without LLM
       let inserted = 0;

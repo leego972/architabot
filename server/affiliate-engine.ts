@@ -25,6 +25,8 @@ import {
   type InsertAffiliatePartner,
 } from "../drizzle/schema";
 import { randomBytes } from "crypto";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("AffiliateEngine");
 
 // ─── Known High-Paying Affiliate Programs ───────────────────────────
 
@@ -194,12 +196,12 @@ export async function seedAffiliatePrograms(): Promise<number> {
     .set({ status: "active" })
     .where(eq(affiliatePartners.status, "prospect"));
 
-  console.log(`[AffiliateEngine] Seeded ${seeded} new, updated ${updated} existing affiliate programs (all auto-activated)`);
+  log.info(`[AffiliateEngine] Seeded ${seeded} new, updated ${updated} existing affiliate programs (all auto-activated)`);
 
   // Auto-generate outreach for all partners without outreach
   if (seeded > 0) {
     generateBulkOutreach().catch(err => 
-      console.error("[AffiliateEngine] Bulk outreach generation failed:", err)
+      log.error("[AffiliateEngine] Bulk outreach generation failed:", { error: String(err) })
     );
   }
 
@@ -223,14 +225,14 @@ export async function generateBulkOutreach(): Promise<number> {
       try {
         await generateOutreachEmail(partner.id);
         generated++;
-        console.log(`[AffiliateEngine] Generated outreach for ${partner.name} (${generated}/${allPartners.length - outreachedIds.size})`);
+        log.info(`[AffiliateEngine] Generated outreach for ${partner.name} (${generated}/${allPartners.length - outreachedIds.size})`);
       } catch (error) {
-        console.error(`[AffiliateEngine] Failed outreach for ${partner.name}:`, error);
+        log.error(`[AffiliateEngine] Failed outreach for ${partner.name}:`, { error: String(error) });
       }
     }
   }
 
-  console.log(`[AffiliateEngine] Bulk outreach complete: ${generated} emails generated`);
+  log.info(`[AffiliateEngine] Bulk outreach complete: ${generated} emails generated`);
   return generated;
 }
 
@@ -310,7 +312,7 @@ export async function trackReferralSignup(
     await db.update(referralCodes)
       .set({ totalRewardsEarned: sql`${referralCodes.totalRewardsEarned} + 1` })
       .where(eq(referralCodes.id, codeRecord.id));
-    console.log(`[AffiliateEngine] User ${codeRecord.userId} earned a free month! (${totalRefs} referrals)`);
+    log.info(`[AffiliateEngine] User ${codeRecord.userId} earned a free month! (${totalRefs} referrals)`);
   }
 
   return { success: true, message: `Referral tracked! ${totalRefs} total referrals.` };
@@ -586,7 +588,7 @@ Propose cross-promotion and affiliate partnership. Be specific about mutual valu
 
     return email;
   } catch (error) {
-    console.error("[AffiliateEngine] Failed to generate outreach:", error);
+    log.error("[AffiliateEngine] Failed to generate outreach:", { error: String(error) });
     const fallback = {
       subject: `Partnership Opportunity: Archibald Titan x ${partner.name}`,
       body: `Dear ${partner.name} Team,\n\nI'm reaching out to propose a mutually beneficial partnership between Archibald Titan and ${partner.name}.\n\nArchibald Titan is the world's most advanced local AI agent platform. Our users actively need tools like ${partner.name}.\n\nWe'd love to explore cross-promotion and affiliate partnership opportunities.\n\nBest regards,\nArchibald Titan Partnership Team`,
@@ -720,7 +722,7 @@ export async function runAffiliateOptimizationCycle(): Promise<{
   partnersPromoted: number;
   outreachGenerated: number;
 }> {
-  console.log("[AffiliateEngine] Starting autonomous optimization cycle...");
+  log.info("[AffiliateEngine] Starting autonomous optimization cycle...");
 
   const db = await getDb();
   if (!db) return { partnersAnalyzed: 0, partnersPaused: 0, partnersPromoted: 0, outreachGenerated: 0 };
@@ -763,7 +765,7 @@ export async function runAffiliateOptimizationCycle(): Promise<{
         partnersPromoted++;
       }
     } catch (error) {
-      console.error(`[AffiliateEngine] Failed to analyze partner ${partner.id}:`, error);
+      log.error(`[AffiliateEngine] Failed to analyze partner ${partner.id}:`, { error: String(error) });
     }
   }
 
@@ -780,11 +782,11 @@ export async function runAffiliateOptimizationCycle(): Promise<{
       await generateOutreachEmail(prospect.id);
       outreachGenerated++;
     } catch (error) {
-      console.error(`[AffiliateEngine] Failed to generate outreach for ${prospect.id}:`, error);
+      log.error(`[AffiliateEngine] Failed to generate outreach for ${prospect.id}:`, { error: String(error) });
     }
   }
 
-  console.log(`[AffiliateEngine] Optimization complete: ${partnersAnalyzed} analyzed, ${partnersPaused} paused, ${partnersPromoted} promoted, ${outreachGenerated} outreach`);
+  log.info(`[AffiliateEngine] Optimization complete: ${partnersAnalyzed} analyzed, ${partnersPaused} paused, ${partnersPromoted} promoted, ${outreachGenerated} outreach`);
   return { partnersAnalyzed, partnersPaused, partnersPromoted, outreachGenerated };
 }
 
@@ -1223,7 +1225,7 @@ export async function recordReferralCommission(
     })
     .where(eq(referralCodes.id, codeRecord.id));
 
-  console.log(`[ReferralProgram] Commission: $${(commissionCents / 100).toFixed(2)} (${tier.commissionPercent}%) for user ${conversion.referrerId} from payment by user ${referredUserId}`);
+  log.info(`[ReferralProgram] Commission: $${(commissionCents / 100).toFixed(2)} (${tier.commissionPercent}%) for user ${conversion.referrerId} from payment by user ${referredUserId}`);
 
   return { success: true, commissionCents, referrerId: conversion.referrerId };
 }

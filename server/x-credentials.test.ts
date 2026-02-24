@@ -3,6 +3,8 @@
  * Calls the X API v2 /users/me endpoint to verify authentication
  */
 import { describe, it, expect } from "vitest";
+import { createLogger } from "./_core/logger.js";
+const log = createLogger("XCredentialsTest");
 
 describe("X (Twitter) Credentials Validation", () => {
   it("should have all required X environment variables set", () => {
@@ -16,7 +18,7 @@ describe("X (Twitter) Credentials Validation", () => {
   it("should authenticate with X API using Bearer Token", async () => {
     const bearerToken = process.env.X_BEARER_TOKEN;
     if (!bearerToken) {
-      console.log("Skipping: X_BEARER_TOKEN not set");
+      log.info("Skipping: X_BEARER_TOKEN not set");
       return;
     }
 
@@ -27,9 +29,9 @@ describe("X (Twitter) Credentials Validation", () => {
     });
 
     // 200 = valid credentials, 401 = invalid
-    console.log(`X API response status: ${response.status}`);
+    log.info(`X API response status: ${response.status}`);
     const body = await response.text();
-    console.log(`X API response body: ${body}`);
+    log.info(`X API response body: ${body}`);
 
     expect(response.status).not.toBe(401);
   }, 15000);
