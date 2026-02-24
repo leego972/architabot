@@ -542,94 +542,104 @@ export const marketplaceRouter = router({
       const existing = await db.getPurchaseByBuyerAndListing(ctx.user.id, input.listingId);
       if (existing) throw new TRPCError({ code: "BAD_REQUEST", message: "Already purchased" });
 
-      // Check buyer has enough credits
-      const balance = await getCreditBalance(ctx.user.id);
-      if (balance.credits < listing.priceCredits && !balance.isUnlimited) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient credits. Need ${listing.priceCredits}, have ${balance.credits}` });
-      }
-
-      // Deduct credits from buyer (custom deduction, not standard consumeCredits)
+      // Execute the entire purchase in a DB transaction to prevent race conditions
       const dbInstance = await db.getDb();
       if (!dbInstance) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-      // Import schema for direct credit operations
       const { creditBalances, creditTransactions } = await import("../drizzle/schema");
       const { eq, sql } = await import("drizzle-orm");
 
-      if (!balance.isUnlimited) {
-        await dbInstance.update(creditBalances).set({
-          credits: sql`${creditBalances.credits} - ${listing.priceCredits}`,
-          lifetimeCreditsUsed: sql`${creditBalances.lifetimeCreditsUsed} + ${listing.priceCredits}`,
-        }).where(eq(creditBalances.userId, ctx.user.id));
-      }
+      return await dbInstance.transaction(async (tx) => {
+        // Lock buyer's credit row with SELECT FOR UPDATE to prevent double-spend
+        const buyerBal = await tx
+          .select({ credits: creditBalances.credits, isUnlimited: creditBalances.isUnlimited })
+          .from(creditBalances)
+          .where(eq(creditBalances.userId, ctx.user.id))
+          .for("update")
+          .limit(1);
 
-      // Get updated buyer balance
-      const updatedBal = await dbInstance.select({ credits: creditBalances.credits }).from(creditBalances).where(eq(creditBalances.userId, ctx.user.id)).limit(1);
-      const buyerBalanceAfter = updatedBal[0]?.credits ?? 0;
+        if (buyerBal.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "No credit balance found" });
 
-      // Log buyer transaction
-      await dbInstance.insert(creditTransactions).values({
-        userId: ctx.user.id,
-        amount: -listing.priceCredits,
-        type: "marketplace_purchase",
-        description: `Purchased "${listing.title}" (${listing.uid})`,
-        balanceAfter: buyerBalanceAfter,
-      });
-
-      // Credit seller (92% of price — 8% platform commission)
-      const sellerShare = Math.floor(listing.priceCredits * (1 - PLATFORM_COMMISSION_RATE));
-      if (sellerShare > 0) {
-        // Ensure seller has a balance row
-        const sellerBal = await dbInstance.select({ credits: creditBalances.credits }).from(creditBalances).where(eq(creditBalances.userId, listing.sellerId)).limit(1);
-        if (sellerBal.length === 0) {
-          await dbInstance.insert(creditBalances).values({ userId: listing.sellerId, credits: sellerShare, lifetimeCreditsAdded: sellerShare });
-        } else {
-          await dbInstance.update(creditBalances).set({
-            credits: sql`${creditBalances.credits} + ${sellerShare}`,
-            lifetimeCreditsAdded: sql`${creditBalances.lifetimeCreditsAdded} + ${sellerShare}`,
-          }).where(eq(creditBalances.userId, listing.sellerId));
+        if (buyerBal[0].credits < listing.priceCredits && !buyerBal[0].isUnlimited) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Insufficient credits. Need ${listing.priceCredits}, have ${buyerBal[0].credits}` });
         }
 
-        const sellerUpdated = await dbInstance.select({ credits: creditBalances.credits }).from(creditBalances).where(eq(creditBalances.userId, listing.sellerId)).limit(1);
-        await dbInstance.insert(creditTransactions).values({
-          userId: listing.sellerId,
-          amount: sellerShare,
-          type: "marketplace_sale",
-          description: `Sale of "${listing.title}" (${listing.uid}) — ${Math.round((1 - PLATFORM_COMMISSION_RATE) * 100)}% of ${listing.priceCredits} credits (8% platform fee)`,
-          balanceAfter: sellerUpdated[0]?.credits ?? 0,
+        // Deduct credits from buyer
+        if (!buyerBal[0].isUnlimited) {
+          await tx.update(creditBalances).set({
+            credits: sql`${creditBalances.credits} - ${listing.priceCredits}`,
+            lifetimeCreditsUsed: sql`${creditBalances.lifetimeCreditsUsed} + ${listing.priceCredits}`,
+          }).where(eq(creditBalances.userId, ctx.user.id));
+        }
+
+        // Get updated buyer balance
+        const updatedBal = await tx.select({ credits: creditBalances.credits }).from(creditBalances).where(eq(creditBalances.userId, ctx.user.id)).limit(1);
+        const buyerBalanceAfter = updatedBal[0]?.credits ?? 0;
+
+        // Log buyer transaction
+        await tx.insert(creditTransactions).values({
+          userId: ctx.user.id,
+          amount: -listing.priceCredits,
+          type: "marketplace_purchase",
+          description: `Purchased "${listing.title}" (${listing.uid})`,
+          balanceAfter: buyerBalanceAfter,
         });
 
-        // Update seller profile stats
-        const sellerProfile = await db.getSellerProfile(listing.sellerId);
-        if (sellerProfile) {
-          await db.updateSellerProfile(listing.sellerId, {
-            totalSales: (sellerProfile.totalSales || 0) + 1,
-            totalRevenue: (sellerProfile.totalRevenue || 0) + sellerShare,
+        // Credit seller (92% of price — 8% platform commission)
+        const sellerShare = Math.floor(listing.priceCredits * (1 - PLATFORM_COMMISSION_RATE));
+        if (sellerShare > 0) {
+          // Ensure seller has a balance row, then lock it
+          const sellerBal = await tx.select({ credits: creditBalances.credits }).from(creditBalances).where(eq(creditBalances.userId, listing.sellerId)).for("update").limit(1);
+          if (sellerBal.length === 0) {
+            await tx.insert(creditBalances).values({ userId: listing.sellerId, credits: sellerShare, lifetimeCreditsAdded: sellerShare });
+          } else {
+            await tx.update(creditBalances).set({
+              credits: sql`${creditBalances.credits} + ${sellerShare}`,
+              lifetimeCreditsAdded: sql`${creditBalances.lifetimeCreditsAdded} + ${sellerShare}`,
+            }).where(eq(creditBalances.userId, listing.sellerId));
+          }
+
+          const sellerUpdated = await tx.select({ credits: creditBalances.credits }).from(creditBalances).where(eq(creditBalances.userId, listing.sellerId)).limit(1);
+          await tx.insert(creditTransactions).values({
+            userId: listing.sellerId,
+            amount: sellerShare,
+            type: "marketplace_sale",
+            description: `Sale of "${listing.title}" (${listing.uid}) — ${Math.round((1 - PLATFORM_COMMISSION_RATE) * 100)}% of ${listing.priceCredits} credits (8% platform fee)`,
+            balanceAfter: sellerUpdated[0]?.credits ?? 0,
           });
+
+          // Update seller profile stats (outside tx is fine — non-critical)
+          const sellerProfile = await db.getSellerProfile(listing.sellerId);
+          if (sellerProfile) {
+            await db.updateSellerProfile(listing.sellerId, {
+              totalSales: (sellerProfile.totalSales || 0) + 1,
+              totalRevenue: (sellerProfile.totalRevenue || 0) + sellerShare,
+            });
+          }
         }
-      }
 
-      // Create purchase record
-      const purchaseUid = `PUR-${randomUUID().split("-").slice(0, 2).join("")}`.toUpperCase();
-      const downloadToken = randomUUID();
-      const purchase = await db.createPurchase({
-        uid: purchaseUid,
-        buyerId: ctx.user.id,
-        listingId: input.listingId,
-        sellerId: listing.sellerId,
-        priceCredits: listing.priceCredits,
-        priceUsd: listing.priceUsd,
-        downloadToken,
+        // Create purchase record
+        const purchaseUid = `PUR-${randomUUID().split("-").slice(0, 2).join("")}`.toUpperCase();
+        const downloadToken = randomUUID();
+        const purchase = await db.createPurchase({
+          uid: purchaseUid,
+          buyerId: ctx.user.id,
+          listingId: input.listingId,
+          sellerId: listing.sellerId,
+          priceCredits: listing.priceCredits,
+          priceUsd: listing.priceUsd,
+          downloadToken,
+        });
+
+        return {
+          purchaseId: purchase.id,
+          uid: purchaseUid,
+          downloadToken,
+          priceCredits: listing.priceCredits,
+          sellerShare,
+          platformFee: listing.priceCredits - sellerShare,
+        };
       });
-
-      return {
-        purchaseId: purchase.id,
-        uid: purchaseUid,
-        downloadToken,
-        priceCredits: listing.priceCredits,
-        sellerShare,
-        platformFee: listing.priceCredits - sellerShare,
-      };
     }),
 
   /** Get my purchases (inventory) */

@@ -716,7 +716,7 @@ async function generateSeoBlogPost(): Promise<AdvertisingAction> {
     const targetKeyword = pillar.keywords[Math.floor(Math.random() * pillar.keywords.length)];
 
     // Check if we already have a post with a similar title
-    const existing = await (db as any).query.blogPosts.findFirst({
+    const existing = await (db as Record<string, any>).query.blogPosts.findFirst({
       where: sql`LOWER(${blogPosts.title}) LIKE ${`%${topic.toLowerCase().substring(0, 30)}%`}`,
     });
 
@@ -789,7 +789,7 @@ Return as JSON: { "title": "...", "metaDescription": "...", "content": "...(mark
 
     // Ensure category exists
     let categoryId: number | null = null;
-    const existingCat = await (db as any).query.blogCategories.findFirst({
+    const existingCat = await (db as Record<string, any>).query.blogCategories.findFirst({
       where: eq(blogCategories.name, post.category || "Security"),
     });
     if (existingCat) {
@@ -888,7 +888,7 @@ async function generateSocialContent(): Promise<AdvertisingAction[]> {
       ].replace("r/", "");
 
       const content = await generateContent({
-        platform: "reddit" as any,
+        platform: "reddit",
         contentType: "organic_post",
         topic: `${pillar.pillar} - educational content for ${subreddit}`,
         includeImage: false,
@@ -923,7 +923,7 @@ async function generateSocialContent(): Promise<AdvertisingAction[]> {
   if (hasLinkedin) {
     try {
       const content = await generateContent({
-        platform: "linkedin" as any,
+        platform: "linkedin",
         contentType: "organic_post",
         topic: "Cybersecurity thought leadership and developer security",
         includeImage: false,
@@ -1036,8 +1036,8 @@ Return as JSON: { "subject": "...", "body": "...", "targetType": "security_blog|
     const db = await getDb();
     if (db) {
       await db.insert(marketingContent).values({
-        channel: "email_outreach" as any,
-        contentType: "backlink_outreach" as any,
+        channel: "email_outreach",
+        contentType: "backlink_outreach",
         title: email.subject,
         body: email.body,
         status: "approved",
@@ -1135,8 +1135,8 @@ Return as JSON: { "subject": "...", "preheader": "...", "body": "...(html)...", 
     const db = await getDb();
     if (db) {
       await db.insert(marketingContent).values({
-        channel: "sendgrid" as any,
-        contentType: "email_nurture" as any,
+        channel: "sendgrid",
+        contentType: "email_nurture",
         title: email.subject,
         body: JSON.stringify(email),
         status: "approved",

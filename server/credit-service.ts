@@ -146,72 +146,70 @@ export async function consumeCredits(
 
   await ensureBalance(userId);
 
-  // Check if unlimited
-  const bal = await db
-    .select({ credits: creditBalances.credits, isUnlimited: creditBalances.isUnlimited })
-    .from(creditBalances)
-    .where(eq(creditBalances.userId, userId))
-    .limit(1);
-
-  if (bal.length === 0) return { success: false, balanceAfter: 0 };
-
-  if (bal[0].isUnlimited) {
-    // Admin — log the action but don't deduct
-    const txType = action === "chat_message" ? "chat_message" as const
-      : action === "builder_action" ? "builder_action" as const
-      : action === "voice_action" ? "voice_action" as const
-      : "chat_message" as const;
-
-    await db.insert(creditTransactions).values({
-      userId,
-      amount: 0,
-      type: txType,
-      description: description || `${action} (unlimited account)`,
-      balanceAfter: bal[0].credits,
-    });
-
-    return { success: true, balanceAfter: bal[0].credits };
-  }
-
-  const cost = CREDIT_COSTS[action];
-
-  if (bal[0].credits < cost) {
-    return { success: false, balanceAfter: bal[0].credits };
-  }
-
-  // Deduct credits atomically
-  await db
-    .update(creditBalances)
-    .set({
-      credits: sql`${creditBalances.credits} - ${cost}`,
-      lifetimeCreditsUsed: sql`${creditBalances.lifetimeCreditsUsed} + ${cost}`,
-    })
-    .where(eq(creditBalances.userId, userId));
-
-  // Get updated balance
-  const updated = await db
-    .select({ credits: creditBalances.credits })
-    .from(creditBalances)
-    .where(eq(creditBalances.userId, userId))
-    .limit(1);
-
-  const newBalance = updated[0]?.credits ?? 0;
-
-  // Log transaction
   const txType = action === "chat_message" ? "chat_message" as const
     : action === "builder_action" ? "builder_action" as const
     : action === "voice_action" ? "voice_action" as const
     : "chat_message" as const;
 
-  await db.insert(creditTransactions).values({
-    userId,
-    amount: -cost,
-    type: txType,
-    description: description || `${action}: -${cost} credits`,
-    balanceAfter: newBalance,
-  });
+  // Wrap in a transaction to prevent race conditions (check-then-deduct atomicity)
+  return await db.transaction(async (tx) => {
+    // Lock the row with SELECT ... FOR UPDATE to prevent concurrent deductions
+    const bal = await tx
+      .select({ credits: creditBalances.credits, isUnlimited: creditBalances.isUnlimited })
+      .from(creditBalances)
+      .where(eq(creditBalances.userId, userId))
+      .for("update")
+      .limit(1);
 
-  return { success: true, balanceAfter: newBalance };
+    if (bal.length === 0) return { success: false, balanceAfter: 0 };
+
+    if (bal[0].isUnlimited) {
+      // Admin — log the action but don't deduct
+      await tx.insert(creditTransactions).values({
+        userId,
+        amount: 0,
+        type: txType,
+        description: description || `${action} (unlimited account)`,
+        balanceAfter: bal[0].credits,
+      });
+      return { success: true, balanceAfter: bal[0].credits };
+    }
+
+    const cost = CREDIT_COSTS[action];
+
+    if (bal[0].credits < cost) {
+      return { success: false, balanceAfter: bal[0].credits };
+    }
+
+    // Deduct credits atomically within the transaction
+    await tx
+      .update(creditBalances)
+      .set({
+        credits: sql`${creditBalances.credits} - ${cost}`,
+        lifetimeCreditsUsed: sql`${creditBalances.lifetimeCreditsUsed} + ${cost}`,
+      })
+      .where(eq(creditBalances.userId, userId));
+
+    // Get updated balance
+    const updated = await tx
+      .select({ credits: creditBalances.credits })
+      .from(creditBalances)
+      .where(eq(creditBalances.userId, userId))
+      .limit(1);
+
+    const newBalance = updated[0]?.credits ?? 0;
+
+    // Log transaction
+    await tx.insert(creditTransactions).values({
+      userId,
+      amount: -cost,
+      type: txType,
+      description: description || `${action}: -${cost} credits`,
+      balanceAfter: newBalance,
+    });
+
+    return { success: true, balanceAfter: newBalance };
+  });
 }
 
 // ─── Add Credits ───────────────────────────────────────────────────
@@ -228,36 +226,39 @@ export async function addCredits(
 
   await ensureBalance(userId);
 
-  // Add credits atomically
-  await db
-    .update(creditBalances)
-    .set({
-      credits: sql`${creditBalances.credits} + ${amount}`,
-      lifetimeCreditsAdded: sql`${creditBalances.lifetimeCreditsAdded} + ${amount}`,
-      ...(type === "monthly_refill" ? { lastRefillAt: new Date() } : {}),
-    })
-    .where(eq(creditBalances.userId, userId));
+  // Wrap in a transaction to ensure balance update + transaction log are atomic
+  return await db.transaction(async (tx) => {
+    // Add credits atomically within the transaction
+    await tx
+      .update(creditBalances)
+      .set({
+        credits: sql`${creditBalances.credits} + ${amount}`,
+        lifetimeCreditsAdded: sql`${creditBalances.lifetimeCreditsAdded} + ${amount}`,
+        ...(type === "monthly_refill" ? { lastRefillAt: new Date() } : {}),
+      })
+      .where(eq(creditBalances.userId, userId));
 
-  // Get updated balance
-  const updated = await db
-    .select({ credits: creditBalances.credits })
-    .from(creditBalances)
-    .where(eq(creditBalances.userId, userId))
-    .limit(1);
+    // Get updated balance
+    const updated = await tx
+      .select({ credits: creditBalances.credits })
+      .from(creditBalances)
+      .where(eq(creditBalances.userId, userId))
+      .limit(1);
 
-  const newBalance = updated[0]?.credits ?? 0;
+    const newBalance = updated[0]?.credits ?? 0;
 
-  // Log transaction
-  await db.insert(creditTransactions).values({
-    userId,
-    amount,
-    type,
-    description,
-    balanceAfter: newBalance,
-    stripePaymentIntentId: stripePaymentIntentId || null,
+    // Log transaction
+    await tx.insert(creditTransactions).values({
+      userId,
+      amount,
+      type,
+      description,
+      balanceAfter: newBalance,
+      stripePaymentIntentId: stripePaymentIntentId || null,
+    });
+
+    return { success: true, balanceAfter: newBalance };
   });
-
-  return { success: true, balanceAfter: newBalance };
 }
 
 // ─── Monthly Refill ────────────────────────────────────────────────

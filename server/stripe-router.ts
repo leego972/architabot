@@ -26,7 +26,7 @@ function getStripe(): Stripe {
       throw new Error("STRIPE_SECRET_KEY is not configured");
     }
     stripeInstance = new Stripe(ENV.stripeSecretKey, {
-      apiVersion: "2025-01-27.acacia" as any,
+      apiVersion: "2025-01-27.acacia" as Stripe.LatestApiVersion,
     });
   }
   return stripeInstance;
@@ -198,7 +198,7 @@ export const stripeRouter = router({
         ctx.user.name
       );
 
-      const origin = ctx.req.headers.origin || "http://localhost:3000";
+      const origin = ctx.req.headers.origin || process.env.APP_URL || "https://www.archibaldtitan.com";
 
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
@@ -243,7 +243,7 @@ export const stripeRouter = router({
         ctx.user.name
       );
 
-      const origin = ctx.req.headers.origin || "http://localhost:3000";
+      const origin = ctx.req.headers.origin || process.env.APP_URL || "https://www.archibaldtitan.com";
 
       // Create a one-time payment checkout session
       const session = await stripe.checkout.sessions.create({
@@ -399,7 +399,7 @@ export const stripeRouter = router({
         ctx.user.email || "",
         ctx.user.name
       );
-      const origin = ctx.req.headers.origin || "http://localhost:3000";
+      const origin = ctx.req.headers.origin || process.env.APP_URL || "https://www.archibaldtitan.com";
 
       // Search for existing Bazaar Seller product or create one
       const products = await stripe.products.list({ limit: 100 });
@@ -494,7 +494,7 @@ export const stripeRouter = router({
     }
 
     const stripe = getStripe();
-    const origin = ctx.req.headers.origin || "http://localhost:3000";
+    const origin = ctx.req.headers.origin || process.env.APP_URL || "https://www.archibaldtitan.com";
 
     const session = await stripe.billingPortal.sessions.create({
       customer: sub[0].stripeCustomerId,
@@ -520,7 +520,7 @@ export const stripeRouter = router({
     // Save stripeCustomerId to user record
     await db.update(users).set({ stripeCustomerId: customerId }).where(eq(users.id, ctx.user.id));
 
-    const origin = ctx.req.headers.origin || "http://localhost:3000";
+    const origin = ctx.req.headers.origin || process.env.APP_URL || "https://www.archibaldtitan.com";
 
     // Create a checkout session in setup mode to collect payment method
     // Then we'll create the trial subscription in the webhook
@@ -566,7 +566,7 @@ export const stripeRouter = router({
       const user = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
       if (!user[0]) return DEFAULT_STATUS;
 
-      const u = user[0] as any; // use 'any' to handle missing columns gracefully
+      const u = user[0] as any; // handle missing columns gracefully
       const now = new Date();
       const trialEndsAt = u.trialEndsAt ?? null;
       const inTrial = !!(trialEndsAt && new Date(trialEndsAt) > now);
@@ -630,7 +630,7 @@ export const stripeRouter = router({
         ctx.user.name
       );
 
-      const origin = ctx.req.headers.origin || "http://localhost:3000";
+      const origin = ctx.req.headers.origin || process.env.APP_URL || "https://www.archibaldtitan.com";
 
       // Create one-time payment checkout session
       const session = await stripe.checkout.sessions.create({
@@ -889,56 +889,59 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const PLATFORM_COMMISSION = 0.08;
     const sellerShareCredits = Math.floor(priceCredits * (1 - PLATFORM_COMMISSION));
 
-    // Credit the seller in credits (92% of the credit-equivalent price)
-    if (sellerShareCredits > 0 && sellerId) {
-      const sellerBal = await db.select({ credits: creditBalancesTable.credits }).from(creditBalancesTable).where(eqOp(creditBalancesTable.userId, sellerId)).limit(1);
-      if (sellerBal.length === 0) {
-        await db.insert(creditBalancesTable).values({ userId: sellerId, credits: sellerShareCredits, lifetimeCreditsAdded: sellerShareCredits } as any);
-      } else {
-        await db.update(creditBalancesTable).set({
-          credits: sqlOp`${creditBalancesTable.credits} + ${sellerShareCredits}`,
-          lifetimeCreditsAdded: sqlOp`${creditBalancesTable.lifetimeCreditsAdded} + ${sellerShareCredits}`,
-        }).where(eqOp(creditBalancesTable.userId, sellerId));
+    // Wrap seller credit + purchase record + listing stats in a transaction
+    const { randomUUID } = await import("crypto");
+    await db.transaction(async (tx) => {
+      // Credit the seller in credits (92% of the credit-equivalent price)
+      if (sellerShareCredits > 0 && sellerId) {
+        const sellerBal = await tx.select({ credits: creditBalancesTable.credits }).from(creditBalancesTable).where(eqOp(creditBalancesTable.userId, sellerId)).for("update").limit(1);
+        if (sellerBal.length === 0) {
+          await tx.insert(creditBalancesTable).values({ userId: sellerId, credits: sellerShareCredits, lifetimeCreditsAdded: sellerShareCredits } as any);
+        } else {
+          await tx.update(creditBalancesTable).set({
+            credits: sqlOp`${creditBalancesTable.credits} + ${sellerShareCredits}`,
+            lifetimeCreditsAdded: sqlOp`${creditBalancesTable.lifetimeCreditsAdded} + ${sellerShareCredits}`,
+          }).where(eqOp(creditBalancesTable.userId, sellerId));
+        }
+        const sellerUpdated = await tx.select({ credits: creditBalancesTable.credits }).from(creditBalancesTable).where(eqOp(creditBalancesTable.userId, sellerId)).limit(1);
+        await tx.insert(creditTransactions).values({
+          userId: sellerId,
+          amount: sellerShareCredits,
+          type: "marketplace_sale",
+          description: `Stripe sale of "${listing.title}" (${listingUid}) — 92% of ${priceCredits} credits ($${(priceCents / 100).toFixed(2)} paid via card)`,
+          balanceAfter: sellerUpdated[0]?.credits ?? 0,
+        });
+
+        // Update seller profile stats
+        const sellerProfile = await getSellerProfile(sellerId);
+        if (sellerProfile) {
+          await updateSellerProfile(sellerId, {
+            totalSales: (sellerProfile.totalSales || 0) + 1,
+            totalRevenue: (sellerProfile.totalRevenue || 0) + sellerShareCredits,
+          });
+        }
       }
-      const sellerUpdated = await db.select({ credits: creditBalancesTable.credits }).from(creditBalancesTable).where(eqOp(creditBalancesTable.userId, sellerId)).limit(1);
-      await db.insert(creditTransactions).values({
-        userId: sellerId,
-        amount: sellerShareCredits,
-        type: "marketplace_sale",
-        description: `Stripe sale of "${listing.title}" (${listingUid}) — 92% of ${priceCredits} credits ($${(priceCents / 100).toFixed(2)} paid via card)`,
-        balanceAfter: sellerUpdated[0]?.credits ?? 0,
+
+      // Create purchase record
+      const purchaseUid = `PUR-${randomUUID().split("-").slice(0, 2).join("")}`.toUpperCase();
+      const downloadToken = randomUUID();
+
+      await createPurchase({
+        uid: purchaseUid,
+        buyerId: userId,
+        listingId,
+        sellerId,
+        priceCredits,
+        priceUsd: priceCents,
+        downloadToken,
       });
 
-      // Update seller profile stats
-      const sellerProfile = await getSellerProfile(sellerId);
-      if (sellerProfile) {
-        await updateSellerProfile(sellerId, {
-          totalSales: (sellerProfile.totalSales || 0) + 1,
-          totalRevenue: (sellerProfile.totalRevenue || 0) + sellerShareCredits,
-        });
-      }
-    }
-
-    // Create purchase record
-    const { randomUUID } = await import("crypto");
-    const purchaseUid = `PUR-${randomUUID().split("-").slice(0, 2).join("")}`.toUpperCase();
-    const downloadToken = randomUUID();
-
-    await createPurchase({
-      uid: purchaseUid,
-      buyerId: userId,
-      listingId,
-      sellerId,
-      priceCredits,
-      priceUsd: priceCents,
-      downloadToken,
+      // Update listing stats
+      await tx.update(marketplaceListings).set({
+        totalSales: sqlOp`${marketplaceListings.totalSales} + 1`,
+        totalRevenue: sqlOp`${marketplaceListings.totalRevenue} + ${sellerShareCredits}`,
+      }).where(eqOp(marketplaceListings.id, listingId));
     });
-
-    // Update listing stats
-    await db.update(marketplaceListings).set({
-      totalSales: sqlOp`${marketplaceListings.totalSales} + 1`,
-      totalRevenue: sqlOp`${marketplaceListings.totalRevenue} + ${sellerShareCredits}`,
-    }).where(eqOp(marketplaceListings.id, listingId));
 
     const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || "";
     log.info(`[Stripe Webhook] Marketplace purchase completed: buyer=${userId}, listing=${listingId} (${listingUid}), paid=$${(priceCents / 100).toFixed(2)}, seller_share=${sellerShareCredits} credits, payment_intent=${paymentIntentId}`);
