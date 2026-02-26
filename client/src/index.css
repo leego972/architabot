@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* ─── iOS/Android Safe Areas ─────────────────────────────────────── */
 :root {
@@ -27,11 +25,34 @@ body {
 }
 
 /* ─── Touch Targets & Utilities ──────────────────────────────────── */
-@layer utilities {
-  .touch-target {
-    min-height: 44px;
-    min-width: 44px;
+@utility touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@utility safe-area-bottom {
+  padding-bottom: max(0.5rem, var(--sab));
+}
+
+@utility safe-area-top {
+  padding-top: max(0.5rem, var(--sat));
+}
+
+@utility -webkit-overflow-scrolling-touch {
+  -webkit-overflow-scrolling: touch;
+}
+
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
+}
+
+@utility no-select {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Ensure minimum 44px touch targets on mobile for all interactive elements */
@@ -42,29 +63,6 @@ body {
   [role="menuitem"] {
     min-height: 44px;
     min-width: 44px;
-  }
-}
-
-@layer utilities {
-  .safe-area-bottom {
-    padding-bottom: max(0.5rem, var(--sab));
-  }
-  .safe-area-top {
-    padding-top: max(0.5rem, var(--sat));
-  }
-  .-webkit-overflow-scrolling-touch {
-    -webkit-overflow-scrolling: touch;
-  }
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
-  .no-select {
-    -webkit-user-select: none;
-    user-select: none;
   }
 }
 
@@ -101,13 +99,34 @@ body {
 
 /* ─── Button Variants ────────────────────────────────────────────── */
 .btn-primary {
-  @apply px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition;
+  padding: 0.5rem 1rem;
+  background-color: #2563eb;
+  color: white;
+  border-radius: 0.25rem;
+  transition: background-color 0.15s;
+  &:hover {
+    background-color: #1d4ed8;
+  }
 }
 .btn-secondary {
-  @apply px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition;
+  padding: 0.5rem 1rem;
+  background-color: #16a34a;
+  color: white;
+  border-radius: 0.25rem;
+  transition: background-color 0.15s;
+  &:hover {
+    background-color: #15803d;
+  }
 }
 .btn-danger {
-  @apply px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition;
+  padding: 0.5rem 1rem;
+  background-color: #dc2626;
+  color: white;
+  border-radius: 0.25rem;
+  transition: background-color 0.15s;
+  &:hover {
+    background-color: #b91c1c;
+  }
 }
 
 /* ─── Mobile Sidebar & Dialog ────────────────────────────────────── */
