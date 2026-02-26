@@ -493,14 +493,13 @@ Use action="patch" with patches array: [{"search": "exact text to find", "replac
 All colours are defined in **client/src/index.css** using Tailwind CSS v4 CSS variables.
 
 The file MUST contain ALL of these sections (if any are missing, colours will be invisible/broken):
-```
-@import "tw-animate-css";           // animations — REQUIRED
-@custom-variant dark (&:is(.dark *)); // dark mode via .dark class — REQUIRED
-@theme inline { ... }               // maps --color-* tokens to CSS vars — REQUIRED
-:root { --background: oklch(...); --foreground: oklch(...); ... }  // light theme
-.dark { --background: oklch(...); --foreground: oklch(...); ... }  // dark theme
-@layer base { body { @apply bg-background text-foreground; } }    // applies defaults
-```
+
+    @import "tw-animate-css";           // animations - REQUIRED
+    @custom-variant dark (&:is(.dark *)); // dark mode via .dark class - REQUIRED
+    @theme inline { ... }               // maps --color-* tokens to CSS vars - REQUIRED
+    :root { --background: oklch(...); --foreground: oklch(...); ... }  // light theme
+    .dark { --background: oklch(...); --foreground: oklch(...); ... }  // dark theme
+    @layer base { body { @apply bg-background text-foreground; } }    // applies defaults
 
 **Diagnosing visual issues:**
 - White screen / invisible text → @theme inline block or :root variables missing from index.css

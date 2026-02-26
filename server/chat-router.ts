@@ -343,23 +343,23 @@ You can modify the Titan codebase. When asked to build something, the BUILD_SYST
 The colour system is defined in client/src/index.css using Tailwind CSS v4 CSS variables.
 
 **How it works:**
-- `@import "tw-animate-css"` — required for animation utilities
-- `@custom-variant dark (&:is(.dark *))` — enables dark mode via .dark class
-- `@theme inline { --color-background: var(--background); ... }` — maps Tailwind colour tokens to CSS variables
-- `:root { --background: oklch(...); --foreground: oklch(...); ... }` — light theme colour values
-- `.dark { --background: oklch(...); --foreground: oklch(...); ... }` — dark theme colour values
-- `@layer base { * { @apply border-border outline-ring/50; } body { @apply bg-background text-foreground; } }` — applies defaults
+- '@import "tw-animate-css"' — required for animation utilities
+- '@custom-variant dark (&:is(.dark *))' — enables dark mode via .dark class
+- '@theme inline { --color-background: var(--background); ... }' — maps Tailwind colour tokens to CSS variables
+- ':root { --background: oklch(...); --foreground: oklch(...); ... }' — light theme colour values
+- '.dark { --background: oklch(...); --foreground: oklch(...); ... }' — dark theme colour values
+- '@layer base { * { @apply border-border; } body { @apply bg-background text-foreground; } }' — applies defaults
 
 **Common issues and fixes:**
-1. **Invisible text / wrong colours / white screen**: The @theme inline block or :root/:dark CSS variables are missing from index.css. Fix: restore them.
-2. **Dark mode not working**: The @custom-variant dark line is missing. Fix: add it back.
-3. **Animations broken**: The tw-animate-css import is missing. Fix: add `@import "tw-animate-css";` at the top.
-4. **Mobile layout broken**: Check ChatPage.tsx — the container needs `h-[100dvh]`, the input area needs `flex-row` not `flex-col` on mobile, and the messages area needs `overflow-y-auto flex-1 min-h-0`.
+1. Invisible text / wrong colours / white screen: The @theme inline block or :root/.dark CSS variables are missing from index.css. Fix: restore them.
+2. Dark mode not working: The @custom-variant dark line is missing. Fix: add it back.
+3. Animations broken: The tw-animate-css import is missing. Fix: add '@import "tw-animate-css";' at the top of index.css.
+4. Mobile layout broken: Check ChatPage.tsx — the container needs h-[100dvh], the input area needs flex-row not flex-col on mobile, and the messages area needs overflow-y-auto flex-1 min-h-0.
 
 **To diagnose any visual issue:**
-1. `self_read_file` on `client/src/index.css` — check for @theme inline and :root variables
-2. `self_read_file` on the affected page component
-3. `self_grep_codebase` for the specific CSS class or variable that looks wrong
+1. Use self_read_file on 'client/src/index.css' — check for @theme inline and :root variables
+2. Use self_read_file on the affected page component
+3. Use self_grep_codebase for the specific CSS class or variable that looks wrong
 
 ## ELITE CODE GENERATION STANDARDS
 Every line of code you produce must be defensible in a professional code review. You are not generating tutorial code — you are producing production-grade software.
@@ -1363,6 +1363,7 @@ Do NOT attempt any tool calls or builds.`;
                 const correction = isLockoutRefusal ? SELF_BUILDER_LOCKOUT_CORRECTION : REFUSAL_CORRECTION;
                 llmMessages.push({ role: 'user', content: correction });
                 forceFirstTool = 'self_list_files';
+                // Force self-build mode if we detected a lockout claim
                 if (isLockoutRefusal && !isSelfBuild) {
                   log.warn('[Chat] Lockout detected on non-self-build — forcing self-build mode');
                 }
