@@ -11,7 +11,7 @@ import { createPool } from "mysql2";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { serveStatic, setupVite } from "./vite";
+import { serveStatic } from "./serve-static";
 import { registerStripeWebhook, processAllMonthlyRefills } from "../stripe-router";
 import { registerDownloadRoute } from "../download-gate";
 import { registerApiRoutes } from "../api-access-router";
@@ -247,6 +247,10 @@ async function startServer() {
   );
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
+    // Dynamic import: setupVite depends on 'vite' (devDependency) which is not
+    // available in production. By using dynamic import here, esbuild won't
+    // include vite.ts's setupVite branch in the production bundle.
+    const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   } else {
     serveStatic(app);
