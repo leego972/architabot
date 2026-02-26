@@ -57,8 +57,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
-  // Trust proxy headers (Cloud Run, Cloudflare, etc.)
-  app.set("trust proxy", true);
+  // Trust proxy headers (Railway uses a single reverse proxy layer)
+  // Use number 1 instead of true to prevent express-rate-limit ERR_ERL_PERMISSIVE_TRUST_PROXY
+  app.set("trust proxy", 1);
   const server = createServer(app);
 
   // ── Security Headers ──────────────────────────────────────────

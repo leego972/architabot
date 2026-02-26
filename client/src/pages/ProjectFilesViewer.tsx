@@ -88,9 +88,10 @@ function formatDate(dateStr: string): string {
 // Group files by project (first directory in path)
 interface ProjectFile {
   id: number;
-  filePath: string;
+  path: string;
+  name: string;
   s3Key?: string | null;
-  content?: string | null;
+  hasContent?: boolean;
   size?: number | null;
   createdAt?: string;
 }
@@ -105,7 +106,7 @@ interface ProjectGroup {
 function groupByProject(files: ProjectFile[]): ProjectGroup[] {
   const groups: Record<string, ProjectFile[]> = {};
   for (const file of files) {
-    const parts = file.filePath.split("/").filter(Boolean);
+    const parts = file.path.split("/").filter(Boolean);
     const projectName = parts.length > 1 ? parts[0] : "Ungrouped";
     if (!groups[projectName]) groups[projectName] = [];
     groups[projectName].push(file);
@@ -113,8 +114,8 @@ function groupByProject(files: ProjectFile[]): ProjectGroup[] {
   return Object.entries(groups)
     .map(([name, files]) => ({
       name,
-      files: files.sort((a, b) => a.filePath.localeCompare(b.filePath)),
-      totalSize: files.reduce((sum, f) => sum + (f.size || f.content?.length || 0), 0),
+      files: files.sort((a, b) => a.path.localeCompare(b.path)),
+      totalSize: files.reduce((sum, f) => sum + (f.size || 0), 0),
       lastModified: files.reduce((latest, f) => {
         const d = f.createdAt || "";
         return d > latest ? d : latest;
@@ -181,7 +182,7 @@ export default function ProjectFilesViewer() {
     return projects
       .map((p) => ({
         ...p,
-        files: p.files.filter((f) => f.filePath.toLowerCase().includes(q)),
+        files: p.files.filter((f) => f.path.toLowerCase().includes(q)),
       }))
       .filter((p) => p.files.length > 0);
   }, [projects, searchQuery]);
@@ -201,24 +202,29 @@ export default function ProjectFilesViewer() {
 
   const handleDownloadFile = useCallback(async (file: ProjectFile) => {
     try {
-      // If we have content in memory, download directly
-      if (file.content) {
-        const blob = new Blob([file.content], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = file.filePath.split("/").pop() || "file";
-        a.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
-      // Otherwise try S3 URL via the download endpoint
+      // Try S3 URL via the download endpoint first
       if (file.s3Key) {
         const res = await fetch(`/api/trpc/sandbox.projectFileDownloadUrl?input=${encodeURIComponent(JSON.stringify({ json: { fileId: file.id } }))}`);
         const data = await res.json();
         const url = data?.result?.data?.json?.url;
         if (url) {
           window.open(url, "_blank");
+          return;
+        }
+      }
+      // Fallback: fetch content and download as text
+      if (file.hasContent) {
+        const res = await fetch(`/api/trpc/sandbox.projectFileContent?input=${encodeURIComponent(JSON.stringify({ json: { fileId: file.id } }))}`);
+        const data = await res.json();
+        const content = data?.result?.data?.json?.content;
+        if (content) {
+          const blob = new Blob([content], { type: "text/plain" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = file.path.split("/").pop() || "file";
+          a.click();
+          URL.revokeObjectURL(url);
           return;
         }
       }
@@ -249,7 +255,7 @@ export default function ProjectFilesViewer() {
           const data = await res.json();
           const content = data?.result?.data?.json?.content;
           if (content) {
-            contents.push({ path: file.filePath, content });
+            contents.push({ path: file.path, content });
           }
         } catch {}
       }
@@ -340,7 +346,7 @@ export default function ProjectFilesViewer() {
   if (selectedFileId) {
     const file = allFiles.find((f) => f.id === selectedFileId);
     const content = fileContentQuery.data?.content;
-    const lang = file ? getLanguage(file.filePath) : "text";
+    const lang = file ? getLanguage(file.path) : "text";
 
     return (
       <div className="max-w-5xl mx-auto p-4 space-y-4">
@@ -355,7 +361,7 @@ export default function ProjectFilesViewer() {
             Back
           </Button>
           <span className="text-sm text-muted-foreground truncate">
-            {file?.filePath}
+            {file?.path}
           </span>
         </div>
 
@@ -581,9 +587,9 @@ export default function ProjectFilesViewer() {
         {/* File list */}
         <div className="space-y-1">
           {projectFiles.map((file) => {
-            const Icon = getFileIcon(file.filePath);
-            const fileName = file.filePath.split("/").pop() || file.filePath;
-            const dirPath = file.filePath.split("/").slice(1, -1).join("/");
+            const Icon = getFileIcon(file.path);
+            const fileName = file.path.split("/").pop() || file.path;
+            const dirPath = file.path.split("/").slice(1, -1).join("/");
             const isSelected = selectedIds.has(file.id);
 
             return (
@@ -757,7 +763,7 @@ export default function ProjectFilesViewer() {
               {Array.from(
                 new Set(
                   project.files
-                    .map((f) => f.filePath.split(".").pop()?.toLowerCase())
+                    .map((f) => f.path.split(".").pop()?.toLowerCase())
                     .filter(Boolean)
                 )
               )
