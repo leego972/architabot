@@ -172,9 +172,16 @@ export const fetcherRouter = router({
 
   revealCredential: protectedProcedure
     .input(z.object({ credentialId: z.number() }))
-    .query(async ({ ctx }) => {
+    .query(async ({ ctx, input }) => {
       const creds = await getDecryptedCredentials(ctx.user.id);
-      return creds;
+      if (input.credentialId === 0) {
+        // Legacy: return all (for backward compat)
+        return creds;
+      }
+      // Return only the requested credential
+      const found = creds.filter(c => c.id === input.credentialId);
+      if (found.length === 0) throw new Error("Credential not found");
+      return found;
     }),
 
   deleteCredential: protectedProcedure
@@ -221,7 +228,11 @@ export const fetcherRouter = router({
         const plan = await getUserPlan(ctx.user.id);
         enforceFeature(plan.planId, "captcha_solving", "CAPTCHA auto-solving");
       }
-      return updateSettings(ctx.user.id, input);
+      // Don't overwrite secrets with null when user didn't change them
+      const cleanInput = { ...input };
+      if (cleanInput.proxyPassword === null) delete cleanInput.proxyPassword;
+      if (cleanInput.captchaApiKey === null) delete cleanInput.captchaApiKey;
+      return updateSettings(ctx.user.id, cleanInput);
     }),
 
   // ─── Proxy Pool Management (gated by plan) ────────────────────

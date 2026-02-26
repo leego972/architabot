@@ -817,6 +817,8 @@ export default function ChatPage() {
   interface StreamEvent {
     type: string;
     tool?: string;
+    description?: string;
+    summary?: string;
     success?: boolean;
     preview?: string;
     message?: string;
@@ -825,6 +827,7 @@ export default function ChatPage() {
   }
   const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
   const [showStreamPanel, setShowStreamPanel] = useState(true);
+  const [buildLog, setBuildLog] = useState<StreamEvent[]>([]); // persistent log of all events for the current message
   const eventSourceRef = useRef<EventSource | null>(null);
   const isMobile = useIsMobile();
   const [, setLocation] = useLocation();
@@ -1132,27 +1135,47 @@ export default function ChatPage() {
     setIsLoading(true);
     setLoadingPhase("Thinking...");
     setStreamEvents([{ type: 'thinking', message: 'Processing your request...', timestamp: Date.now() }]);
+    setBuildLog([]);
 
     if (textareaRef.current) textareaRef.current.style.height = "auto";
 
+    // Pre-create conversation if this is a new chat, so we can connect SSE before sending
+    let convIdForStream = activeConversationId;
+    if (!convIdForStream) {
+      try {
+        const newConv = await utils.client.chat.createConversation.mutate({});
+        convIdForStream = newConv.id;
+        setActiveConversationId(newConv.id);
+        utils.chat.listConversations.invalidate();
+      } catch {
+        // Failed to pre-create — sendMessage will create it server-side
+      }
+    }
+
     // Connect to SSE stream for real-time events
-    const convIdForStream = activeConversationId;
     if (convIdForStream) {
       try {
         const es = new EventSource(`/api/chat/stream/${convIdForStream}`);
         eventSourceRef.current = es;
         es.addEventListener('tool_start', (e) => {
           const data = JSON.parse(e.data);
-          setStreamEvents(prev => [...prev, { type: 'tool_start', tool: data.tool, round: data.round, timestamp: Date.now() }]);
-          setLoadingPhase(`Using ${data.tool.replace(/_/g, ' ')}...`);
+          const evt: StreamEvent = { type: 'tool_start', tool: data.tool, description: data.description, round: data.round, timestamp: Date.now() };
+          setStreamEvents(prev => [...prev, evt]);
+          setBuildLog(prev => [...prev, evt]);
+          setLoadingPhase(data.description || `Using ${data.tool.replace(/_/g, ' ')}...`);
         });
         es.addEventListener('tool_result', (e) => {
           const data = JSON.parse(e.data);
-          setStreamEvents(prev => [...prev, { type: 'tool_result', tool: data.tool, success: data.success, preview: data.preview, round: data.round, timestamp: Date.now() }]);
+          const evt: StreamEvent = { type: 'tool_result', tool: data.tool, success: data.success, summary: data.summary, preview: data.preview, round: data.round, timestamp: Date.now() };
+          setStreamEvents(prev => [...prev, evt]);
+          setBuildLog(prev => [...prev, evt]);
         });
         es.addEventListener('thinking', (e) => {
           const data = JSON.parse(e.data);
-          setStreamEvents(prev => [...prev, { type: 'thinking', message: data.message, timestamp: Date.now() }]);
+          const evt: StreamEvent = { type: 'thinking', message: data.message, round: data.round, timestamp: Date.now() };
+          setStreamEvents(prev => [...prev, evt]);
+          setBuildLog(prev => [...prev, evt]);
+          setLoadingPhase(data.message || 'Thinking...');
         });
         es.addEventListener('done', () => { es.close(); eventSourceRef.current = null; });
         es.addEventListener('error', () => { es.close(); eventSourceRef.current = null; });
@@ -1191,10 +1214,11 @@ export default function ChatPage() {
       }
       const result = await sendMutation.mutateAsync({
         message: finalMessage,
-        conversationId: activeConversationId || undefined,
+        conversationId: convIdForStream || undefined,
       });
 
-      if (!activeConversationId && result.conversationId) {
+      // If conversation was created server-side (fallback), update the ID
+      if (!convIdForStream && result.conversationId) {
         setActiveConversationId(result.conversationId);
         utils.chat.listConversations.invalidate();
       }
@@ -1639,6 +1663,37 @@ export default function ChatPage() {
                     </div>
                   ))}
 
+                  {/* Persistent Build Log — shows after build completes */}
+                  {!isLoading && buildLog.length > 2 && (
+                    <div className="flex gap-2 sm:gap-3 justify-start">
+                      <div className="w-7 sm:w-8 shrink-0" />
+                      <details className="max-w-[90%] sm:max-w-[80%] group">
+                        <summary className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+                          <Activity className="h-3 w-3" />
+                          <span>Build log ({buildLog.filter(e => e.type === 'tool_start').length} actions)</span>
+                        </summary>
+                        <div className="mt-1 ml-5 space-y-0.5 border-l-2 border-border/30 pl-3 py-1">
+                          {buildLog.map((evt, i) => (
+                            <div key={i} className="flex items-start gap-2 text-xs py-0.5">
+                              {evt.type === 'thinking' && (
+                                <><Cpu className="h-3 w-3 text-blue-400/60 shrink-0 mt-0.5" /><span className="text-muted-foreground">{evt.message}</span></>
+                              )}
+                              {evt.type === 'tool_start' && (
+                                <><Activity className="h-3 w-3 text-amber-400/60 shrink-0 mt-0.5" /><span className="text-muted-foreground">{evt.description || (evt.tool || '').replace(/_/g, ' ')}</span></>
+                              )}
+                              {evt.type === 'tool_result' && evt.success && (
+                                <><CheckCircle2 className="h-3 w-3 text-emerald-400/60 shrink-0 mt-0.5" /><span className="text-muted-foreground">{evt.summary || 'Done'}</span></>
+                              )}
+                              {evt.type === 'tool_result' && !evt.success && (
+                                <><XCircle className="h-3 w-3 text-red-400/60 shrink-0 mt-0.5" /><span className="text-red-400/80">{evt.summary || 'Failed'}</span></>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </div>
+                  )}
+
                   {/* Help panel */}
                   {showHelp && (
                     <div className="flex gap-2 sm:gap-3 justify-start">
@@ -1670,22 +1725,22 @@ export default function ChatPage() {
                             {showStreamPanel ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                           </button>
                         </div>
-                        {/* Real-time activity feed */}
+                        {/* Real-time activity feed — thought process & build log */}
                         {showStreamPanel && streamEvents.length > 0 && (
-                          <div className="space-y-1.5 border-t border-border/30 pt-2 max-h-[200px] overflow-y-auto">
-                            {streamEvents.slice(-8).map((evt, i) => (
-                              <div key={i} className="flex items-center gap-2 text-xs">
+                          <div className="space-y-1 border-t border-border/30 pt-2 max-h-[300px] overflow-y-auto scrollbar-thin">
+                            {streamEvents.slice(-12).map((evt, i) => (
+                              <div key={i} className="flex items-start gap-2 text-xs py-0.5">
                                 {evt.type === 'thinking' && (
-                                  <><Cpu className="h-3 w-3 text-blue-400 shrink-0" /><span className="text-blue-400">Thinking...</span></>
+                                  <><Cpu className="h-3 w-3 text-blue-400 shrink-0 mt-0.5" /><span className="text-blue-400">{evt.message || 'Thinking...'}</span></>
                                 )}
                                 {evt.type === 'tool_start' && (
-                                  <><Activity className="h-3 w-3 text-amber-400 shrink-0 animate-pulse" /><span className="text-amber-400">{(evt.tool || '').replace(/_/g, ' ')}</span></>
+                                  <><Activity className="h-3 w-3 text-amber-400 shrink-0 mt-0.5 animate-pulse" /><span className="text-amber-400">{evt.description || (evt.tool || '').replace(/_/g, ' ')}</span></>
                                 )}
                                 {evt.type === 'tool_result' && evt.success && (
-                                  <><CheckCircle2 className="h-3 w-3 text-green-400 shrink-0" /><span className="text-green-400">{(evt.tool || '').replace(/_/g, ' ')} — done</span></>
+                                  <><CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0 mt-0.5" /><span className="text-emerald-400">{evt.summary || `${(evt.tool || '').replace(/_/g, ' ')} — done`}</span></>
                                 )}
                                 {evt.type === 'tool_result' && !evt.success && (
-                                  <><XCircle className="h-3 w-3 text-red-400 shrink-0" /><span className="text-red-400">{(evt.tool || '').replace(/_/g, ' ')} — failed</span></>
+                                  <><XCircle className="h-3 w-3 text-red-400 shrink-0 mt-0.5" /><span className="text-red-400">{evt.summary || `${(evt.tool || '').replace(/_/g, ' ')} — failed`}</span></>
                                 )}
                               </div>
                             ))}

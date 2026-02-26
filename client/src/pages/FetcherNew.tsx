@@ -462,32 +462,56 @@ export default function FetcherNew() {
           {(customProvidersList.data?.length ?? 0) > 0 && (
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {(customProvidersList.data || []).map((cp) => (
-                  <div
-                    key={cp.id}
-                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent/50 group"
-                  >
-                    <span className="text-lg">{cp.icon || "🔌"}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">{cp.name}</p>
-                        <Badge variant="outline" className="text-[10px]">Custom</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {cp.description || cp.keysUrl}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                      onClick={() => deleteCustomProvider.mutate({ id: cp.id })}
+                {(customProvidersList.data || []).map((cp) => {
+                  const customId = `custom_${cp.id}`;
+                  const isSelected = selectedProviders.includes(customId);
+                  return (
+                    <div
+                      key={cp.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors group ${
+                        isSelected ? "border-primary bg-primary/10" : "hover:bg-accent/50"
+                      }`}
+                      onClick={() => {
+                        setSelectedProviders((prev) =>
+                          prev.includes(customId)
+                            ? prev.filter((p) => p !== customId)
+                            : [...prev, customId]
+                        );
+                      }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => {
+                          setSelectedProviders((prev) =>
+                            checked
+                              ? [...prev, customId]
+                              : prev.filter((p) => p !== customId)
+                          );
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span className="text-lg">{cp.icon || "🔌"}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{cp.name}</p>
+                          <Badge variant="outline" className="text-[10px]">Custom</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {cp.description || cp.keysUrl}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                        onClick={(e) => { e.stopPropagation(); deleteCustomProvider.mutate({ id: cp.id }); }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           )}

@@ -1,40 +1,81 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
-import { Loader2, RefreshCw, Trash2, Eye, EyeOff, KeyRound } from "lucide-react";
-import { useState } from "react";
+import { Loader2, RefreshCw, Trash2, Eye, EyeOff, KeyRound, Copy, Check, Search } from "lucide-react";
+import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
 export default function FetcherCredentials() {
   const { data: credentials, isLoading, refetch } = trpc.fetcher.listCredentials.useQuery();
   const [revealedIds, setRevealedIds] = useState<Set<number>>(new Set());
   const [revealedValues, setRevealedValues] = useState<Record<number, string>>({});
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const deleteCred = trpc.fetcher.deleteCredential.useMutation({
     onSuccess: () => {
       toast.success("Credential deleted");
+      setConfirmDeleteId(null);
       refetch();
     },
     onError: (err) => toast.error(err.message),
   });
 
-  const { data: decryptedCreds } = trpc.fetcher.revealCredential.useQuery(
-    { credentialId: 0 },
-    { enabled: revealedIds.size > 0 }
-  );
-
-  const toggleReveal = (id: number) => {
-    setRevealedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
+  const toggleReveal = async (id: number) => {
+    if (revealedIds.has(id)) {
+      // Hide it
+      setRevealedIds((prev) => {
+        const next = new Set(prev);
         next.delete(id);
-      } else {
-        next.add(id);
+        return next;
+      });
+      return;
+    }
+
+    // Fetch the specific credential's decrypted value
+    try {
+      const res = await fetch(`/api/trpc/fetcher.revealCredential?input=${encodeURIComponent(JSON.stringify({ credentialId: id }))}`, {
+        credentials: "include",
+      });
+      const json = await res.json();
+      const creds = json?.result?.data;
+      if (creds && Array.isArray(creds) && creds.length > 0) {
+        const found = creds.find((c: any) => c.id === id);
+        if (found) {
+          setRevealedValues((prev) => ({ ...prev, [id]: found.value }));
+          setRevealedIds((prev) => new Set([...prev, id]));
+        }
       }
-      return next;
-    });
+    } catch {
+      toast.error("Failed to reveal credential");
+    }
   };
+
+  const copyToClipboard = async (id: number, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedId(id);
+      toast.success("Copied to clipboard");
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
+
+  const filteredCredentials = useMemo(() => {
+    if (!credentials) return [];
+    if (!searchQuery.trim()) return credentials;
+    const q = searchQuery.toLowerCase();
+    return credentials.filter(
+      (c) =>
+        c.providerName.toLowerCase().includes(q) ||
+        c.keyType.toLowerCase().includes(q) ||
+        (c.keyLabel || "").toLowerCase().includes(q)
+    );
+  }, [credentials, searchQuery]);
 
   if (isLoading) {
     return (
@@ -70,62 +111,129 @@ export default function FetcherCredentials() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {credentials.map((cred) => {
-            const isRevealed = revealedIds.has(cred.id);
-            const decrypted = decryptedCreds?.find((d) => d.id === cred.id);
+        <>
+          {/* Search */}
+          {credentials.length > 3 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search credentials by provider, key type, or label..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          )}
 
-            return (
-              <Card key={cred.id}>
-                <CardContent className="flex items-center justify-between py-4">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <KeyRound className="h-5 w-5 text-primary shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">{cred.providerName}</p>
-                        <Badge variant="secondary" className="text-xs">
-                          {cred.keyType}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1 font-mono truncate">
-                        {isRevealed && decrypted
-                          ? decrypted.value
-                          : cred.encryptedValue}
-                      </p>
-                      {cred.keyLabel && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {cred.keyLabel}
+          {/* Count */}
+          <p className="text-xs text-muted-foreground">
+            {filteredCredentials.length} credential{filteredCredentials.length !== 1 ? "s" : ""}
+            {searchQuery && ` matching "${searchQuery}"`}
+          </p>
+
+          <div className="space-y-3">
+            {filteredCredentials.map((cred) => {
+              const isRevealed = revealedIds.has(cred.id);
+              const decryptedValue = revealedValues[cred.id];
+              const isCopied = copiedId === cred.id;
+              const isConfirmingDelete = confirmDeleteId === cred.id;
+
+              return (
+                <Card key={cred.id}>
+                  <CardContent className="flex items-center justify-between py-4">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <KeyRound className="h-5 w-5 text-primary shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{cred.providerName}</p>
+                          <Badge variant="secondary" className="text-xs">
+                            {cred.keyType}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 font-mono truncate select-all">
+                          {isRevealed && decryptedValue
+                            ? decryptedValue
+                            : "••••••••••••••••••••••••"}
                         </p>
+                        {cred.keyLabel && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {cred.keyLabel}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Copy button — only when revealed */}
+                      {isRevealed && decryptedValue && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(cred.id, decryptedValue)}
+                          title="Copy to clipboard"
+                        >
+                          {isCopied ? (
+                            <Check className="h-4 w-4 text-emerald-500" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
+                      {/* Reveal/hide button */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleReveal(cred.id)}
+                        title={isRevealed ? "Hide" : "Reveal"}
+                      >
+                        {isRevealed ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                      {/* Delete with confirmation */}
+                      {isConfirmingDelete ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => deleteCred.mutate({ credentialId: cred.id })}
+                            disabled={deleteCred.isPending}
+                            className="text-xs h-7 px-2"
+                          >
+                            {deleteCred.isPending ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              "Delete"
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-xs h-7 px-2"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirmDeleteId(cred.id)}
+                          className="text-destructive hover:text-destructive"
+                          title="Delete credential"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleReveal(cred.id)}
-                    >
-                      {isRevealed ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteCred.mutate({ credentialId: cred.id })}
-                      disabled={deleteCred.isPending}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

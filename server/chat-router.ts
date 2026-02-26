@@ -308,6 +308,7 @@ Complete app navigation map:
 | Release Management | /fetcher/releases | Manage app releases (admin) |
 | Admin Panel | /fetcher/admin | User management (admin) |
 | Self-Improvement | /fetcher/self-improvement | AI self-improvement dashboard (admin) |
+| My Projects | /project-files | View, download, and manage builder project files |
 | Pricing | /pricing | Plans and pricing |
 | Contact | /contact | Contact support |
 
@@ -429,6 +430,111 @@ function extractText(
       .join("\n");
   }
   return "";
+}
+
+// ─── Human-readable tool descriptions for streaming UI ───────────────
+function getToolDescription(toolName: string, args: Record<string, unknown>): string {
+  switch (toolName) {
+    case 'self_read_file': return `Reading ${args.filePath || 'file'}...`;
+    case 'self_list_files': return `Listing files in ${args.dirPath || '/'}...`;
+    case 'self_modify_file': return `Modifying ${args.filePath || 'file'}...`;
+    case 'self_multi_file_modify': return `Modifying ${(args.modifications as any[])?.length || 0} files...`;
+    case 'self_health_check': return 'Running health check...';
+    case 'self_type_check': return 'Running TypeScript type check...';
+    case 'self_run_tests': return 'Running tests...';
+    case 'self_grep_codebase': return `Searching for "${(args.pattern as string)?.slice(0, 40) || '...'}"...`;
+    case 'self_git_diff': return 'Checking git changes...';
+    case 'self_env_check': return 'Checking environment...';
+    case 'self_db_schema_inspect': return `Inspecting database${args.table ? ` table: ${args.table}` : ''}...`;
+    case 'self_code_stats': return 'Analysing codebase stats...';
+    case 'self_deployment_check': return 'Checking deployment status...';
+    case 'self_save_checkpoint': return `Saving checkpoint: ${args.name || 'unnamed'}...`;
+    case 'self_analyze_file': return `Analysing ${args.filePath || 'file'}...`;
+    case 'self_find_dead_code': return 'Scanning for dead code...';
+    case 'self_api_map': return 'Mapping API endpoints...';
+    case 'self_dependency_audit': return 'Auditing dependencies...';
+    case 'self_restart': return 'Restarting server...';
+    case 'self_rollback': return 'Rolling back changes...';
+    case 'sandbox_exec': return `Executing: ${(args.command as string)?.slice(0, 60) || 'command'}...`;
+    case 'sandbox_write_file': return `Writing ${args.filePath || 'file'}...`;
+    case 'sandbox_read_file': return `Reading ${args.filePath || 'file'}...`;
+    case 'sandbox_list_files': return `Listing ${args.dirPath || '/'}...`;
+    case 'create_file': return `Creating ${args.filePath || 'file'}...`;
+    case 'create_github_repo': return `Creating GitHub repo: ${args.repoName || ''}...`;
+    case 'push_to_github': return `Pushing to GitHub...`;
+    case 'web_search': return `Searching: "${(args.query as string)?.slice(0, 50) || ''}"...`;
+    case 'web_page_read': return `Reading ${(args.url as string)?.slice(0, 60) || 'page'}...`;
+    case 'list_credentials': return 'Listing credentials...';
+    case 'reveal_credential': return 'Revealing credential...';
+    case 'create_fetch_job': return `Creating fetch job for ${(args.providerIds as string[])?.join(', ') || 'providers'}...`;
+    case 'list_jobs': return 'Listing fetch jobs...';
+    case 'list_providers': return 'Listing providers...';
+    case 'navigate_to_page': return `Navigating to ${args.page || 'page'}...`;
+    case 'security_scan': return `Scanning ${args.target || 'target'}...`;
+    case 'code_security_review': return 'Reviewing code security...';
+    case 'app_research': return `Researching ${args.appName || 'app'}...`;
+    case 'app_clone': return `Cloning ${args.appName || 'app'}...`;
+    case 'website_replicate': return `Replicating ${args.url || 'website'}...`;
+    case 'get_system_status': return 'Checking system status...';
+    case 'get_plan_usage': return 'Checking plan usage...';
+    case 'list_vault_entries': return 'Listing vault entries...';
+    case 'add_vault_entry': return 'Adding vault entry...';
+    case 'activate_kill_switch': return 'Activating kill switch...';
+    case 'start_leak_scan': return 'Starting leak scan...';
+    case 'get_leak_scan_results': return 'Getting leak scan results...';
+    case 'auto_fix_vulnerability': return 'Auto-fixing vulnerability...';
+    case 'auto_fix_all_vulnerabilities': return 'Auto-fixing all vulnerabilities...';
+    default: return `${toolName.replace(/_/g, ' ')}...`;
+  }
+}
+
+function getToolResultSummary(toolName: string, args: Record<string, unknown>, result: { success: boolean; data?: unknown; error?: string }): string {
+  if (!result.success) return result.error?.slice(0, 100) || 'Failed';
+  const d = result.data as any;
+  if (!d) return 'Done';
+  switch (toolName) {
+    case 'self_read_file':
+    case 'sandbox_read_file':
+      return `Read ${d.lineCount || d.lines?.length || '?'} lines`;
+    case 'self_list_files':
+    case 'sandbox_list_files':
+      return `Found ${d.entries?.length || d.files?.length || '?'} items`;
+    case 'self_modify_file':
+      return d.action === 'create' ? `Created ${args.filePath}` : `Modified ${args.filePath}`;
+    case 'self_multi_file_modify':
+      return d.summary || `${(d.modifications || []).length} files modified`;
+    case 'self_type_check':
+      return d.passed ? 'No errors' : `${d.errorCount} error(s)`;
+    case 'self_run_tests':
+      return d.passed ? `${d.totalTests} tests passed` : `${d.failedTests}/${d.totalTests} failed`;
+    case 'self_grep_codebase':
+      return `${d.matchCount || d.matches?.length || 0} matches found`;
+    case 'sandbox_exec':
+      return d.exitCode === 0 ? 'Command succeeded' : `Exit code: ${d.exitCode}`;
+    case 'sandbox_write_file':
+      return `Wrote ${args.filePath}`;
+    case 'create_file':
+      return `Created ${args.filePath}${d.url ? ' → ' + d.url.slice(0, 50) : ''}`;
+    case 'web_search':
+      return `${d.resultCount || d.results?.length || 0} results`;
+    case 'web_page_read':
+      return `Read ${d.title || 'page'} (${d.contentLength || '?'} chars)`;
+    case 'list_credentials':
+      return `${d.count || d.credentials?.length || 0} credentials`;
+    case 'list_jobs':
+      return `${d.count || d.jobs?.length || 0} jobs`;
+    case 'navigate_to_page':
+      return `Navigate to ${d.path || args.page}`;
+    case 'self_health_check':
+    case 'self_deployment_check':
+      return d.healthy ? 'All healthy' : 'Issues found';
+    case 'self_save_checkpoint':
+      return `Checkpoint saved: ${d.name || args.name}`;
+    case 'security_scan':
+      return `${d.vulnerabilities?.length || 0} vulnerabilities found`;
+    default:
+      return typeof d === 'string' ? d.slice(0, 80) : 'Done';
+  }
 }
 
 // ─── Auto-generate title from first user message ─────────────────────
@@ -1053,14 +1159,14 @@ Do NOT attempt any tool calls or builds.`;
         while (rounds < MAX_TOOL_ROUNDS) {
           rounds++;
 
-          // PROACTIVE CONTEXT COMPRESSION: After round 5, compress old tool results to free tokens
-          // Earlier compression = faster LLM responses in later rounds (fewer input tokens)
-          if (rounds > 5 && isBuildRequest) {
-            for (let i = 0; i < llmMessages.length - 6; i++) {
+          // PROACTIVE CONTEXT COMPRESSION: After round 8, compress old tool results to free tokens
+          // Keep more context for longer to avoid losing important file content the LLM needs
+          if (rounds > 8 && isBuildRequest) {
+            for (let i = 0; i < llmMessages.length - 8; i++) {
               const msg = llmMessages[i] as any;
-              if (msg.role === 'tool' && typeof msg.content === 'string' && msg.content.length > 500) {
-                // Compress old tool results to a brief summary
-                const preview = msg.content.slice(0, 200);
+              if (msg.role === 'tool' && typeof msg.content === 'string' && msg.content.length > 1000) {
+                // Compress old tool results but keep enough for reference
+                const preview = msg.content.slice(0, 500);
                 msg.content = `[Compressed] ${preview}... [full result omitted to save context]`;
               }
             }
@@ -1112,15 +1218,9 @@ Do NOT attempt any tool calls or builds.`;
           );
           let modelTier: "fast" | "strong" | undefined;
           if (isBuildRequest) {
-            if (isSecurityBuild || isComplexBuild) {
-              // Security & complex builds: ALWAYS use stronger model for maximum quality
-              modelTier = "strong";
-            } else {
-              // Standard builds: nano for exploration, mini for code gen
-              const isExplorationRound = rounds <= 2;
-              const isForcedExploration = toolChoice !== 'auto';
-              modelTier = (isExplorationRound || isForcedExploration) ? "fast" : "strong";
-            }
+            // ALL build requests use the stronger model — code quality matters
+            // The cost difference is negligible vs. the cost of bad code output
+            modelTier = "strong";
           } else if (!activeTools || activeTools.length === 0) {
             // No tools = simple text response → nano
             modelTier = "fast";
@@ -1258,9 +1358,11 @@ Do NOT attempt any tool calls or builds.`;
             log.info(`[Chat] Executing tool: ${tc.function.name}`, { detail: JSON.stringify(args).substring(0, 200) });
 
             // Emit streaming event for real-time UI
+            // Generate a human-readable description of what the tool is doing
+            const toolDescription = getToolDescription(tc.function.name, args);
             emitChatEvent(conversationId!, {
               type: "tool_start",
-              data: { tool: tc.function.name, args, round: rounds },
+              data: { tool: tc.function.name, description: toolDescription, args, round: rounds },
             });
 
             // Check if request was aborted
@@ -1297,7 +1399,8 @@ Do NOT attempt any tool calls or builds.`;
               userId,
               userName,
               userEmail,
-              userApiKey
+              userApiKey,
+              conversationId
             );
 
             executedActions.push({
@@ -1307,20 +1410,24 @@ Do NOT attempt any tool calls or builds.`;
               success: execResult.success,
             });
 
-            // Emit tool result event
+            // Emit tool result event with human-readable summary
+            const resultSummary = getToolResultSummary(tc.function.name, args, execResult);
             emitChatEvent(conversationId!, {
               type: "tool_result",
               data: {
                 tool: tc.function.name,
                 success: execResult.success,
-                preview: JSON.stringify(execResult.data ?? null).slice(0, 200),
+                summary: resultSummary,
+                preview: JSON.stringify(execResult.data ?? null).slice(0, 300),
                 round: rounds,
               },
             });
 
             // Truncate very large tool results to prevent context overflow
             // Smaller limits = faster LLM processing (fewer input tokens)
-            const maxToolResultLen = tc.function.name === 'self_read_file' ? 12000 : 8000;
+            // Larger limits for file-reading tools that need full content in context
+            const fileTools = ['self_read_file', 'sandbox_read_file', 'self_grep_codebase', 'web_page_read'];
+            const maxToolResultLen = fileTools.includes(tc.function.name) ? 16000 : 10000;
             let toolContent = JSON.stringify(execResult);
             if (toolContent.length > maxToolResultLen) {
               log.warn(`[Chat] Truncating large tool result from ${tc.function.name}: ${toolContent.length} chars → ${maxToolResultLen}`);
@@ -1333,7 +1440,29 @@ Do NOT attempt any tool calls or builds.`;
             });
 
             // ── Smart Error Recovery for Builder ──
-            // When a self_modify_file fails, inject specific guidance so the LLM can self-correct
+            // When a tool fails, inject specific guidance so the LLM can self-correct
+            // Works for self-improvement, sandbox, and external build tools
+            if (!execResult.success && (tc.function.name === 'sandbox_exec' || tc.function.name === 'sandbox_write_file')) {
+              const errorStr = JSON.stringify(execResult.data || execResult.error || '');
+              let sandboxHint = '';
+              if (errorStr.includes('not found') || errorStr.includes('No such file')) {
+                sandboxHint = 'RECOVERY: File or directory not found. Use sandbox_list_files to check what exists, or use sandbox_exec with "mkdir -p" to create directories first.';
+              } else if (errorStr.includes('permission denied')) {
+                sandboxHint = 'RECOVERY: Permission denied. Try using sandbox_exec with "chmod" to fix permissions, or write to a different path.';
+              } else if (errorStr.includes('timeout') || errorStr.includes('timed out')) {
+                sandboxHint = 'RECOVERY: Command timed out. Break the operation into smaller steps, or use a simpler command.';
+              } else if (errorStr.includes('syntax error') || errorStr.includes('SyntaxError')) {
+                sandboxHint = 'RECOVERY: Syntax error in the code. Review the file content and fix the syntax issue before retrying.';
+              } else {
+                sandboxHint = `RECOVERY: Sandbox operation failed: ${errorStr.slice(0, 200)}. Try a different approach or check the sandbox state with sandbox_list_files.`;
+              }
+              llmMessages.push({ role: 'system', content: sandboxHint });
+              log.info(`[Chat] Injected sandbox recovery hint: ${sandboxHint.slice(0, 100)}...`);
+            }
+            if (!execResult.success && (tc.function.name === 'create_file')) {
+              const errorStr = JSON.stringify(execResult.data || execResult.error || '');
+              llmMessages.push({ role: 'system', content: `RECOVERY: create_file failed: ${errorStr.slice(0, 200)}. Verify the filePath and content parameters. filePath should be a relative path like "src/app.tsx". Content must not be empty.` });
+            }
             if (!execResult.success && isSelfBuild && (tc.function.name === 'self_modify_file' || tc.function.name === 'self_multi_file_modify')) {
               const errorStr = JSON.stringify(execResult.data || '');
               let recoveryHint = '';
