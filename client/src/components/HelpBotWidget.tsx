@@ -7,6 +7,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useArchibald } from "@/contexts/ArchibaldContext";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { TitanLogo } from "@/components/TitanLogo";
 import {
   MessageCircleQuestion,
   X,
@@ -16,7 +17,6 @@ import {
   HelpCircle,
   Navigation,
   ChevronDown,
-  Bot,
   Loader2,
   ExternalLink,
 } from "lucide-react";
@@ -259,7 +259,7 @@ export default function HelpBotWidget() {
         onClick={() => setIsMinimized(false)}
         className="fixed bottom-6 right-6 z-50 bg-card border border-border rounded-xl shadow-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-accent/50 transition-colors max-w-[260px]"
       >
-        <Bot className="h-5 w-5 text-blue-400 shrink-0" />
+        <TitanLogo size="sm" />
         <span className="text-sm font-medium truncate">Help Bot</span>
         <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 rotate-180" />
         <button
@@ -283,7 +283,7 @@ export default function HelpBotWidget() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-blue-600/10 to-purple-600/10">
         <div className="flex items-center gap-2.5">
           <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-            <Bot className="h-4 w-4 text-white" />
+            <TitanLogo size="sm" />
           </div>
           <div>
             <h3 className="text-sm font-semibold">Titan Help Bot</h3>

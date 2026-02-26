@@ -1,3 +1,4 @@
+import { TitanLogo } from "@/components/TitanLogo";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -248,7 +249,7 @@ export default function AffiliateDashboard() {
         <TabsList>
           <TabsTrigger value="partners">Partners</TabsTrigger>
           <TabsTrigger value="discovery" className="flex items-center gap-1">
-            <Bot className="w-3 h-3" />
+            <TitanLogo size="sm" />
             Auto-Discovery
           </TabsTrigger>
           <TabsTrigger value="signup" className="flex items-center gap-1">
@@ -384,7 +385,7 @@ export default function AffiliateDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className={`p-2 rounded-lg ${discoveryStatus?.isKilled ? "bg-red-500/20" : "bg-green-500/20"}`}>
-                <Bot className={`w-5 h-5 ${discoveryStatus?.isKilled ? "text-red-400" : "text-green-400"}`} />
+                <TitanLogo size="sm" />
               </div>
               <div>
                 <h3 className="font-semibold flex items-center gap-2">

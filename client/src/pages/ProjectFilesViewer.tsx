@@ -171,7 +171,10 @@ export default function ProjectFilesViewer() {
   // ── Derived data ──
   const allFiles: ProjectFile[] = useMemo(() => {
     if (!filesQuery.data?.files) return [];
-    return filesQuery.data.files as ProjectFile[];
+    return filesQuery.data.files.map((f) => ({
+      ...f,
+      createdAt: f.createdAt instanceof Date ? f.createdAt.toISOString() : (f.createdAt as unknown as string | undefined),
+    })) as ProjectFile[];
   }, [filesQuery.data]);
 
   const projects = useMemo(() => groupByProject(allFiles), [allFiles]);

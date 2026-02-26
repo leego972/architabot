@@ -106,7 +106,7 @@ async function startServer() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests. Please slow down and try again shortly.' },
-    skip: (req) => req.path === '/api/health',
+    skip: (req: import('express').Request) => req.path === '/api/health',
   });
   app.use('/api/', apiLimiter);
 

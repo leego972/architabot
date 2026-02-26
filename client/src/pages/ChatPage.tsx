@@ -1522,7 +1522,7 @@ export default function ChatPage() {
                   <div>
                     <h2 className="text-lg font-semibold mb-2">Welcome, I am Titan.</h2>
                     <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
-                      I can help you build your vision if you wish. Follow the guide to our marketplace, where you can buy and sell components, enhancements and upgrades for your projects.
+                      How can I help you today? Ask me anything — I can build, research, analyse, and assist with your projects.
                     </p>
                   </div>
 
