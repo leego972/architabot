@@ -5,10 +5,9 @@ WORKDIR /app
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy package manifests and patches
-COPY package.json pnpm-lock.yaml ./
+# Copy package manifests, npmrc, and patches
+COPY package.json pnpm-lock.yaml .npmrc ./
 COPY patches/ ./patches/
-
 # Install all dependencies (including devDependencies for build)
 RUN pnpm install --frozen-lockfile
 
@@ -62,8 +61,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package manifests, patches, and install production-only dependencies
-COPY package.json pnpm-lock.yaml ./
+# Copy package manifests, npmrc, patches, and install production-only dependencies
+COPY package.json pnpm-lock.yaml .npmrc ./
 COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile --prod
 
