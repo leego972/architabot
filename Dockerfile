@@ -85,10 +85,6 @@ RUN mkdir -p /home/titan/.cache && chown -R titan:titan /home/titan
 
 USER titan
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-5000}/api/health || exit 1
-
 # Railway injects PORT; default to 5000
 ENV NODE_ENV=production
 ENV PORT=5000
