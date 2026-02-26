@@ -168,3 +168,25 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
     url: await buildDownloadUrl(baseUrl, key, apiKey),
   };
 }
+
+export async function storageDelete(relKey: string): Promise<void> {
+  // Use S3 direct if AWS credentials are available
+  if (isS3Mode()) {
+    const { S3Client, DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    const bucket = process.env.AWS_S3_BUCKET!;
+    const region = process.env.AWS_S3_REGION || "us-east-1";
+    const client = new S3Client({
+      region,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+      },
+    });
+    const key = relKey.replace(/^\/+/, "");
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    return;
+  }
+
+  // For Manus Forge proxy mode, deletion is not supported — silently skip
+  // The file will be orphaned in storage but removed from the database
+}

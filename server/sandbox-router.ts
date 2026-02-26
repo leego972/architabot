@@ -525,4 +525,96 @@ export const sandboxRouter = router({
 
       return { content: null, error: "Content unavailable" };
     }),
+
+  // ── Get a signed download URL for a single project file ──
+  projectFileDownloadUrl: protectedProcedure
+    .input(z.object({ fileId: z.number().int() }))
+    .query(async ({ ctx, input }) => {
+      const { getDb } = await import("./db");
+      const { sandboxFiles } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return { url: null, error: "Database unavailable" };
+      const sandboxes = await listSandboxes(ctx.user.id);
+      if (sandboxes.length === 0) return { url: null, error: "No sandbox found" };
+      const [file] = await db
+        .select()
+        .from(sandboxFiles)
+        .where(and(eq(sandboxFiles.id, input.fileId), eq(sandboxFiles.sandboxId, sandboxes[0].id)))
+        .limit(1);
+      if (!file) return { url: null, error: "File not found" };
+      if (file.s3Key) {
+        try {
+          const { storageGet } = await import("./storage");
+          const { url } = await storageGet(file.s3Key);
+          return { url, fileName: file.filePath.split("/").pop() || "file" };
+        } catch {}
+      }
+      return { url: null, error: "No download available" };
+    }),
+
+  // ── Delete a single project file ──
+  deleteProjectFile: protectedProcedure
+    .input(z.object({ fileId: z.number().int() }))
+    .mutation(async ({ ctx, input }) => {
+      const { getDb } = await import("./db");
+      const { sandboxFiles } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return { success: false, error: "Database unavailable" };
+      const sandboxes = await listSandboxes(ctx.user.id);
+      if (sandboxes.length === 0) return { success: false, error: "No sandbox found" };
+      const [file] = await db
+        .select()
+        .from(sandboxFiles)
+        .where(and(eq(sandboxFiles.id, input.fileId), eq(sandboxFiles.sandboxId, sandboxes[0].id)))
+        .limit(1);
+      if (!file) return { success: false, error: "File not found" };
+      // Delete from S3 if applicable
+      if (file.s3Key) {
+        try {
+          const { storageDelete } = await import("./storage");
+          await storageDelete(file.s3Key);
+        } catch {}
+      }
+      await db.delete(sandboxFiles).where(eq(sandboxFiles.id, input.fileId));
+      return { success: true };
+    }),
+
+  // ── Delete multiple project files ──
+  deleteProjectFiles: protectedProcedure
+    .input(z.object({ fileIds: z.array(z.number().int()) }))
+    .mutation(async ({ ctx, input }) => {
+      const { getDb } = await import("./db");
+      const { sandboxFiles } = await import("../drizzle/schema");
+      const { eq, and, inArray } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return { success: false, error: "Database unavailable" };
+      const sandboxes = await listSandboxes(ctx.user.id);
+      if (sandboxes.length === 0) return { success: false, error: "No sandbox found" };
+      // Get files to delete S3 objects
+      const files = await db
+        .select()
+        .from(sandboxFiles)
+        .where(and(
+          inArray(sandboxFiles.id, input.fileIds),
+          eq(sandboxFiles.sandboxId, sandboxes[0].id)
+        ));
+      // Delete S3 objects
+      for (const file of files) {
+        if (file.s3Key) {
+          try {
+            const { storageDelete } = await import("./storage");
+            await storageDelete(file.s3Key);
+          } catch {}
+        }
+      }
+      // Delete from DB
+      if (files.length > 0) {
+        await db.delete(sandboxFiles).where(
+          inArray(sandboxFiles.id, files.map(f => f.id))
+        );
+      }
+      return { success: true, deleted: files.length };
+    }),
 });

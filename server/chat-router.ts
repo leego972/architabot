@@ -1002,15 +1002,8 @@ Do NOT attempt any tool calls or builds.`;
       const isBuildRequest = isSelfBuild || isExternalBuild;
       let forceFirstTool: string | null = null;
 
-      // If the intent is ambiguous, inject a system message telling Titan to ask clarifying questions
-      if (needsClarification) {
-        log.info(`[Chat] Ambiguous build intent — injecting clarification prompt`);
-        const userMsgIdx = llmMessages.length - 1;
-        llmMessages.splice(userMsgIdx, 0, {
-          role: 'system',
-          content: `The user's request is ambiguous — it's unclear whether they want you to modify YOUR OWN code/features (self-improvement) or build a separate project in the sandbox. Before proceeding, ask the user a brief clarifying question to understand exactly what they want. For example: "I'd be happy to help! Just to clarify — do you want me to add this to my own interface (Archibald Titan's chatbox/dashboard), or would you like me to build it as a separate project in your sandbox?" Keep it short and natural.`,
-        });
-      }
+      // PROACTIVE: No more clarification prompts. If ambiguous, detectBuildIntentAsync
+      // now defaults to external build. The builder should just start building.
 
       if (isSelfBuild) {
         forceFirstTool = getForceFirstTool(input.message, true);
@@ -1032,9 +1025,8 @@ Do NOT attempt any tool calls or builds.`;
 
       // Choose tool set:
       // - Self-build: BUILDER_TOOLS (self_modify_file, NO sandbox tools)
-      // - External build: TITAN_TOOLS (sandbox tools, NO self_modify_file confusion)
-      // - General chat: TITAN_TOOLS (full set)
-      const activeTools = isSelfBuild ? BUILDER_TOOLS : isExternalBuild ? EXTERNAL_BUILD_TOOLS : TITAN_TOOLS;
+      // - External build & general chat: TITAN_TOOLS (full platform access, gated by membership/credits)
+      const activeTools = isSelfBuild ? BUILDER_TOOLS : TITAN_TOOLS;
       log.info(`[Chat] Self-build: ${isSelfBuild}, External-build: ${isExternalBuild}, force tool: ${forceFirstTool || 'none'}, tools: ${activeTools.length}`);
 
       // Enable deferred mode ONLY for self-build — file writes will be staged

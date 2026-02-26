@@ -28,7 +28,7 @@ const log = createLogger("SocialAuthRouter");
 // ─── Origin Helpers ──────────────────────────────────────────────
 // Both archibaldtitan.com and manus.space are registered in Google/GitHub OAuth console.
 // On Railway, PUBLIC_URL = https://www.archibaldtitan.com, so callbacks go directly there.
-const MANUS_ORIGIN = "https://architabot-f68pur9a.manus.space";
+const MANUS_ORIGIN = "https://archibaldtitan.com";
 
 function getOAuthCallbackOrigin(): string {
   // Use PUBLIC_URL as callback origin (archibaldtitan.com is registered with Google/GitHub)

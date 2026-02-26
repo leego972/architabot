@@ -1745,10 +1745,16 @@ export const BUILDER_TOOLS: Tool[] = [
 ];
 
 // Focused tool subset for EXTERNAL project building — creates real files the user can download
+// Now includes sandbox tools so the builder can actually run, test, and install dependencies
 export const EXTERNAL_BUILD_TOOLS: Tool[] = [
   // Core builder tools — create real files
   createProjectFile,
   readUploadedFile,
+  // Sandbox tools — execute code, read/write/list files in the sandbox
+  sandboxExec,
+  sandboxWriteFile,
+  sandboxReadFile,
+  sandboxListFiles,
   // Web Research
   webSearch,
   webPageRead,

@@ -64,7 +64,7 @@ export default function DesktopLoginPage() {
   };
 
   const openWebVersion = () => {
-    const url = "https://architabot-f68pur9a.manus.space";
+    const url = "https://archibaldtitan.com";
     if (window.titanDesktop?.navigateTo) {
       // Use shell.openExternal via the main process
       window.open(url, "_blank");

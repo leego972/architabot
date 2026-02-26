@@ -72,6 +72,7 @@ import {
   LayoutDashboard,
   Sun,
   Moon,
+  FolderOpen,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -110,6 +111,7 @@ const menuGroups: MenuGroup[] = [
       { icon: () => <TitanLogo size="sm" />, label: "Titan Builder", path: "/dashboard" },
       { icon: Copy, label: "Clone Website", path: "/replicate", isNew: true, premiumOnly: true },
       { icon: Terminal, label: "Sandbox", path: "/sandbox", isNew: true },
+      { icon: FolderOpen, label: "My Projects", path: "/project-files", isNew: true },
       { icon: Sparkles, label: "Smart Fetch AI", path: "/fetcher/smart-fetch" },
       { icon: PlusCircle, label: "New Fetch", path: "/fetcher/new" },
       { icon: ListOrdered, label: "Fetch Jobs", path: "/fetcher/jobs" },

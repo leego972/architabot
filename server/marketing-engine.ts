@@ -89,7 +89,7 @@ const TITAN_BRAND = {
   tagline: "The World's Most Advanced Local AI Agent",
   description:
     "Archibald Titan is a cutting-edge AI-powered platform that combines autonomous code execution, cybersecurity tools, credential management, and intelligent assistance into one powerful desktop and web application. Built for security professionals, developers, and power users who demand the best.",
-  website: "https://architabot-f68pur9a.manus.space",
+  website: "https://archibaldtitan.com",
   keyFeatures: [
     "AI-powered chat assistant with autonomous code execution",
     "Secure credential vault with breach monitoring",

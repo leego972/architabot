@@ -6,7 +6,7 @@ describe("Social Auth Router", () => {
       const clientId = "Ov23liD9UXvHpNBgSWMS";
       const params = new URLSearchParams({
         client_id: clientId,
-        redirect_uri: "https://architabot-f68pur9a.manus.space/api/auth/github/callback",
+        redirect_uri: "https://archibaldtitan.com/api/auth/github/callback",
         scope: "read:user user:email",
         state: "random-state",
       });
@@ -16,7 +16,7 @@ describe("Social Auth Router", () => {
     });
 
     it("should use manus.space domain for redirect_uri (registered domain)", () => {
-      const redirectUri = "https://architabot-f68pur9a.manus.space/api/auth/github/callback";
+      const redirectUri = "https://archibaldtitan.com/api/auth/github/callback";
       expect(redirectUri).toContain("manus.space");
       expect(redirectUri).not.toContain("archibaldtitan.com");
     });
@@ -32,7 +32,7 @@ describe("Social Auth Router", () => {
     it("should have correct Google authorize URL structure", () => {
       const params = new URLSearchParams({
         client_id: "1022168697812-p8ek2g9e2qac8fau5qqjhv53ric1oh45.apps.googleusercontent.com",
-        redirect_uri: "https://architabot-f68pur9a.manus.space/api/auth/google/callback",
+        redirect_uri: "https://archibaldtitan.com/api/auth/google/callback",
         response_type: "code",
         scope: "openid email profile",
         state: "random-state",
@@ -45,7 +45,7 @@ describe("Social Auth Router", () => {
     });
 
     it("should use manus.space domain for redirect_uri (registered domain)", () => {
-      const redirectUri = "https://architabot-f68pur9a.manus.space/api/auth/google/callback";
+      const redirectUri = "https://archibaldtitan.com/api/auth/google/callback";
       expect(redirectUri).toContain("manus.space");
       expect(redirectUri).not.toContain("archibaldtitan.com");
     });
@@ -131,7 +131,7 @@ describe("Social Auth Router", () => {
     });
 
     it("should detect cross-domain scenario correctly", () => {
-      const MANUS = "https://architabot-f68pur9a.manus.space";
+      const MANUS = "https://archibaldtitan.com";
       expect("https://www.archibaldtitan.com" !== MANUS).toBe(true);
       expect(MANUS !== MANUS).toBe(false);
     });

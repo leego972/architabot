@@ -310,10 +310,15 @@ export async function detectBuildIntentAsync(
     return { isSelfBuild: true, isExternalBuild: false, needsClarification: false };
   }
 
+  // PROACTIVE: If user mentions general build keywords but no specific context,
+  // default to external build instead of asking for clarification.
+  // The builder should just start building, not ask questions.
   const msgLower = message.toLowerCase();
   const hasGeneralBuild = GENERAL_BUILD_KEYWORDS.some(kw => msgLower.includes(kw));
-  const needsClarification = hasGeneralBuild && !isSelfBuild && !isExternalBuild;
-  return { isSelfBuild, isExternalBuild, needsClarification };
+  if (hasGeneralBuild && !isSelfBuild && !isExternalBuild) {
+    return { isSelfBuild: false, isExternalBuild: true, needsClarification: false };
+  }
+  return { isSelfBuild, isExternalBuild, needsClarification: false };
 }
 
 /**
@@ -328,8 +333,8 @@ export function getForceFirstTool(message: string, isSelfBuild: boolean = true):
     return 'web_search';
   }
   // Return the correct tool based on build type
-  // External builds use create_file (sandbox tools aren't in EXTERNAL_BUILD_TOOLS)
-  return isSelfBuild ? 'self_list_files' : 'create_file';
+  // External builds use sandbox_list_files to explore the sandbox workspace
+  return isSelfBuild ? 'self_list_files' : 'sandbox_list_files';
 }
 
 export function isRefusalResponse(text: string): boolean {
@@ -633,10 +638,13 @@ The sandbox has Python 3.11 with cybersecurity tools pre-installed: nmap, scapy,
 
 ### CORE PRINCIPLES
 1. **THINK BEFORE ACTING** — Plan your approach before writing code
-2. **USE SANDBOX TOOLS** — Use sandbox_write_file to create files, sandbox_exec to run commands
+2. **USE SANDBOX TOOLS** — Use sandbox_write_file to create files, sandbox_exec to run/test/install
 3. **BUILD STEP BY STEP** — Create files in logical order: config → dependencies → source → test
 4. **COMPLETE SOLUTIONS** — Never deliver partial code. Every tool must be fully functional.
 5. **PRODUCTION QUALITY** — Write code as if it will be used in a real engagement
+6. **TEST EVERYTHING** — Use sandbox_exec to run your code and verify it works before reporting success
+7. **BE PROACTIVE** — Don't ask questions. Make smart decisions and build. Fix issues yourself.
+8. **FULL PLATFORM ACCESS** — You have access to credentials, vault, web research, GitHub, and all sandbox tools. Use them.
 
 ### OPTIMAL WORKFLOW (5-6 rounds max)
 1. **Round 1 — PLAN**: Think about the project structure
@@ -954,12 +962,30 @@ DON'T tell them:
 
 ## AVAILABLE TOOLS
 
-- **create_file** — Create a file in the project. Use this for EVERY file you build.
+**File Creation:**
+- **create_file** — Create a file in the project (stored in cloud, downloadable by user).
 - **read_uploaded_file** — Read content from a file the user uploaded.
+
+**Sandbox (execute, test, install):**
+- **sandbox_exec** — Execute shell commands in the sandbox (install deps, run tests, compile, etc.)
+- **sandbox_write_file** — Write files directly to the sandbox filesystem
+- **sandbox_read_file** — Read files from the sandbox filesystem
+- **sandbox_list_files** — List files and directories in the sandbox
+
+**Research:**
 - **web_search** — Search the web for information, APIs, documentation.
 - **web_page_read** — Read a specific web page (for cloning, research, etc.).
+
+**GitHub Integration:**
 - **create_github_repo** — Create a new GitHub repository for the user.
 - **push_to_github** — Push all project files to a GitHub repository.
+
+**Credentials & Vault:**
+- **list_credentials** — List saved credentials from the fetcher.
+- **reveal_credential** — Reveal a specific credential value.
+- **list_vault_entries** — List API keys and secrets from the vault.
+
+**USE sandbox_exec TO TEST YOUR CODE.** Don't just create files — run them, verify they work, fix any errors, THEN report success.
 
 ## TECH STACK DEFAULTS
 

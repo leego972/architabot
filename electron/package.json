@@ -56,7 +56,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://architabot-f68pur9a.manus.space/api/desktop/update"
+        "url": "https://archibaldtitan.com/api/desktop/update"
       }
     ]
   },
