@@ -1415,7 +1415,7 @@ export default function ChatPage() {
 
 
   return (
-    <div className={`chat-page-root flex ${isMobile ? 'h-[calc(100dvh-3.5rem)]' : 'h-[calc(100vh-3rem)]'}`}>
+    <div className={`chat-page-root flex ${isMobile ? 'h-[100dvh] max-h-[100dvh]' : 'h-[calc(100vh-3rem)]'}`}>
       {/* Mobile Conversation Drawer */}
       {isMobile && (
         <MobileConversationDrawer
@@ -1443,22 +1443,22 @@ export default function ChatPage() {
       {/* Main chat area */}
       <div className={`flex-1 flex flex-col min-w-0 ${showProjectFiles && !isMobile ? 'mr-[360px]' : ''}`}>
         {/* Header */}
-        <div className={`flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-sm ${isMobile ? 'px-3 py-2' : 'px-4 pb-3 pt-1'}`}>
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className={`flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-sm shrink-0 ${isMobile ? 'px-2 py-2 min-h-[48px]' : 'px-4 pb-3 pt-1'}`}>
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
             {/* Mobile menu button */}
             {isMobile && (
               <button
                 onClick={() => setMobileDrawerOpen(true)}
-                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors shrink-0 touch-target"
               >
                 <Menu className="h-5 w-5" />
               </button>
             )}
-            <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
-              <Sparkles className="h-4 w-4 text-primary" />
+            <div className="h-7 w-7 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
+              <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
             </div>
-            <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-sm sm:text-lg font-semibold tracking-tight truncate">
                 Titan Assistant
               </h1>
               {!isMobile && (
@@ -1473,32 +1473,34 @@ export default function ChatPage() {
                 Actions Enabled
               </Badge>
             )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
             {createdFiles.length > 0 && (
               <button
                 onClick={() => setShowProjectFiles(!showProjectFiles)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all ml-2"
+                className={`flex items-center gap-1 rounded-lg font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all touch-target ${isMobile ? 'px-2 py-1 text-[11px]' : 'px-2.5 py-1 text-xs'}`}
               >
-                <FolderOpen className="h-3.5 w-3.5" />
-                Files ({createdFiles.length})
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                {!isMobile && `Files (${createdFiles.length})`}
+                {isMobile && createdFiles.length}
               </button>
             )}
             <button
               onClick={() => setShowTokenInput(!showTokenInput)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-all ml-2"
+              className={`flex items-center gap-1 rounded-lg font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-all touch-target ${isMobile ? 'px-2 py-1 text-[11px]' : 'px-2.5 py-1 text-xs'}`}
               title="Add API tokens for the builder to use"
             >
-              <Key className="h-3.5 w-3.5" />
-              Tokens{savedTokens.length > 0 ? ` (${savedTokens.length})` : ''}
+              <Key className="h-3.5 w-3.5 shrink-0" />
+              {!isMobile && `Tokens${savedTokens.length > 0 ? ` (${savedTokens.length})` : ''}`}
+              {isMobile && savedTokens.length > 0 && savedTokens.length}
             </button>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
             {isMobile && (
               <button
                 onClick={handleNewConversation}
-                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors touch-target"
                 title="New conversation"
               >
-                <Plus className="h-4.5 w-4.5" />
+                <Plus className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -1614,7 +1616,7 @@ export default function ChatPage() {
                           <TitanLogo size="sm" />
                         </div>
                       )}
-                      <div className="flex flex-col max-w-[85%] sm:max-w-[80%]">
+                      <div className="flex flex-col max-w-[85%] sm:max-w-[80%] min-w-0 overflow-hidden">
                         <div
                           className={`rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-sm leading-relaxed ${
                             msg.role === "user"
@@ -1640,12 +1642,12 @@ export default function ChatPage() {
                                 )}
                                 </>
                               )}
-                              <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2 [&>h1]:text-base [&>h2]:text-sm [&>h3]:text-sm [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-words">
+                              <div className="prose prose-sm dark:prose-invert max-w-none overflow-hidden [&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2 [&>h1]:text-base [&>h2]:text-sm [&>h3]:text-sm [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-words [&_table]:max-w-full [&_table]:overflow-x-auto [&_img]:max-w-full">
                                 <Streamdown>{msg.content}</Streamdown>
                               </div>
                             </>
                           ) : (
-                            <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                            <p className="whitespace-pre-wrap break-words overflow-hidden">{msg.content}</p>
                           )}
                         </div>
                         {/* Action buttons below assistant messages */}
@@ -1798,7 +1800,7 @@ export default function ChatPage() {
         </div>
 
         {/* Input area */}
-        <div className={`border-t border-border/50 bg-background/80 backdrop-blur-sm ${isMobile ? 'px-3 pt-2 pb-3' : 'px-4 pt-3 pb-2'}`} style={isMobile ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
+        <div className={`border-t border-border/50 bg-background/80 backdrop-blur-sm shrink-0 ${isMobile ? 'px-3 pt-2' : 'px-4 pt-3 pb-2'}`} style={isMobile ? { paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' } : undefined}>
           {/* Recording indicator */}
           {isRecording && (
             <div className="flex items-center gap-3 mb-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-xl">
@@ -1884,14 +1886,14 @@ export default function ChatPage() {
             )}
 
             {/* Input container with integrated buttons */}
-            <div className="flex items-end gap-1.5 sm:gap-2">
-              {/* Action buttons - stacked on mobile for more space */}
-              <div className={`flex shrink-0 ${isMobile ? 'flex-col gap-1' : 'gap-1.5'}`}>
+            <div className="flex items-end gap-1.5">
+              {/* Action buttons - always side-by-side for accessibility */}
+              <div className="flex shrink-0 gap-1">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
                   disabled={isLoading || isTranscribing}
-                  className={`flex items-center justify-center rounded-xl transition-all ${
-                    isMobile ? 'h-9 w-9' : 'h-10 w-10'
+                  className={`flex items-center justify-center rounded-xl transition-all touch-target ${
+                    isMobile ? 'h-[44px] w-[44px]' : 'h-10 w-10'
                   } ${
                     isRecording
                       ? 'bg-red-500/20 text-red-400 animate-pulse ring-1 ring-red-500/50'
@@ -1904,8 +1906,8 @@ export default function ChatPage() {
 
                 <button
                   onClick={handleFileUploadClick}
-                  className={`flex items-center justify-center rounded-xl border border-border/50 text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/50 transition-all ${
-                    isMobile ? 'h-9 w-9' : 'h-10 w-10'
+                  className={`flex items-center justify-center rounded-xl border border-border/50 text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/50 transition-all touch-target ${
+                    isMobile ? 'h-[44px] w-[44px]' : 'h-10 w-10'
                   }`}
                   title="Upload files"
                 >
@@ -1935,8 +1937,8 @@ export default function ChatPage() {
                     : isMobile ? 'Ask Titan anything...'
                     : 'Ask Titan anything — type / for commands...'
                   }
-                  className={`resize-none max-h-[200px] pr-12 rounded-xl border-border/50 focus-visible:ring-primary/30 leading-relaxed ${
-                    isMobile ? 'min-h-[44px] text-[16px] py-2.5' : 'min-h-[56px] text-base py-3'
+                  className={`resize-none rounded-xl border-border/50 focus-visible:ring-primary/30 leading-relaxed ${
+                    isMobile ? 'min-h-[44px] max-h-[120px] text-[16px] py-2.5' : 'min-h-[56px] max-h-[200px] text-base py-3'
                   }`}
                   rows={1}
                   disabled={isRecording || isTranscribing}
@@ -1948,7 +1950,7 @@ export default function ChatPage() {
                 onClick={() => handleSend()}
                 disabled={!input.trim() || isRecording || isTranscribing}
                 size="icon"
-                className={`rounded-xl shrink-0 ${isMobile ? 'h-[44px] w-[44px]' : 'h-10 w-10'}`}
+                className={`rounded-xl shrink-0 touch-target ${isMobile ? 'h-[44px] w-[44px]' : 'h-10 w-10'}`}
               >
                 <Send className="h-4 w-4" />
               </Button>
