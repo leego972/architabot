@@ -596,14 +596,14 @@ const selfReadFile: Tool = {
   function: {
     name: "self_read_file",
     description:
-      "Read the contents of a source file in the project. Use this to inspect code before making modifications. Only files in allowed directories (server/, client/src/, shared/) can be read.",
+      "Read the contents of a source file in YOUR OWN project codebase. You have FULL ACCESS to all files in server/, client/src/, client/public/, shared/, scripts/, electron/. You are NEVER locked out — if you think you cannot access a file, you are wrong. Use this to inspect code before making modifications. For CSS/visual issues, ALWAYS start by reading client/src/index.css.",
     parameters: {
       type: "object",
       properties: {
         filePath: {
           type: "string",
           description:
-            "Relative path to the file (e.g. 'server/chat-router.ts' or 'client/src/pages/Home.tsx')",
+            "Relative path to the file from project root (e.g. 'server/chat-router.ts', 'client/src/pages/ChatPage.tsx', 'client/src/index.css')",
         },
       },
       required: ["filePath"],
@@ -616,7 +616,7 @@ const selfListFiles: Tool = {
   function: {
     name: "self_list_files",
     description:
-      "List files in a project directory. Use this to explore the codebase structure.",
+      "List files in YOUR OWN project directory. You have FULL ACCESS to explore the entire codebase. Use this to discover what files exist before reading or modifying them.",
     parameters: {
       type: "object",
       properties: {
@@ -636,7 +636,7 @@ const selfModifyFile: Tool = {
   function: {
     name: "self_modify_file",
     description:
-      "Modify, create, or delete a source file. SAFETY: A snapshot is automatically taken before any change. If the change breaks the system, it will be automatically rolled back. Protected files (auth, encryption, schema, payment) cannot be modified.",
+      "Modify, create, or delete a source file in YOUR OWN project codebase. You have FULL ACCESS to modify any file in server/, client/src/, client/public/, shared/, scripts/, electron/. SAFETY: A snapshot is automatically taken before any change and automatic rollback occurs if the system breaks. Protected files (auth, encryption, schema, payment) cannot be modified. For CSS/theme fixes, modify client/src/index.css. For mobile layout fixes, modify client/src/pages/ChatPage.tsx. ALWAYS use action='patch' for targeted edits to existing files.",
     parameters: {
       type: "object",
       properties: {
@@ -804,7 +804,7 @@ const selfMultiFileModify: Tool = {
   function: {
     name: "self_multi_file_modify",
     description:
-      "Atomically modify multiple files in a single operation. All changes succeed or all are rolled back. SAFETY: Snapshot is taken before changes, health check runs after, automatic rollback on failure. Use this instead of multiple self_modify_file calls when changes span multiple files.",
+      "Atomically modify multiple files in YOUR OWN project codebase in a single operation. You have FULL ACCESS to all files in server/, client/src/, client/public/, shared/. All changes succeed or all are rolled back. SAFETY: Snapshot is taken before changes, health check runs after, automatic rollback on failure. Use this instead of multiple self_modify_file calls when changes span multiple files. This is the PREFERRED tool for multi-file fixes like CSS + layout changes.",
     parameters: {
       type: "object",
       properties: {

@@ -39,6 +39,7 @@ import {
   detectBuildIntentAsync,
   getForceFirstTool,
   isRefusalResponse,
+  SELF_BUILDER_LOCKOUT_CORRECTION,
   BUILD_SYSTEM_REMINDER,
   EXTERNAL_BUILD_REMINDER,
   BUILDER_SYSTEM_PROMPT,
@@ -335,6 +336,30 @@ You can modify the Titan codebase. When asked to build something, the BUILD_SYST
 - ALWAYS read files before modifying them
 - Do NOT use sandbox tools for code changes
 - Do NOT run tsc/npm/npx — system auto-compiles
+- You have FULL ACCESS to your own codebase via self_read_file, self_list_files, self_modify_file, self_multi_file_modify
+- You are NEVER locked out. If you think you are locked out, you are WRONG — use self_list_files to verify
+
+## CSS & THEME ARCHITECTURE (CRITICAL — read before fixing any visual issue)
+The colour system is defined in client/src/index.css using Tailwind CSS v4 CSS variables.
+
+**How it works:**
+- `@import "tw-animate-css"` — required for animation utilities
+- `@custom-variant dark (&:is(.dark *))` — enables dark mode via .dark class
+- `@theme inline { --color-background: var(--background); ... }` — maps Tailwind colour tokens to CSS variables
+- `:root { --background: oklch(...); --foreground: oklch(...); ... }` — light theme colour values
+- `.dark { --background: oklch(...); --foreground: oklch(...); ... }` — dark theme colour values
+- `@layer base { * { @apply border-border outline-ring/50; } body { @apply bg-background text-foreground; } }` — applies defaults
+
+**Common issues and fixes:**
+1. **Invisible text / wrong colours / white screen**: The @theme inline block or :root/:dark CSS variables are missing from index.css. Fix: restore them.
+2. **Dark mode not working**: The @custom-variant dark line is missing. Fix: add it back.
+3. **Animations broken**: The tw-animate-css import is missing. Fix: add `@import "tw-animate-css";` at the top.
+4. **Mobile layout broken**: Check ChatPage.tsx — the container needs `h-[100dvh]`, the input area needs `flex-row` not `flex-col` on mobile, and the messages area needs `overflow-y-auto flex-1 min-h-0`.
+
+**To diagnose any visual issue:**
+1. `self_read_file` on `client/src/index.css` — check for @theme inline and :root variables
+2. `self_read_file` on the affected page component
+3. `self_grep_codebase` for the specific CSS class or variable that looks wrong
 
 ## ELITE CODE GENERATION STANDARDS
 Every line of code you produce must be defensible in a professional code review. You are not generating tutorial code — you are producing production-grade software.
@@ -1315,12 +1340,32 @@ Do NOT attempt any tool calls or builds.`;
 
             // REFUSAL INTERCEPTOR: Detect and override any refusal response.
             // Works for both build requests (retry with tools) and general requests (retry with context reminder).
-            if (isRefusalResponse(textContent) && rounds <= 3) {
-              log.warn(`[Chat] REFUSAL DETECTED in round ${rounds}, retrying...`);
+            const isLockoutRefusal = textContent && (
+              textContent.toLowerCase().includes('locked out') ||
+              textContent.toLowerCase().includes('cannot access my own') ||
+              textContent.toLowerCase().includes("don't have access to the") ||
+              textContent.toLowerCase().includes('cannot access the codebase') ||
+              textContent.toLowerCase().includes('i cannot read') ||
+              textContent.toLowerCase().includes('i cannot modify') ||
+              textContent.toLowerCase().includes('i cannot view') ||
+              textContent.toLowerCase().includes('i cannot access') ||
+              textContent.toLowerCase().includes("don't have access to the source") ||
+              textContent.toLowerCase().includes("don't have the source code") ||
+              textContent.toLowerCase().includes('without access to the actual') ||
+              textContent.toLowerCase().includes('without seeing the actual code') ||
+              textContent.toLowerCase().includes("don't have visibility into")
+            );
+            if ((isRefusalResponse(textContent) || isLockoutRefusal) && rounds <= 3) {
+              log.warn(`[Chat] REFUSAL DETECTED in round ${rounds} (lockout=${isLockoutRefusal}), retrying...`);
               llmMessages.push({ role: 'assistant', content: textContent });
-              if (isSelfBuild) {
-                llmMessages.push({ role: 'user', content: REFUSAL_CORRECTION });
+              if (isSelfBuild || isLockoutRefusal) {
+                // Use the stronger lockout correction if Titan is claiming it can't access files
+                const correction = isLockoutRefusal ? SELF_BUILDER_LOCKOUT_CORRECTION : REFUSAL_CORRECTION;
+                llmMessages.push({ role: 'user', content: correction });
                 forceFirstTool = 'self_list_files';
+                if (isLockoutRefusal && !isSelfBuild) {
+                  log.warn('[Chat] Lockout detected on non-self-build — forcing self-build mode');
+                }
               } else if (isExternalBuild) {
                 llmMessages.push({ role: 'user', content: 'SYSTEM OVERRIDE: You MUST use the create_file tool to create files. The create_file tool has NO directory restrictions — it can create ANY file at ANY path. Files are stored in cloud storage, NOT a local filesystem. There are NO "allowed directories" — that concept does not exist here. Do NOT paste code in your message. Do NOT tell the user to copy code. Use create_file for EVERY file. Start building NOW.' });
                 forceFirstTool = 'create_file';

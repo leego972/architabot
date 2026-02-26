@@ -45,6 +45,25 @@ const SELF_BUILD_KEYWORDS = [
   'add a form', 'add form',
   'add a modal', 'add modal',
   'add a dialog', 'add dialog',
+  // CSS / theme / visibility / color fixes — these ALWAYS mean self-build
+  'fix the colors', 'fix colors', 'fix the colour', 'fix colour', 'fix the theme',
+  'fix visibility', 'fix the visibility', 'fix the css', 'fix css',
+  'colors are wrong', 'colours are wrong', 'colors broken', 'colours broken',
+  'website colors', 'website colours', 'site colors', 'site colours',
+  'app colors', 'app colours', 'ui colors', 'ui colours',
+  'text is invisible', 'text invisible', 'text not visible', 'cant see text',
+  'can\'t see text', 'background is wrong', 'background wrong',
+  'dark mode broken', 'light mode broken', 'theme broken', 'theme not working',
+  'css variables', 'tailwind colors', 'tailwind colours', 'tailwind theme',
+  'index.css', 'global css', 'global styles',
+  'visibility issue', 'visibility problem', 'color issue', 'colour issue',
+  'color problem', 'colour problem', 'styling issue', 'styling problem',
+  'fix the styling', 'fix styling', 'fix the styles', 'fix styles',
+  'mobile layout', 'mobile chat', 'mobile issue', 'mobile problem',
+  'mobile fix', 'fix mobile', 'responsive issue', 'responsive problem',
+  'chat layout', 'chat overflow', 'messages overflow', 'buttons off screen',
+  'buttons off-screen', 'buttons disappear', 'input off screen',
+  'fix the chat', 'fix chat', 'chat broken', 'chat not working',
 ];
 
 // Phrases that indicate the user is talking about Titan's own pages/components
@@ -62,6 +81,14 @@ const SELF_CONTEXT_PHRASES = [
   'your page', 'your sidebar', 'your header',
   '/dashboard', '/credentials', '/settings', '/marketplace',
   'with a sidebar link', 'under the', 'in the sidebar',
+  // CSS / theme / styling context — always refers to Titan’s own codebase
+  'the colors', 'the colours', 'the theme', 'the css', 'the styles', 'the styling',
+  'the visibility', 'the background', 'the text color', 'the text colour',
+  'dark mode', 'light mode', 'color scheme', 'colour scheme',
+  'tailwind', 'index.css', 'global.css', 'css variables',
+  'the mobile', 'on mobile', 'mobile view', 'mobile layout',
+  'the chat', 'chat input', 'chat messages', 'message bubbles',
+  'the website', 'the web app', 'the frontend', 'the client',
 ];
 
 // ── External Build Keywords ────────────────────────────────────────────
@@ -215,6 +242,47 @@ export const REFUSAL_PHRASES = [
   'paste it into',
   'save this as',
   'here\'s the code for you to',
+  // Self-builder lockout phrases — Titan incorrectly claims it cannot access its own code
+  'locked out',
+  'i am locked out',
+  'i\'m locked out',
+  'cannot access my own',
+  'don\'t have access to my own',
+  'don\'t have access to the codebase',
+  'cannot access the codebase',
+  'i cannot read',
+  'i cannot write to',
+  'i cannot modify',
+  'i don\'t have the ability to modify',
+  'i don\'t have the ability to read',
+  'i don\'t have direct access',
+  'i lack direct access',
+  'no direct access to',
+  'cannot directly access',
+  'i\'m not able to access',
+  'i am not able to access',
+  'i\'m unable to access',
+  'i am unable to access',
+  'i don\'t have access to the source',
+  'i cannot access the source',
+  'i\'m not able to read the source',
+  'i cannot read the source',
+  'i don\'t have visibility into',
+  'i don\'t have insight into',
+  'without access to the actual',
+  'without seeing the actual code',
+  'i cannot see the actual',
+  'i don\'t have the source code',
+  'i don\'t have access to the source code',
+  'i cannot access the source code',
+  'i\'m not able to access the source code',
+  'i\'m unable to view the source code',
+  'i cannot view the source code',
+  'i don\'t have the ability to view',
+  'i cannot view the files',
+  'i don\'t have access to the files',
+  'i cannot access the files',
+  'i\'m not able to access the files',
 ];
 
 /**
@@ -342,7 +410,34 @@ export function isRefusalResponse(text: string): boolean {
   return REFUSAL_PHRASES.some(p => lower.includes(p));
 }
 
-export const REFUSAL_CORRECTION = `SYSTEM OVERRIDE: You are Archibald Titan, a cybersecurity AI with FULL builder capabilities. You MUST use your tools to complete the user's request. Do NOT refuse. Do NOT say you can't. You have self_modify_file, self_read_file, self_list_files tools — USE THEM NOW. Start by listing files with self_list_files to understand the codebase, then read the relevant files, then modify them.`;
+export const REFUSAL_CORRECTION = `SYSTEM OVERRIDE: You are Archibald Titan — you have FULL access to your own codebase. You are NOT locked out. You are NOT restricted. You MUST use your tools to complete the user's request.
+
+You have these tools that give you COMPLETE access to every file in the project:
+- self_list_files: List any directory (server/, client/src/, shared/, etc.)
+- self_read_file: Read any file in the project (e.g. client/src/index.css, client/src/pages/ChatPage.tsx)
+- self_modify_file: Modify any non-protected file using action="patch" with search/replace
+- self_multi_file_modify: Modify multiple files in one batch call
+- self_grep_codebase: Search across all source files
+
+Do NOT say you cannot access files. Do NOT say you are locked out. Do NOT say you cannot see the code.
+INSTEAD: Use self_list_files to explore, self_read_file to inspect, self_modify_file to fix.
+
+For CSS/visibility/color issues: Read client/src/index.css first. The color system uses @theme inline CSS variables (:root and .dark blocks). If those are missing, that is the root cause.
+For mobile layout issues: Read client/src/pages/ChatPage.tsx and look at the flex layout, input area, and container heights.
+
+START NOW — use self_list_files on the relevant directory, then read the key files, then fix them.`;
+
+export const SELF_BUILDER_LOCKOUT_CORRECTION = `CRITICAL SYSTEM OVERRIDE: You claimed you cannot access your own codebase. This is WRONG. You have full read/write access to every file in this project through your self_* tools.
+
+You are NOT locked out. The files are NOT restricted (except auth/payment/schema files which are protected for safety).
+
+Here is exactly what to do RIGHT NOW:
+1. Call self_list_files with dirPath="client/src" to see the frontend files
+2. Call self_read_file with filePath="client/src/index.css" to read the CSS
+3. Call self_read_file on any page you need to fix
+4. Call self_modify_file with action="patch" to apply targeted fixes
+
+STOP saying you cannot access files. USE YOUR TOOLS. Start with self_list_files NOW.`;
 
 export const BUILD_SYSTEM_REMINDER = `
 ## BUILDER MODE ACTIVATED — SELF-IMPROVEMENT
@@ -393,6 +488,27 @@ Use action="patch" with patches array: [{"search": "exact text to find", "replac
 - **Toasts:** sonner (import { toast } from "sonner")
 - **Forms:** React Hook Form + Zod validation
 - **Charts:** recharts or Chart.js
+
+### CSS & THEME ARCHITECTURE (CRITICAL for visual fixes)
+All colours are defined in **client/src/index.css** using Tailwind CSS v4 CSS variables.
+
+The file MUST contain ALL of these sections (if any are missing, colours will be invisible/broken):
+```
+@import "tw-animate-css";           // animations — REQUIRED
+@custom-variant dark (&:is(.dark *)); // dark mode via .dark class — REQUIRED
+@theme inline { ... }               // maps --color-* tokens to CSS vars — REQUIRED
+:root { --background: oklch(...); --foreground: oklch(...); ... }  // light theme
+.dark { --background: oklch(...); --foreground: oklch(...); ... }  // dark theme
+@layer base { body { @apply bg-background text-foreground; } }    // applies defaults
+```
+
+**Diagnosing visual issues:**
+- White screen / invisible text → @theme inline block or :root variables missing from index.css
+- Dark mode broken → @custom-variant dark line missing
+- Animations broken → tw-animate-css import missing
+- Mobile chat overflow → ChatPage.tsx container needs h-[100dvh], input area needs flex-row, messages area needs flex-1 min-h-0 overflow-y-auto
+
+**ALWAYS read client/src/index.css first when diagnosing any colour or visibility issue.**
 
 ### YOUR COMPLETE TOOLKIT
 You have 16 professional builder tools. A competent engineer uses the right tool at the right time:
