@@ -2190,8 +2190,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     }
   }
 
-  // 2b. Content Recycling (Tue/Thu/Sat — repurpose top-performing blog posts)
-  if ([2, 4, 6].includes(dayOfWeek)) {
+  // 2b. Content Recycling (Wed/Fri — repurpose top-performing blog posts)
+  if ([3, 5].includes(dayOfWeek)) {
     const t0 = Date.now();
     try {
       const recycleAction = await recycleTopContent();
@@ -2232,8 +2232,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     }
   }
 
-  // 5. Email Nurture (Tue/Thu)
-  if ([2, 4].includes(dayOfWeek)) {
+  // 5. Email Nurture (Wednesday)
+  if (dayOfWeek === 3) {
     try {
       const emailAction = await generateEmailNurture();
       actions.push(emailAction);
@@ -2252,8 +2252,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     }
   }
 
-  // 7. Affiliate Network Optimization (Wed/Sat)
-  if ([3, 6].includes(dayOfWeek)) {
+  // 7. Affiliate Network Optimization (Wed/Fri)
+  if ([3, 5].includes(dayOfWeek)) {
     try {
       const affiliateAction = await optimizeAffiliateNetwork();
       actions.push(affiliateAction);
@@ -2274,8 +2274,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     errors.push(`Expanded Channels: ${getErrorMessage(err)}`);
   }
 
-  // 9. Hacker Forum & Infosec Community Content (Mon/Wed/Fri/Sat, with throttling)
-  if ([1, 3, 5, 6].includes(dayOfWeek) && !shouldSkipChannel("hackforums")) {
+  // 9. Hacker Forum & Infosec Community Content (every cycle, with throttling)
+  if (!shouldSkipChannel("hackforums")) {
     const t0 = Date.now();
     try {
       const hackerAction = await generateHackerForumContent();
@@ -2287,8 +2287,8 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     }
   }
 
-  // 10. TikTok Content Posting — auto-generate & post carousels (Tue/Thu/Sat)
-  if ([2, 4, 6].includes(dayOfWeek)) {
+  // 10. TikTok Content Posting — auto-generate & post carousels (Wed/Fri)
+  if ([3, 5].includes(dayOfWeek)) {
     try {
       const tiktokResult = await runTikTokContentPipeline();
       actions.push({
@@ -2424,28 +2424,41 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
 
 let advertisingInterval: ReturnType<typeof setInterval> | null = null;
 
+/** Advertising run days: Monday (1), Wednesday (3), Friday (5) */
+const ADVERTISING_RUN_DAYS = [1, 3, 5];
+
 /**
  * Start the autonomous advertising scheduler.
- * Runs once daily at startup, then every 24 hours.
+ * Runs 3x per week (Mon/Wed/Fri) to balance reach and API credit usage.
+ * Checks every 4 hours whether it's a run day and hasn't already run today.
  */
 export function startAdvertisingScheduler(): void {
-  log.info("[AdvertisingOrchestrator] Starting autonomous advertising scheduler...");
+  log.info("[AdvertisingOrchestrator] Starting autonomous advertising scheduler (Mon/Wed/Fri)...");
 
   // COST OPTIMIZATION: Do NOT run on startup.
   // Every Railway deploy triggers a restart which was burning API credits.
-  // The cycle runs once every 24 hours on schedule only.
-  // To run manually, use the admin dashboard trigger.
-  log.info("[AdvertisingOrchestrator] Skipping startup cycle (cost optimization). Next run in 24h.");
+  log.info("[AdvertisingOrchestrator] Skipping startup cycle (cost optimization). Checking every 4h for run days.");
 
-  // Run every 24 hours only
+  let lastRunDate = "";
+
+  // Check every 4 hours if today is a run day and we haven't run yet today
   advertisingInterval = setInterval(async () => {
     try {
-      log.info("[AdvertisingOrchestrator] Running scheduled advertising cycle...");
-      await runAdvertisingCycle();
+      const now = new Date();
+      const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
+      const hour = now.getHours();
+      const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      // Only run on designated days, between 8-10 AM server time, and only once per day
+      if (ADVERTISING_RUN_DAYS.includes(dayOfWeek) && hour >= 8 && hour <= 10 && lastRunDate !== todayStr) {
+        lastRunDate = todayStr;
+        log.info(`[AdvertisingOrchestrator] Running scheduled advertising cycle (${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dayOfWeek]})...`);
+        await runAdvertisingCycle();
+      }
     } catch (err: unknown) {
       log.error("[AdvertisingOrchestrator] Scheduled cycle failed:", { error: String(getErrorMessage(err)) });
     }
-  }, 24 * 60 * 60 * 1000);
+  }, 4 * 60 * 60 * 1000); // Check every 4 hours
 }
 
 /**
@@ -2493,20 +2506,21 @@ export function getStrategyOverview() {
       ...(platform === "reddit" ? { subreddits: (config as any).subreddits } : {}),
     })),
     schedule: {
-      seoOptimization: "Daily",
+      advertisingCycle: "Mon/Wed/Fri (3x per week, 8-10 AM server time)",
+      seoOptimization: "Every cycle",
       blogPosts: "Mon/Wed/Fri",
-      socialMedia: "Daily (2-3 posts)",
-      communityEngagement: "Daily",
-      emailNurture: "Tue/Thu",
-      backlinkOutreach: "Monday",
-      affiliateOptimization: "Wed/Sat",
-      expandedChannels: "Daily (Dev.to, Medium, Hashnode, Discord, Mastodon, Telegram)",
-      hackerForums: "Mon/Wed/Fri/Sat (HackForums, 0x00sec, HTB, TryHackMe, OWASP, etc.)",
-      tiktokContent: "Tue/Thu/Sat (auto-generate & post carousels from blog content)",
-      videoScripts: "Tue/Thu/Sat (YouTube Shorts scripts)",
-      contentQueue: "Daily (Quora, Skool, IndieHackers, Pinterest, HN, LinkedIn, Slack)",
+      socialMedia: "Every cycle (2-3 posts)",
+      communityEngagement: "Every cycle",
+      emailNurture: "Wed only",
+      backlinkOutreach: "Monday only",
+      affiliateOptimization: "Wed/Fri",
+      expandedChannels: "Every cycle (Dev.to, Medium, Hashnode, Discord, Mastodon, Telegram)",
+      hackerForums: "Mon/Wed/Fri (HackForums, 0x00sec, HTB, TryHackMe, OWASP, etc.)",
+      tiktokContent: "Wed/Fri (auto-generate & post carousels from blog content)",
+      videoScripts: "Wed/Fri (YouTube Shorts scripts)",
+      contentQueue: "Every cycle (Quora, Skool, IndieHackers, Pinterest, HN, LinkedIn, Slack)",
       whatsappBroadcast: "Monday (weekly security tip)",
-      marketingEngineCycle: "Daily",
+      marketingEngineCycle: "Every cycle",
     },
   };
 }
