@@ -174,7 +174,7 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <img src={AT_ICON_64} alt="AT" className="h-6 w-6 shrink-0 object-contain" />
+                  <img loading="eager" src={AT_ICON_64} alt="AT" className="h-6 w-6 shrink-0 object-contain" />
                   <span className="font-semibold tracking-tight truncate bg-gradient-to-r from-blue-400 to-blue-200 bg-clip-text text-transparent">
                     Archibald Titan
                   </span>

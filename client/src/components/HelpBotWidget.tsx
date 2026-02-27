@@ -179,7 +179,10 @@ interface ChatMessage {
 export default function HelpBotWidget() {
   const { isEnabled } = useArchibald();
   const { user } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  // Hide on chat page so it doesn't block the input area
+  const isChatPage = location === "/dashboard" || location === "/";
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [input, setInput] = useState("");
@@ -237,13 +240,14 @@ export default function HelpBotWidget() {
   }, [input]);
 
   if (!isEnabled) return null;
+  if (isChatPage) return null;
 
   // Floating button when closed
   if (!isOpen) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center group"
+        className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center group md:bottom-6 md:right-6 max-md:bottom-20 max-md:right-4 max-md:h-12 max-md:w-12"
         title="Need help? Chat with Titan Help Bot"
       >
         <MessageCircleQuestion className="h-6 w-6 group-hover:scale-110 transition-transform" />
@@ -257,7 +261,7 @@ export default function HelpBotWidget() {
     return (
       <div
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-6 right-6 z-50 bg-card border border-border rounded-xl shadow-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-accent/50 transition-colors max-w-[260px]"
+        className="fixed bottom-6 right-6 z-50 bg-card border border-border rounded-xl shadow-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-accent/50 transition-colors max-w-[260px] max-md:bottom-20 max-md:right-4"
       >
         <TitanLogo size="sm" />
         <span className="text-sm font-medium truncate">Help Bot</span>
@@ -278,7 +282,7 @@ export default function HelpBotWidget() {
 
   // Full chat panel
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-[380px] max-h-[560px] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed bottom-6 right-6 z-50 w-[380px] max-h-[560px] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden max-md:bottom-16 max-md:right-2 max-md:left-2 max-md:w-auto max-md:max-h-[70vh]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-blue-600/10 to-purple-600/10">
         <div className="flex items-center gap-2.5">

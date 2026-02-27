@@ -82,6 +82,8 @@ import { Button } from "./ui/button";
 import OnboardingWizard from "./OnboardingWizard";
 import HelpBotWidget from "./HelpBotWidget";
 import TrialBanner from "./TrialBanner";
+import DesktopStatusBar from "./DesktopStatusBar";
+import { isDesktop } from "@/lib/desktop";
 import { useArchibald } from "@/contexts/ArchibaldContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { LanguageSelector } from "@/i18n";
@@ -294,6 +296,7 @@ export default function FetcherLayout({
       </FetcherLayoutContent>
       <OnboardingWizard />
       <HelpBotWidget />
+      {isDesktop() && <DesktopStatusBar />}
     </SidebarProvider>
   );
 }
@@ -367,7 +370,7 @@ function FetcherLayoutContent({
               </button>
               {!isCollapsed && (
                 <div className="flex items-center gap-2 min-w-0">
-                  <img src={AT_ICON_128} alt="AT" className="h-8 w-8 shrink-0 object-contain" />
+                  <img loading="eager" src={AT_ICON_128} alt="AT" className="h-8 w-8 shrink-0 object-contain" />
                   <span className="font-semibold tracking-tight truncate bg-gradient-to-r from-blue-400 to-blue-200 bg-clip-text text-transparent">
                     Archibald Titan
                   </span>
@@ -542,7 +545,7 @@ function FetcherLayoutContent({
             <div className="flex items-center gap-3">
               <SidebarTrigger className="h-10 w-10 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-foreground [&_svg]:!h-5 [&_svg]:!w-5" />
               <div className="flex items-center gap-2">
-                <img src={AT_ICON_128} alt="AT" className="h-8 w-8 object-contain" />
+                <img loading="eager" src={AT_ICON_128} alt="AT" className="h-8 w-8 object-contain" />
                 <span className="tracking-tight text-foreground font-semibold text-sm">
                   {activeMenuItem?.label ?? "Archibald Titan"}
                 </span>

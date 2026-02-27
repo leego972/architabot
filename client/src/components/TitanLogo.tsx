@@ -29,6 +29,7 @@ export function TitanLogo({ className, size = "md", dark = false }: TitanLogoPro
     <img
       src={src}
       alt="Titan"
+      loading="eager"
       className={`${sizeClass} object-contain ${className ?? ""}`}
     />
   );

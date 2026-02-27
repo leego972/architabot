@@ -507,6 +507,7 @@ export default function ArchibaldWizard() {
         <div className="relative">
           <img
             src={AT_ICON_FULL}
+            loading="eager"
             alt="Archibald"
             className="w-14 h-14 object-contain drop-shadow-lg transition-transform group-hover:scale-110"
             style={{
@@ -625,6 +626,7 @@ export default function ArchibaldWizard() {
           <div className="relative">
             <img
               src={AT_ICON_FULL}
+              loading="eager"
               alt="Archibald the Guide"
               className="w-20 h-20 object-contain drop-shadow-lg"
               draggable={false}
