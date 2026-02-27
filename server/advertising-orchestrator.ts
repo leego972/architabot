@@ -1428,8 +1428,21 @@ async function publishToExpandedChannels(): Promise<AdvertisingAction[]> {
         ],
         response_format: { type: "json_schema", json_schema: { name: "telegram_msg", strict: true, schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false } } },
       });
-      const msg = JSON.parse((response.choices[0].message.content as string) || "{}");
-      const result = await telegramAdapter.sendMessage({ text: msg.text, parseMode: "Markdown" });
+      const raw = (response.choices[0].message.content as string) || "{}";
+      let telegramText = "";
+      try {
+        const parsed = JSON.parse(raw);
+        telegramText = parsed.text ?? raw;
+        // Handle double-encoded JSON (LLM sometimes returns JSON string within JSON)
+        if (typeof telegramText === "string" && telegramText.startsWith("{")) {
+          try { const inner = JSON.parse(telegramText); telegramText = inner.text ?? telegramText; } catch { /* not double-encoded */ }
+        }
+      } catch {
+        // If JSON parse fails entirely, use the raw string but strip any JSON wrapper
+        const match = raw.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        telegramText = match ? match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : raw;
+      }
+      const result = await telegramAdapter.sendMessage({ text: telegramText, parseMode: "Markdown" });
       actions.push({ channel: "telegram_channel", action: "send_broadcast", status: result.success ? "success" : "failed", details: result.success ? `Broadcast to Telegram` : `Telegram failed: ${result.error}`, cost: 0 });
     } catch (err: unknown) {
       actions.push({ channel: "telegram_channel", action: "send_broadcast", status: "failed", details: `Telegram: ${getErrorMessage(err)}`, cost: 0 });
