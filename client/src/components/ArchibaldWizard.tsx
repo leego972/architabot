@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { X, Sparkles, ChevronDown, Volume2, VolumeX } from "lucide-react";
 import { useArchibald } from "@/contexts/ArchibaldContext";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { AT_ICON_FULL } from "@/lib/logos";
 import {
   playAppearSound,
   playDisappearSound,
@@ -505,7 +506,7 @@ export default function ArchibaldWizard() {
       >
         <div className="relative">
           <img
-            src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/QilXRXhQBLPrCZnJ.png"
+            src={AT_ICON_FULL}
             alt="Archibald"
             className="w-14 h-14 object-contain drop-shadow-lg transition-transform group-hover:scale-110"
             style={{
@@ -623,7 +624,7 @@ export default function ArchibaldWizard() {
           {/* Archibald image */}
           <div className="relative">
             <img
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/QilXRXhQBLPrCZnJ.png"
+              src={AT_ICON_FULL}
               alt="Archibald the Guide"
               className="w-20 h-20 object-contain drop-shadow-lg"
               draggable={false}

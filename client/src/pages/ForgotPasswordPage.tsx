@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Shield, Mail, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
+import { FULL_LOGO_256 } from "@/lib/logos";
 
 export default function ForgotPasswordPage() {
   const [, navigate] = useLocation();
@@ -52,7 +53,7 @@ export default function ForgotPasswordPage() {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center justify-center gap-3 mb-8">
-          <img loading="lazy" src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/HNaKzhPBmMbQmPPP.png" alt="Archibald Titan" className="h-20 object-contain" />
+          <img loading="lazy" src={FULL_LOGO_256} alt="Archibald Titan" className="h-20 object-contain" />
         </div>
 
         <Card className="border-border/50 bg-card/80 backdrop-blur-sm shadow-2xl">

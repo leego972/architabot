@@ -29,6 +29,7 @@ import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { CreditBalanceWidget } from "./CreditBalanceWidget";
 import { trpc } from "@/lib/trpc";
+import { AT_ICON_64 } from "@/lib/logos";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Page 1", path: "/" },
@@ -173,7 +174,7 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <img src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/XqBVYWONhvkWzLDU.png" alt="AT" className="h-6 w-6 shrink-0 object-contain" />
+                  <img src={AT_ICON_64} alt="AT" className="h-6 w-6 shrink-0 object-contain" />
                   <span className="font-semibold tracking-tight truncate bg-gradient-to-r from-blue-400 to-blue-200 bg-clip-text text-transparent">
                     Archibald Titan
                   </span>

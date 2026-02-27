@@ -3,6 +3,7 @@ import { ArrowLeft, Mail, MessageSquare, CreditCard, HelpCircle, RefreshCw, User
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { AT_ICON_64 } from "@/lib/logos";
 
 const CATEGORIES = [
   { value: "billing" as const, label: "Billing & Payments", icon: CreditCard, desc: "Invoices, charges, payment methods, subscription issues" },
@@ -38,7 +39,7 @@ export default function ContactPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-3">
-              <img loading="lazy" src="https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/XqBVYWONhvkWzLDU.png" alt="AT" className="h-9 w-9 object-contain" />
+              <img loading="lazy" src={AT_ICON_64} alt="AT" className="h-9 w-9 object-contain" />
               <span className="text-lg font-bold tracking-tight">Archibald Titan</span>
             </Link>
             <Link href="/" className="flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors">

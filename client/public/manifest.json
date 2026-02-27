@@ -1,19 +1,35 @@
 {
   "name": "Archibald Titan",
   "short_name": "Titan",
-  "description": "AI-Powered Cybersecurity Agent — Autonomous credential retrieval, AI builder, encrypted vault, and 60+ professional tools.",
+  "description": "AI-Powered Cybersecurity Agent \u2014 Autonomous credential retrieval, AI builder, encrypted vault, and 60+ professional tools.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#0a0a1a",
   "theme_color": "#0a0a1a",
   "orientation": "any",
-  "categories": ["security", "developer", "productivity"],
+  "categories": [
+    "security",
+    "developer",
+    "productivity"
+  ],
   "icons": [
     {
-      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/sLzpMdFCYCLKTLES.png",
-      "sizes": "192x192",
+      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/CxSthvOEoIYcjTkp.png",
+      "sizes": "256x256",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OWOxDeusHjuaEMCR.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OCgcuWsxlPwFFFTp.png",
+      "sizes": "64x64",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
