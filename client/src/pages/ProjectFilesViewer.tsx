@@ -71,8 +71,9 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
+function formatDate(dateStr: string | Date): string {
+  const d = dateStr instanceof Date ? dateStr : new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -93,7 +94,7 @@ interface ProjectFile {
   s3Key?: string | null;
   hasContent?: boolean;
   size?: number | null;
-  createdAt?: string;
+  createdAt?: string | Date;
 }
 
 interface ProjectGroup {
@@ -117,11 +118,11 @@ function groupByProject(files: ProjectFile[]): ProjectGroup[] {
       files: files.sort((a, b) => a.path.localeCompare(b.path)),
       totalSize: files.reduce((sum, f) => sum + (f.size || 0), 0),
       lastModified: files.reduce((latest, f) => {
-        const d = f.createdAt || "";
+        const d = f.createdAt ? String(f.createdAt instanceof Date ? f.createdAt.toISOString() : f.createdAt) : "";
         return d > latest ? d : latest;
       }, ""),
     }))
-    .sort((a, b) => b.lastModified.localeCompare(a.lastModified));
+    .sort((a, b) => String(b.lastModified || "").localeCompare(String(a.lastModified || "")));
 }
 
 // ── Main Component ───────────────────────────────────────────────────
@@ -173,7 +174,7 @@ export default function ProjectFilesViewer() {
     if (!filesQuery.data?.files) return [];
     return filesQuery.data.files.map((f) => ({
       ...f,
-      createdAt: f.createdAt instanceof Date ? f.createdAt.toISOString() : (f.createdAt as unknown as string | undefined),
+      createdAt: f.createdAt instanceof Date ? f.createdAt.toISOString() : (typeof f.createdAt === 'string' ? f.createdAt : f.createdAt != null ? String(f.createdAt) : undefined),
     })) as ProjectFile[];
   }, [filesQuery.data]);
 
