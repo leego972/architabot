@@ -1,39 +1,40 @@
 /**
- * Centralized logo URLs for Archibald Titan branding.
- * All logos are hosted on CDN for fast loading.
+ * Centralized logo paths for Archibald Titan branding.
+ * All logos are served locally from /logos/ to avoid external CDN issues.
  *
- * Updated: New Titan Assistant logo (armored cyclops knight with lightning bolts)
+ * Updated: Moved from manuscdn.com CDN to local public/ folder
+ * because the CDN blocks browser requests (CORS/referrer policy).
  */
 
-// AT icon/monogram (transparent background) — NEW Titan Assistant logo
-export const AT_ICON_32 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/MwBxMoZWFaywHUSa.png";
-export const AT_ICON_64 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OCgcuWsxlPwFFFTp.png";
-export const AT_ICON_128 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OWOxDeusHjuaEMCR.png";
-export const AT_ICON_256 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/CxSthvOEoIYcjTkp.png";
+// AT icon/monogram (transparent background) — Titan Assistant logo
+export const AT_ICON_32 = "/logos/at-icon-32.png";
+export const AT_ICON_64 = "/logos/at-icon-64.png";
+export const AT_ICON_128 = "/logos/at-icon-128.png";
+export const AT_ICON_256 = "/logos/at-icon-256.png";
 
 // Full-size original (1024px)
-export const AT_ICON_FULL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/xcEjoIHsBxIqfeKi.png";
+export const AT_ICON_FULL = "/logos/at-icon-full.png";
 
 // AT icon on dark background — same logo works on both (transparent bg)
-export const AT_ICON_DARK_64 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OCgcuWsxlPwFFFTp.png";
-export const AT_ICON_DARK_128 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OWOxDeusHjuaEMCR.png";
+export const AT_ICON_DARK_64 = "/logos/at-icon-64.png";
+export const AT_ICON_DARK_128 = "/logos/at-icon-128.png";
 
-// Full Archibald Titan logo with text (armored wizard with blue flames — for login page)
-export const FULL_LOGO_256 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/eJEILsalHWeNCLit.png";
-export const FULL_LOGO_512 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/xmkKUZQmduLbfWFx.png";
+// Full Archibald Titan logo with text (for login page, onboarding)
+export const FULL_LOGO_256 = "/logos/full-logo-256.png";
+export const FULL_LOGO_512 = "/logos/full-logo-512.png";
 
 // Full logo on dark background (same — works on both)
-export const FULL_LOGO_DARK_256 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/eJEILsalHWeNCLit.png";
-export const FULL_LOGO_DARK_512 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/xmkKUZQmduLbfWFx.png";
+export const FULL_LOGO_DARK_256 = "/logos/full-logo-256.png";
+export const FULL_LOGO_DARK_512 = "/logos/full-logo-512.png";
 
 // Full-size original (1024px)
-export const FULL_LOGO_ORIGINAL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/YyjaKDoGvaCGdrRl.png";
+export const FULL_LOGO_ORIGINAL = "/logos/full-logo-original.png";
 
 // Tech Bazaar marketplace logo
-export const BAZAAR_LOGO_64 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/QHifqHRPBOwLWlbj.png";
-export const BAZAAR_LOGO_128 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/IsRyUGvaLQAwUneS.png";
-export const BAZAAR_LOGO_256 = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/KhsxBBsIDwtMvEsH.png";
-export const BAZAAR_LOGO_FULL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/kptHCAyrAioUYDGG.png";
+export const BAZAAR_LOGO_64 = "/logos/bazaar-logo-64.png";
+export const BAZAAR_LOGO_128 = "/logos/bazaar-logo-128.png";
+export const BAZAAR_LOGO_256 = "/logos/bazaar-logo-256.png";
+export const BAZAAR_LOGO_FULL = "/logos/bazaar-logo-full.png";
 
 // Favicon
-export const FAVICON_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/MwBxMoZWFaywHUSa.png";
+export const FAVICON_URL = "/logos/at-icon-32.png";

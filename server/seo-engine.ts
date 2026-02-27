@@ -36,7 +36,7 @@ const SITE_NAME = "Archibald Titan";
 const SITE_DESCRIPTION =
   "The World's Most Advanced Local AI Agent. Autonomously retrieve API keys and credentials from 15+ providers. AES-256 encrypted vault, stealth browser, CAPTCHA solving, and residential proxy support.";
 const SITE_LOGO =
-  "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/CxSthvOEoIYcjTkp.png";
+  "/logos/at-icon-256.png";
 const SITE_TWITTER = "@ArchibaldTitan";
 const SITE_CONTACT_EMAIL = "security@archibaldtitan.com";
 

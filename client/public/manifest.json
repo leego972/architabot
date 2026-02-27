@@ -14,22 +14,19 @@
   ],
   "icons": [
     {
-      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/CxSthvOEoIYcjTkp.png",
-      "sizes": "256x256",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OWOxDeusHjuaEMCR.png",
-      "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663363298990/OCgcuWsxlPwFFFTp.png",
+      "src": "/logos/at-icon-64.png",
       "sizes": "64x64",
-      "type": "image/png",
-      "purpose": "any"
+      "type": "image/png"
+    },
+    {
+      "src": "/logos/at-icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+    {
+      "src": "/logos/at-icon-256.png",
+      "sizes": "256x256",
+      "type": "image/png"
     }
   ]
 }
