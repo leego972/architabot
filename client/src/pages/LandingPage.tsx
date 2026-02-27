@@ -244,7 +244,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <img loading="lazy" src={AT_ICON_64} alt="AT" className="h-9 w-9 object-contain" />
+              <img loading="eager" src={AT_ICON_64} alt="AT" className="h-9 w-9 object-contain" />
               <span className="text-lg font-bold tracking-tight">Archibald Titan</span>
             </div>
             <div className="hidden md:flex items-center gap-8">
@@ -997,7 +997,7 @@ export default function LandingPage() {
             {/* Brand */}
             <div className="md:col-span-2">
               <div className="flex items-center gap-3 mb-4">
-                <img loading="lazy" src={AT_ICON_64} alt="AT" className="h-8 w-8 object-contain" />
+                <img loading="eager" src={AT_ICON_64} alt="AT" className="h-8 w-8 object-contain" />
                 <span className="text-base font-bold tracking-tight">Archibald Titan</span>
               </div>
               <p className="text-sm text-white/40 max-w-sm leading-relaxed">

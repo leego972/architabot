@@ -137,7 +137,7 @@ export default function OnboardingWizard() {
           <CardContent className="pt-6 pb-4 px-6 overflow-y-auto min-h-0 flex-1">
             <div className="text-center space-y-3">
               {currentStep.id === "welcome" ? (
-                <img loading="lazy" src={AT_ICON_128} alt="AT" className="mx-auto w-14 h-14 object-contain" />
+                <img loading="eager" src={AT_ICON_128} alt="AT" className="mx-auto w-14 h-14 object-contain" />
               ) : (
                 <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 flex items-center justify-center">
                   <Icon className="w-7 h-7 text-blue-400" />

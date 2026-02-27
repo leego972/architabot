@@ -39,7 +39,7 @@ export default function ContactPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-3">
-              <img loading="lazy" src={AT_ICON_64} alt="AT" className="h-9 w-9 object-contain" />
+              <img loading="eager" src={AT_ICON_64} alt="AT" className="h-9 w-9 object-contain" />
               <span className="text-lg font-bold tracking-tight">Archibald Titan</span>
             </Link>
             <Link href="/" className="flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors">
