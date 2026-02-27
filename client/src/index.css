@@ -310,6 +310,15 @@ body {
     height: 100dvh;
     min-height: -webkit-fill-available;
   }
+  /* Ensure mobile sidebar sheet renders above everything */
+  [data-sidebar="sidebar"][data-mobile="true"] {
+    z-index: 60 !important;
+  }
+  /* Make sidebar scrollable on mobile with momentum scrolling */
+  [data-slot="sidebar"] [data-slot="sidebar-content"] {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
 }
 
 /* ─── Chat Page Mobile Fixes ─────────────────────────────────────── */

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useSidebar } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +14,6 @@ import {
   Send,
   User,
   Trash2,
-  Sparkles,
   Activity,
   Wrench,
   Shield,
@@ -36,6 +36,7 @@ import {
   MoreHorizontal,
   Pencil,
   Trash,
+  PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
   HelpCircle,
@@ -831,6 +832,8 @@ export default function ChatPage() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const isMobile = useIsMobile();
   const [, setLocation] = useLocation();
+  // Access the main navigation sidebar (from FetcherLayout's SidebarProvider)
+  const { toggleSidebar: toggleMainNav } = useSidebar();
 
   // UI state
   const [showHelp, setShowHelp] = useState(false);
@@ -1445,17 +1448,28 @@ export default function ChatPage() {
         {/* Header */}
         <div className={`flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-sm shrink-0 ${isMobile ? 'px-2 py-2 min-h-[48px]' : 'px-4 pb-3 pt-1'}`}>
           <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
-            {/* Mobile menu button */}
+            {/* Mobile: Main navigation button (opens FetcherLayout sidebar) */}
+            {isMobile && (
+              <button
+                onClick={toggleMainNav}
+                className="p-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-foreground transition-colors shrink-0 touch-target"
+                aria-label="Open navigation menu"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </button>
+            )}
+            {/* Mobile: Conversation list button */}
             {isMobile && (
               <button
                 onClick={() => setMobileDrawerOpen(true)}
                 className="p-2 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors shrink-0 touch-target"
+                aria-label="Open conversations"
               >
-                <Menu className="h-5 w-5" />
+                <MessageSquare className="h-5 w-5" />
               </button>
             )}
-            <div className="h-7 w-7 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
-              <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
+            <div className="h-7 w-7 sm:h-9 sm:w-9 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
+              <TitanLogo size="sm" className="!h-7 !w-7 sm:!h-9 sm:!w-9" />
             </div>
             <div className="min-w-0 flex-1">
               <h1 className="text-sm sm:text-lg font-semibold tracking-tight truncate">
@@ -1536,7 +1550,7 @@ export default function ChatPage() {
                           className="flex items-center gap-2 p-3 rounded-xl border border-border/50 bg-card hover:bg-accent/50 transition-all text-left group active:scale-[0.98]"
                         >
                           <div className="text-muted-foreground group-hover:text-primary transition-colors shrink-0">
-                            {QUICK_ACTION_ICONS[action.icon] || <Sparkles className="h-4 w-4" />}
+                            {QUICK_ACTION_ICONS[action.icon] || <TitanLogo size="sm" className="!h-4 !w-4" />}
                           </div>
                           <span className="text-xs font-medium leading-tight">{action.label}</span>
                         </button>

@@ -412,9 +412,9 @@ function FetcherLayoutContent({
                         <SidebarMenuItem key={item.path}>
                           <SidebarMenuButton
                             isActive={isActive}
-                            onClick={() => setLocation(item.path)}
+                            onClick={() => { setLocation(item.path); if (isMobile) toggleSidebar(); }}
                             tooltip={item.label}
-                            className={`h-10 sm:h-9 transition-all font-normal ${
+                            className={`h-12 sm:h-9 transition-all font-normal ${
                               isActive
                                 ? "bg-blue-500/10 text-blue-400 font-medium"
                                 : "hover:bg-white/[0.04]"
