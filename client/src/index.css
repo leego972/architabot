@@ -324,9 +324,6 @@ body {
 /* ─── Chat Page Mobile Fixes ─────────────────────────────────────── */
 /* Prevent the chat input area from being pushed off-screen on mobile */
 .chat-page-root {
-  /* Use dynamic viewport height to account for mobile browser chrome */
-  height: 100dvh;
-  max-height: 100dvh;
   overflow: hidden;
 }
 

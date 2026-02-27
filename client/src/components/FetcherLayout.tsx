@@ -541,7 +541,7 @@ function FetcherLayoutContent({
 
       <SidebarInset>
         {isMobile && (
-          <div className="flex border-b border-white/10 h-14 items-center justify-between bg-background px-3 sticky top-0 z-50 safe-area-top [.chat-page-root_&]:hidden max-md:[&:has(~main_.chat-page-root)]:hidden" id="mobile-nav-header">
+          <div className="flex border-b border-white/10 h-14 items-center justify-between bg-background px-3 sticky top-0 z-50 safe-area-top" id="mobile-nav-header">
             <div className="flex items-center gap-3">
               <SidebarTrigger className="h-10 w-10 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-foreground [&_svg]:!h-5 [&_svg]:!w-5" />
               <div className="flex items-center gap-2">
