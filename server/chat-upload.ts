@@ -3,6 +3,7 @@ import { createContext } from "./_core/context";
 import { storagePut } from "./storage";
 import crypto from "crypto";
 import { createLogger } from "./_core/logger.js";
+import { scanFileForMalware, trackIncident } from "./security-fortress";
 const log = createLogger("ChatUpload");
 
 /**
@@ -35,6 +36,21 @@ export function registerChatUploadRoute(app: Express) {
         const fileBuffer = Buffer.concat(fileChunks);
         if (fileBuffer.length === 0) {
           return res.status(400).json({ error: "No file provided" });
+        }
+
+        // ── SECURITY: Malware scan on text-based uploads ─────────
+        const textMimes = ["text/", "application/javascript", "application/json", "application/typescript"];
+        if (textMimes.some(m => fileMimeType.startsWith(m))) {
+          const content = fileBuffer.toString("utf-8");
+          const scan = await scanFileForMalware(content, `chat-upload-${Date.now()}`, ctx.user!.id);
+          if (!scan.safe) {
+            log.error(`[Chat Upload] Malware detected (risk: ${scan.riskScore}/100)`);
+            await trackIncident(ctx.user!.id, "malware_upload");
+            return res.status(403).json({
+              error: "File rejected: suspicious code patterns detected.",
+              riskScore: scan.riskScore,
+            });
+          }
         }
 
         try {

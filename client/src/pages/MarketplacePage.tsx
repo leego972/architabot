@@ -209,7 +209,7 @@ function BrowseView({ onSelectListing, onListItem }: { onSelectListing: (id: num
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/5 via-transparent to-transparent" />
         <div className="relative max-w-6xl mx-auto px-6 py-10 text-center">
           <div className="flex justify-center mb-4">
-            <img loading="lazy" src={BAZAAR_LOGO_256} alt="Tech Bazaar" className="w-48 h-48 md:w-56 md:h-56 object-contain drop-shadow-2xl" />
+            <img loading="eager" src={BAZAAR_LOGO_256} alt="Tech Bazaar" className="w-48 h-48 md:w-56 md:h-56 object-contain drop-shadow-2xl" />
           </div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-2">
             <span className="bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 bg-clip-text text-transparent"
@@ -1301,7 +1301,8 @@ function SellView({ onSelectListing }: { onSelectListing: (id: number) => void }
         const formData = new FormData();
         formData.append("file", file);
         formData.append("listingId", String(listingId));
-        const res = await fetch("/api/marketplace/upload", { method: "POST", body: formData, credentials: "include" });
+        const csrfTk = document.cookie.split('; ').find(c => c.startsWith('csrf_token='))?.split('=')[1] || '';
+        const res = await fetch("/api/marketplace/upload", { method: "POST", body: formData, credentials: "include", headers: csrfTk ? { 'x-csrf-token': csrfTk } : {} });
         const data = await res.json();
         if (!res.ok) { toast.error(data.error || "Upload failed"); return; }
         toast.success(`File uploaded! ${data.fileName} (${data.fileSizeMb}MB)`);
@@ -1349,7 +1350,7 @@ function SellView({ onSelectListing }: { onSelectListing: (id: number) => void }
       <div className="max-w-2xl mx-auto px-6 py-12">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
-            <img loading="lazy" src={BAZAAR_LOGO_128} alt="Tech Bazaar" className="w-28 h-28 object-contain drop-shadow-lg" />
+            <img loading="eager" src={BAZAAR_LOGO_128} alt="Tech Bazaar" className="w-28 h-28 object-contain drop-shadow-lg" />
           </div>
           <h1 className="text-3xl font-bold mb-3">Open Your Tech Bazaar Stall</h1>
           <p className="text-muted-foreground text-lg max-w-md mx-auto">

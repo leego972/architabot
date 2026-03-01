@@ -54,7 +54,7 @@ export default function TrialBanner() {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Sparkles className="w-4 h-4 flex-shrink-0" />
           <span className="truncate">
-            <strong>Unlock your 7-day Pro trial</strong> — Add a payment method to access all features free for a week.
+            <strong>Unlock your 7-day free trial</strong> — Try all features including Leak Scanner, TOTP Vault, and AI tools. No charge until trial ends.
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -126,7 +126,7 @@ export default function TrialBanner() {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 animate-pulse" />
           <span className="truncate">
-            <strong>{daysRemaining === 0 ? "Last day" : `${daysRemaining} day${daysRemaining > 1 ? "s" : ""} left`}</strong> — Your Pro trial ends soon. Pro continues at $29/month, or upgrade for more features.
+            <strong>{daysRemaining === 0 ? "Last day" : `${daysRemaining} day${daysRemaining > 1 ? "s" : ""} left`}</strong> — Your trial ends soon. Continue with Pro at $29/mo, or go <strong>Cyber</strong> for the full security suite.
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -154,16 +154,24 @@ export default function TrialBanner() {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <span className="truncate">
-            <strong>Your trial has ended.</strong> Subscribe to continue using Archibald Titan with full access.
+            <strong>Your trial has ended.</strong> Subscribe to keep building. Go <strong>Cyber</strong> for the full security suite — Leak Scanner, TOTP Vault, and more.
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <Button
             size="sm"
+            variant="secondary"
+            className="h-8 text-xs bg-white/20 hover:bg-white/30 text-white border-0 font-semibold"
+            onClick={() => navigate("/pricing")}
+          >
+            View Plans
+          </Button>
+          <Button
+            size="sm"
             className="h-8 text-xs bg-white text-red-700 hover:bg-white/90 font-semibold"
             onClick={() => navigate("/pricing")}
           >
-            Choose a Plan
+            Go Cyber
             <ArrowRight className="w-3 h-3 ml-1" />
           </Button>
         </div>

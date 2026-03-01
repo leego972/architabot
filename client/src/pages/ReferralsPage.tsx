@@ -285,20 +285,44 @@ export default function ReferralsPage() {
 
             <p className="text-xs text-muted-foreground">{d?.currentTier?.perks}</p>
 
-            {/* Free month progress */}
+            {/* Deal 1: 5 referrals = 30% off first month */}
             <div className="p-3 bg-black/20 rounded-lg">
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-muted-foreground">Free month progress</span>
+                <span className="text-muted-foreground">30% Off First Month</span>
                 <span className="text-purple-400">
-                  {(d?.totalReferrals || 0) % 3}/3 referrals
+                  {Math.min(d?.totalReferrals || 0, 5)}/5 verified sign-ups
                 </span>
               </div>
               <Progress
-                value={(((d?.totalReferrals || 0) % 3) / 3) * 100}
+                value={Math.min(((d?.totalReferrals || 0) / 5) * 100, 100)}
                 className="h-1.5"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Every 3 referrals = 1 free month of Titan Pro
+                {(d?.totalReferrals || 0) >= 5
+                  ? "Unlocked! 30% off will be applied to your next subscription checkout."
+                  : `Refer ${5 - (d?.totalReferrals || 0)} more friends who sign up to unlock 30% off your first month.`
+                }
+              </p>
+            </div>
+
+            {/* Deal 2: High-value referral = 50% off Pro annual */}
+            <div className="p-3 bg-gradient-to-r from-amber-500/10 to-purple-500/10 rounded-lg border border-amber-500/20">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-amber-400 text-sm font-semibold">Premium Referral Bonus</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Refer a friend who subscribes to <span className="text-cyan-400 font-medium">Cyber</span> tier or above, and you'll get <span className="text-amber-400 font-medium">50% off your second year of Pro</span> (annual billing, one-time reward).
+              </p>
+            </div>
+
+            {/* Deal 3: Titan referral = 3 months Titan features */}
+            <div className="p-3 bg-gradient-to-r from-purple-600/15 to-cyan-500/15 rounded-lg border border-purple-500/30">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-purple-400 text-sm font-bold">Titan Referral Unlock</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded-full font-medium">EXCLUSIVE</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Refer a friend who subscribes to <span className="text-purple-400 font-medium">Titan</span> tier and pays — you'll get <span className="text-cyan-400 font-medium">3 months of full Titan features unlocked</span> for free. All tools, unlimited access, zero cost. One-time reward.
               </p>
             </div>
           </CardContent>

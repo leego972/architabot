@@ -328,10 +328,17 @@ body {
 }
 
 @media screen and (max-width: 768px) {
+  /* Use keyboard offset to shrink the chat page when iOS keyboard opens */
+  .chat-page-root {
+    height: calc(100dvh - 3.5rem - var(--keyboard-offset, 0px)) !important;
+    max-height: calc(100dvh - 3.5rem - var(--keyboard-offset, 0px)) !important;
+    transition: height 0.15s ease-out, max-height 0.15s ease-out;
+  }
   /* Ensure chat messages don't overflow horizontally */
   .chat-page-root .prose {
     max-width: 100%;
     overflow-x: hidden;
+    word-break: break-word;
   }
   /* Prevent code blocks from breaking layout */
   .chat-page-root pre {
@@ -344,6 +351,11 @@ body {
     bottom: 0;
     z-index: 10;
     background: var(--background);
+  }
+  /* Prevent body scroll bounce on iOS which can cause chat to jump */
+  .chat-page-root {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
   }
 }
 

@@ -28,12 +28,25 @@ const CSRF_COOKIE = "csrf_token";
 const CSRF_HEADER = "x-csrf-token";
 const TOKEN_LENGTH = 32; // 256 bits
 
-/** Paths exempt from CSRF validation (webhooks use their own signature verification) */
+/** Paths exempt from CSRF validation (webhooks use their own signature verification, auth routes use passwords/tokens) */
 const EXEMPT_PATHS = [
+  // Webhooks — use signature verification
   "/api/stripe-webhook",
   "/api/binance-pay/webhook",
   "/api/health",
   "/api/desktop/",
+  // Auth routes — use password/token auth, not cookie-based sessions
+  // These MUST be exempt because the login/register forms can't send CSRF headers
+  // before the user has a session (chicken-and-egg problem)
+  "/api/auth/",
+  // OAuth callback routes
+  "/api/oauth/",
+  // GitHub release sync webhook
+  "/api/releases/",
+  // File upload routes — use multipart form data which can't easily include CSRF headers
+  // These are authenticated via session cookies and only accept file data
+  "/api/chat/upload",
+  "/api/voice/upload",
 ];
 
 /** Check if a path is exempt from CSRF */
@@ -85,8 +98,10 @@ export function csrfValidationMiddleware(req: Request, res: Response, next: Next
     return next();
   }
 
-  // Skip exempt paths (webhooks)
-  if (isExempt(req.path)) {
+  // Skip exempt paths (webhooks, auth routes)
+  // Use req.originalUrl because when mounted via app.use('/api/', ...),
+  // req.path is relative to the mount point (e.g., /auth/login instead of /api/auth/login)
+  if (isExempt(req.originalUrl || req.path)) {
     return next();
   }
 

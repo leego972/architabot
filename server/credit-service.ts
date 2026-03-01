@@ -11,6 +11,10 @@ import { getDb } from "./db";
 import { creditBalances, creditTransactions, users } from "../drizzle/schema";
 import { PRICING_TIERS, CREDIT_COSTS, type PlanId, type CreditActionType } from "../shared/pricing";
 import { getUserPlan } from "./subscription-gate";
+import {
+  validateCreditOperation,
+  logSecurityEvent,
+} from "./security-hardening";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -146,6 +150,19 @@ export async function consumeCredits(
 
   await ensureBalance(userId);
 
+  // ── SECURITY: Credit Integrity Validation ──────────────────────
+  const cost = CREDIT_COSTS[action];
+  const validation = validateCreditOperation("consume", cost, userId);
+  if (!validation.valid) {
+    await logSecurityEvent(userId, "credit_integrity_violation", {
+      operation: "consume",
+      action,
+      cost,
+      error: validation.error,
+    });
+    return { success: false, balanceAfter: 0 };
+  }
+
   const txType = action === "chat_message" ? "chat_message" as const
     : action === "builder_action" ? "builder_action" as const
     : action === "voice_action" ? "voice_action" as const
@@ -225,6 +242,20 @@ export async function addCredits(
   if (!db) return { success: false, balanceAfter: 0 };
 
   await ensureBalance(userId);
+
+  // ── SECURITY: Credit Integrity Validation ──────────────────────
+  // Validate the credit addition amount. Admin adjustments bypass.
+  const isAdminOp = type === "admin_adjustment";
+  const validation = validateCreditOperation("add", amount, userId, isAdminOp);
+  if (!validation.valid) {
+    await logSecurityEvent(userId, "credit_integrity_violation", {
+      operation: "add",
+      type,
+      amount,
+      error: validation.error,
+    });
+    return { success: false, balanceAfter: 0 };
+  }
 
   // Wrap in a transaction to ensure balance update + transaction log are atomic
   return await db.transaction(async (tx) => {

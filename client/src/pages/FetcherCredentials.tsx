@@ -1,11 +1,51 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
-import { Loader2, RefreshCw, Trash2, Eye, EyeOff, KeyRound, Copy, Check, Search } from "lucide-react";
-import { useState, useMemo } from "react";
+import {
+  Loader2, RefreshCw, Trash2, Eye, EyeOff, KeyRound, Copy, Check,
+  Search, Plus, X, Shield, ChevronDown,
+} from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
 import { toast } from "sonner";
+
+// ─── Known Providers ────────────────────────────────────────────────
+const KNOWN_PROVIDERS = [
+  { id: "openai", name: "OpenAI", keyTypes: ["api_key"], prefixes: ["sk-"] },
+  { id: "anthropic", name: "Anthropic", keyTypes: ["api_key"], prefixes: ["sk-ant-"] },
+  { id: "github", name: "GitHub", keyTypes: ["personal_access_token"], prefixes: ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"] },
+  { id: "aws", name: "AWS", keyTypes: ["access_key_id", "secret_access_key"], prefixes: ["AKIA", "ASIA"] },
+  { id: "google_cloud", name: "Google Cloud", keyTypes: ["api_key", "oauth_client_id", "oauth_client_secret"], prefixes: ["AIza"] },
+  { id: "firebase", name: "Firebase", keyTypes: ["api_key", "project_id", "app_id"], prefixes: ["AIza"] },
+  { id: "stripe", name: "Stripe", keyTypes: ["publishable_key", "secret_key"], prefixes: ["pk_", "sk_", "rk_"] },
+  { id: "twilio", name: "Twilio", keyTypes: ["account_sid", "auth_token"], prefixes: ["AC"] },
+  { id: "sendgrid", name: "SendGrid", keyTypes: ["api_key"], prefixes: ["SG."] },
+  { id: "mailgun", name: "Mailgun", keyTypes: ["api_key"], prefixes: [] },
+  { id: "heroku", name: "Heroku", keyTypes: ["api_key"], prefixes: [] },
+  { id: "digitalocean", name: "DigitalOcean", keyTypes: ["personal_access_token"], prefixes: ["dop_v1_"] },
+  { id: "cloudflare", name: "Cloudflare", keyTypes: ["api_token", "global_api_key"], prefixes: [] },
+  { id: "godaddy", name: "GoDaddy", keyTypes: ["api_key", "api_secret"], prefixes: [] },
+  { id: "meta", name: "Meta (Facebook/Instagram)", keyTypes: ["app_id", "app_secret", "access_token", "page_access_token"], prefixes: ["EAA"] },
+  { id: "tiktok", name: "TikTok", keyTypes: ["app_id", "app_secret", "access_token", "advertiser_id"], prefixes: [] },
+  { id: "google_ads", name: "Google Ads", keyTypes: ["developer_token", "client_id", "client_secret", "refresh_token", "customer_id"], prefixes: [] },
+  { id: "snapchat", name: "Snapchat", keyTypes: ["client_id", "client_secret", "refresh_token", "ad_account_id"], prefixes: [] },
+  { id: "discord", name: "Discord", keyTypes: ["bot_token", "client_id", "client_secret", "application_id"], prefixes: [] },
+  { id: "roblox", name: "Roblox", keyTypes: ["api_key", "cloud_api_key", "universe_id"], prefixes: [] },
+  { id: "huggingface", name: "Hugging Face", keyTypes: ["access_token"], prefixes: ["hf_"] },
+] as const;
+
+function autoDetectProvider(value: string): { providerId: string; providerName: string; keyType: string } | null {
+  const trimmed = value.trim();
+  for (const p of KNOWN_PROVIDERS) {
+    for (const prefix of p.prefixes) {
+      if (trimmed.startsWith(prefix)) {
+        return { providerId: p.id, providerName: p.name, keyType: p.keyTypes[0] };
+      }
+    }
+  }
+  return null;
+}
 
 export default function FetcherCredentials() {
   const { data: credentials, isLoading, refetch } = trpc.fetcher.listCredentials.useQuery();
@@ -14,6 +54,26 @@ export default function FetcherCredentials() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  // ─── Add Credential Form State ──────────────────────────────────
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addProviderId, setAddProviderId] = useState("");
+  const [addProviderName, setAddProviderName] = useState("");
+  const [addKeyType, setAddKeyType] = useState("");
+  const [addValue, setAddValue] = useState("");
+  const [addLabel, setAddLabel] = useState("");
+  const [showProviderDropdown, setShowProviderDropdown] = useState(false);
+  const [autoDetected, setAutoDetected] = useState(false);
+
+  const addCred = trpc.fetcher.addCredential.useMutation({
+    onSuccess: () => {
+      toast.success("Credential saved and encrypted!");
+      setShowAddForm(false);
+      resetForm();
+      refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const deleteCred = trpc.fetcher.deleteCredential.useMutation({
     onSuccess: () => {
@@ -24,9 +84,59 @@ export default function FetcherCredentials() {
     onError: (err) => toast.error(err.message),
   });
 
+  const resetForm = useCallback(() => {
+    setAddProviderId("");
+    setAddProviderName("");
+    setAddKeyType("");
+    setAddValue("");
+    setAddLabel("");
+    setAutoDetected(false);
+  }, []);
+
+  const handleValueChange = useCallback((val: string) => {
+    setAddValue(val);
+    // Auto-detect provider from the pasted value
+    const detected = autoDetectProvider(val);
+    if (detected && !addProviderId) {
+      setAddProviderId(detected.providerId);
+      setAddProviderName(detected.providerName);
+      setAddKeyType(detected.keyType);
+      setAutoDetected(true);
+    }
+  }, [addProviderId]);
+
+  const handleSelectProvider = useCallback((provider: typeof KNOWN_PROVIDERS[number]) => {
+    setAddProviderId(provider.id);
+    setAddProviderName(provider.name);
+    if (provider.keyTypes.length === 1) {
+      setAddKeyType(provider.keyTypes[0]);
+    } else {
+      setAddKeyType("");
+    }
+    setShowProviderDropdown(false);
+    setAutoDetected(false);
+  }, []);
+
+  const handleSubmitCredential = useCallback(() => {
+    const pid = addProviderId.trim() || "custom";
+    const pname = addProviderName.trim() || pid;
+    const ktype = addKeyType.trim() || "api_key";
+    const val = addValue.trim();
+    if (!val) {
+      toast.error("Please enter the credential value");
+      return;
+    }
+    addCred.mutate({
+      providerId: pid,
+      providerName: pname,
+      keyType: ktype,
+      value: val,
+      keyLabel: addLabel.trim() || undefined,
+    });
+  }, [addProviderId, addProviderName, addKeyType, addValue, addLabel, addCred]);
+
   const toggleReveal = async (id: number) => {
     if (revealedIds.has(id)) {
-      // Hide it
       setRevealedIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
@@ -34,8 +144,6 @@ export default function FetcherCredentials() {
       });
       return;
     }
-
-    // Fetch the specific credential's decrypted value
     try {
       const res = await fetch(`/api/trpc/fetcher.revealCredential?input=${encodeURIComponent(JSON.stringify({ credentialId: id }))}`, {
         credentials: "include",
@@ -77,6 +185,9 @@ export default function FetcherCredentials() {
     );
   }, [credentials, searchQuery]);
 
+  // Find the selected provider for key type dropdown
+  const selectedProvider = KNOWN_PROVIDERS.find((p) => p.id === addProviderId);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -87,27 +198,211 @@ export default function FetcherCredentials() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Credentials Vault</h1>
           <p className="text-muted-foreground mt-1">
-            All retrieved API keys and tokens, encrypted with AES-256-GCM.
+            All API keys and tokens, encrypted with AES-256-GCM.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showAddForm ? "secondary" : "default"}
+            size="sm"
+            onClick={() => { setShowAddForm(!showAddForm); if (showAddForm) resetForm(); }}
+          >
+            {showAddForm ? (
+              <>
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Credential
+              </>
+            )}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
+      {/* ─── Add Credential Form ─────────────────────────────────── */}
+      {showAddForm && (
+        <Card className="border-primary/30 bg-primary/[0.02]">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              Add New Credential
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Paste your API key or token below. We'll try to auto-detect the provider.
+              You can also tell Titan in the chat: <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">"Save my OpenAI key sk-..."</span>
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Value Input — First, because auto-detect works from here */}
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                API Key / Token / Secret <span className="text-destructive">*</span>
+              </label>
+              <Input
+                type="password"
+                placeholder="Paste your credential here (e.g. sk-abc123...)"
+                value={addValue}
+                onChange={(e) => handleValueChange(e.target.value)}
+                className="font-mono"
+                autoFocus
+              />
+              {autoDetected && addProviderName && (
+                <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                  <Check className="h-3 w-3" />
+                  Auto-detected: {addProviderName} ({addKeyType})
+                </p>
+              )}
+            </div>
+
+            {/* Provider Selection */}
+            <div className="relative">
+              <label className="text-sm font-medium mb-1.5 block">Provider</label>
+              <button
+                type="button"
+                onClick={() => setShowProviderDropdown(!showProviderDropdown)}
+                className="w-full flex items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background hover:bg-accent hover:text-accent-foreground"
+              >
+                <span className={addProviderName ? "" : "text-muted-foreground"}>
+                  {addProviderName || "Select a provider or type custom..."}
+                </span>
+                <ChevronDown className="h-4 w-4 opacity-50" />
+              </button>
+              {showProviderDropdown && (
+                <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-md border bg-popover shadow-lg">
+                  {KNOWN_PROVIDERS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleSelectProvider(p)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                    >
+                      {p.name}
+                      <span className="text-xs text-muted-foreground ml-2">
+                        {p.keyTypes.join(", ")}
+                      </span>
+                    </button>
+                  ))}
+                  {/* Custom option */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddProviderId("custom");
+                      setAddProviderName("");
+                      setAddKeyType("");
+                      setShowProviderDropdown(false);
+                      setAutoDetected(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground border-t transition-colors"
+                  >
+                    Custom Provider
+                    <span className="text-xs text-muted-foreground ml-2">Enter your own</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Custom provider name if "custom" selected */}
+            {addProviderId === "custom" && (
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Custom Provider Name</label>
+                <Input
+                  placeholder="e.g. My Internal API"
+                  value={addProviderName}
+                  onChange={(e) => setAddProviderName(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Key Type — dropdown if provider has multiple, or text input */}
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Key Type</label>
+              {selectedProvider && selectedProvider.keyTypes.length > 1 ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectedProvider.keyTypes.map((kt) => (
+                    <button
+                      key={kt}
+                      type="button"
+                      onClick={() => setAddKeyType(kt)}
+                      className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                        addKeyType === kt
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background hover:bg-accent border-input"
+                      }`}
+                    >
+                      {kt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <Input
+                  placeholder="e.g. api_key, secret_key, access_token"
+                  value={addKeyType}
+                  onChange={(e) => setAddKeyType(e.target.value)}
+                />
+              )}
+            </div>
+
+            {/* Label (optional) */}
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                Label <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <Input
+                placeholder="e.g. Production, Staging, Personal"
+                value={addLabel}
+                onChange={(e) => setAddLabel(e.target.value)}
+              />
+            </div>
+
+            {/* Submit */}
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Shield className="h-3 w-3" />
+                Encrypted at rest with AES-256-GCM
+              </p>
+              <Button
+                onClick={handleSubmitCredential}
+                disabled={!addValue.trim() || addCred.isPending}
+              >
+                {addCred.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <KeyRound className="h-4 w-4 mr-2" />
+                )}
+                Save Credential
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ─── Empty State ─────────────────────────────────────────── */}
       {!credentials || credentials.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <KeyRound className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No credentials stored yet.</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Run a fetch job to retrieve API keys.
+            <p className="text-sm text-muted-foreground mt-1 mb-4">
+              Add credentials manually, paste them in the chat, or run a fetch job.
             </p>
+            {!showAddForm && (
+              <Button onClick={() => setShowAddForm(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Your First Credential
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -149,6 +444,11 @@ export default function FetcherCredentials() {
                           <Badge variant="secondary" className="text-xs">
                             {cred.keyType}
                           </Badge>
+                          {cred.jobId === 0 && (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                              manual
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1 font-mono truncate select-all">
                           {isRevealed && decryptedValue

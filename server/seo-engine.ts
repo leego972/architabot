@@ -99,7 +99,7 @@ export function getSeoEventLog(limit = 50): SeoEvent[] {
 
 // ─── Public Pages Configuration ─────────────────────────────────────
 
-interface PageSeoConfig {
+export interface PageSeoConfig {
   path: string;
   title: string;
   description: string;
@@ -373,6 +373,14 @@ export function injectMetaTags(html: string, requestPath: string): string {
   if (pageStructuredData) {
     const jsonLdScript = `<script type="application/ld+json">${JSON.stringify(pageStructuredData)}</script>`;
     result = result.replace("</head>", `    ${jsonLdScript}\n  </head>`);
+  }
+
+  // Inject SEO v4 enhancements (AI citation meta, enhanced structured data, preload hints)
+  try {
+    const { injectV4MetaTags } = require("./seo-engine-v4");
+    result = injectV4MetaTags(result, requestPath);
+  } catch {
+    // v4 module not available — graceful fallback
   }
 
   return result;
@@ -2102,11 +2110,17 @@ export function registerSeoRoutes(app: Express): void {
     res.send(xml);
   });
 
-  // Serve robots.txt
+  // Serve robots.txt (v4 advanced version with GEO-optimized AI crawler rules)
   app.get("/robots.txt", (_req: Request, res: Response) => {
     res.set("Content-Type", "text/plain");
     res.set("Cache-Control", "public, max-age=86400");
-    res.send(generateRobotsTxt());
+    // Use v4 advanced robots.txt that selectively allows AI search crawlers for GEO
+    try {
+      const { generateAdvancedRobotsTxt } = require("./seo-engine-v4");
+      res.send(generateAdvancedRobotsTxt());
+    } catch {
+      res.send(generateRobotsTxt());
+    }
   });
 
   // Serve security.txt

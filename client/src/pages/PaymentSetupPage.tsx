@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import {
-  CreditCard, Shield, Zap, Bot, Lock, ArrowRight, Loader2,
+  CreditCard, Shield, Zap, Lock, ArrowRight, Loader2,
   CheckCircle2, Clock, Star, Sparkles, ChevronRight
 } from "lucide-react";
 import { FULL_LOGO_DARK_512 } from "@/lib/logos";
+import { TitanLogo } from "@/components/TitanLogo";
 import { trpc } from "@/lib/trpc";
 
 export default function PaymentSetupPage() {
@@ -37,7 +38,7 @@ export default function PaymentSetupPage() {
   };
 
   const trialFeatures = [
-    { icon: Bot, label: "Unlimited AI Chat", desc: "Full access to Archibald Titan AI assistant" },
+    { icon: ({ className }: { className?: string }) => <TitanLogo size="sm" className={`!h-5 !w-5 ${className || ''}`} />, label: "Unlimited AI Chat", desc: "Full access to Archibald Titan AI assistant" },
     { icon: Zap, label: "5,000 Monthly Credits", desc: "Build, create, and automate without limits" },
     { icon: Shield, label: "Credential Vault", desc: "Secure encrypted storage for all your credentials" },
     { icon: Star, label: "Bazaar Marketplace", desc: "Browse and purchase specialized modules" },
@@ -55,7 +56,7 @@ export default function PaymentSetupPage() {
         <div className="flex flex-col items-center justify-center gap-3 mb-6">
           <div className="relative">
             <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full" />
-            <img loading="lazy" src={FULL_LOGO_DARK_512} alt="Archibald Titan" className="relative h-20 w-auto object-contain drop-shadow-2xl" />
+            <img loading="eager" src={FULL_LOGO_DARK_512} alt="Archibald Titan" className="relative h-20 w-auto object-contain drop-shadow-2xl" />
           </div>
         </div>
 

@@ -33,6 +33,11 @@ import {
 import { storagePut } from "./storage";
 import { createLogger } from "./_core/logger.js";
 import { getErrorMessage } from "./_core/errors.js";
+import {
+  validateFilePath,
+  checkUserRateLimit,
+  logSecurityEvent,
+} from "./security-hardening";
 const log = createLogger("SandboxEngine");
 
 const execAsync = promisify(exec);
@@ -229,9 +234,24 @@ export async function executeCommand(
   const sandbox = await getSandbox(sandboxId, userId);
   if (!sandbox) throw new Error("Sandbox not found");
 
+  // ── SECURITY: Per-User Sandbox Rate Limiting ──────────────────
+  const rateCheck = await checkUserRateLimit(userId, "sandbox:exec");
+  if (!rateCheck.allowed) {
+    return {
+      output: `Error: Sandbox rate limit exceeded. Please wait ${Math.ceil((rateCheck.retryAfterMs || 60000) / 1000)}s.`,
+      exitCode: 1,
+      durationMs: 0,
+      workingDirectory: sandbox.workingDirectory,
+    };
+  }
+
   // Check for blocked commands
   const blocked = isBlockedCommand(command);
   if (blocked) {
+    await logSecurityEvent(userId, "sandbox_blocked_command", {
+      command: command.substring(0, 200),
+      sandboxId,
+    });
     return {
       output: `Error: ${blocked}`,
       exitCode: 1,
@@ -592,4 +612,159 @@ export async function installPackage(
   }
 
   return { success: result.exitCode === 0, output: result.output };
+}
+
+/**
+ * Restore a sandbox workspace from S3 (reverse of persistWorkspace).
+ * Downloads the tarball and extracts it into the sandbox's local directory.
+ */
+export async function restoreWorkspace(
+  sandboxId: number,
+  userId: number
+): Promise<boolean> {
+  const sandbox = await getSandbox(sandboxId, userId);
+  if (!sandbox || !sandbox.workspaceKey) return false;
+
+  const workspacePath = getWorkspacePath(sandboxId);
+  ensureSandboxBaseDir();
+
+  try {
+    // Get the download URL from S3
+    const { storageGet } = await import("./storage");
+    const { url } = await storageGet(sandbox.workspaceKey);
+
+    // Download the tarball
+    const tarPath = path.join(os.tmpdir(), `sandbox-restore-${sandboxId}-${Date.now()}.tar.gz`);
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      log.error(`[Sandbox] Failed to download workspace tarball for sandbox ${sandboxId}: ${resp.statusText}`);
+      return false;
+    }
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    fs.writeFileSync(tarPath, buffer);
+
+    // Ensure workspace directory exists and is clean
+    if (fs.existsSync(workspacePath)) {
+      fs.rmSync(workspacePath, { recursive: true, force: true });
+    }
+    fs.mkdirSync(workspacePath, { recursive: true });
+
+    // Extract tarball
+    await execAsync(`tar -xzf "${tarPath}" -C "${workspacePath}"`);
+
+    // Clean up temp tar
+    fs.unlinkSync(tarPath);
+
+    log.info(`[Sandbox] Restored workspace for sandbox ${sandboxId} from S3`);
+    return true;
+  } catch (err: unknown) {
+    log.error(`[Sandbox] Failed to restore workspace ${sandboxId}:`, { error: String(getErrorMessage(err)) });
+    return false;
+  }
+}
+
+/**
+ * Delete a file or directory from the sandbox filesystem.
+ */
+export async function deleteFile(
+  sandboxId: number,
+  userId: number,
+  filePath: string
+): Promise<boolean> {
+  const sandbox = await getSandbox(sandboxId, userId);
+  if (!sandbox) return false;
+
+  const workspacePath = getWorkspacePath(sandboxId);
+  const normalizedPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
+  const fullPath = path.join(workspacePath, normalizedPath);
+
+  // Security: prevent path traversal
+  if (!fullPath.startsWith(workspacePath)) {
+    log.warn(`[Sandbox] Path traversal attempt blocked: ${filePath}`);
+    return false;
+  }
+
+  try {
+    if (!fs.existsSync(fullPath)) {
+      return false;
+    }
+
+    const stat = fs.statSync(fullPath);
+    if (stat.isDirectory()) {
+      fs.rmSync(fullPath, { recursive: true, force: true });
+    } else {
+      fs.unlinkSync(fullPath);
+    }
+
+    // Also remove from sandboxFiles table if tracked
+    const db = await getDb();
+    if (db) {
+      await db
+        .delete(sandboxFiles)
+        .where(
+          and(
+            eq(sandboxFiles.sandboxId, sandboxId),
+            eq(sandboxFiles.filePath, normalizedPath)
+          )
+        );
+    }
+
+    return true;
+  } catch (err: unknown) {
+    log.error(`[Sandbox] Failed to delete file ${filePath} in sandbox ${sandboxId}:`, { error: String(getErrorMessage(err)) });
+    return false;
+  }
+}
+
+/**
+ * Write binary content to a file in the sandbox (for images, archives, etc.).
+ * Uses a temp file + mv approach to avoid shell command length limits with base64.
+ */
+export async function writeBinaryFile(
+  sandboxId: number,
+  userId: number,
+  filePath: string,
+  buffer: Buffer
+): Promise<boolean> {
+  const sandbox = await getSandbox(sandboxId, userId);
+  if (!sandbox) return false;
+
+  const workspacePath = getWorkspacePath(sandboxId);
+  const normalizedPath = filePath.startsWith("/") ? filePath : `/${filePath}`;
+  const fullPath = path.join(workspacePath, normalizedPath);
+
+  // Security: prevent path traversal
+  if (!fullPath.startsWith(workspacePath)) {
+    log.warn(`[Sandbox] Path traversal attempt blocked: ${filePath}`);
+    return false;
+  }
+
+  try {
+    // Ensure directory exists
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    // Write directly to the filesystem — no shell command length limits
+    fs.writeFileSync(fullPath, buffer);
+
+    // Track in sandboxFiles table
+    const db = await getDb();
+    if (db) {
+      await db.insert(sandboxFiles).values({
+        sandboxId,
+        filePath: normalizedPath,
+        fileSize: buffer.length,
+        isDirectory: 0,
+      }).onDuplicateKeyUpdate({
+        set: { fileSize: buffer.length },
+      });
+    }
+
+    return true;
+  } catch (err: unknown) {
+    log.error(`[Sandbox] Failed to write binary file ${filePath} in sandbox ${sandboxId}:`, { error: String(getErrorMessage(err)) });
+    return false;
+  }
 }

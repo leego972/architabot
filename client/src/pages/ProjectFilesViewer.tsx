@@ -10,6 +10,16 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   FolderOpen,
   FileText,
   Download,
@@ -33,7 +43,11 @@ import {
   Square,
   XCircle,
   Package,
+  AlertTriangle,
+  FolderX,
 } from "lucide-react";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function getFileIcon(path: string) {
@@ -134,6 +148,7 @@ export default function ProjectFilesViewer() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
   // GitHub push state
   const [showGithubSetup, setShowGithubSetup] = useState(false);
@@ -168,6 +183,28 @@ export default function ProjectFilesViewer() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  const deleteProjectMut = trpc.sandbox.deleteProject.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Project deleted — ${data.deleted} file(s) removed`);
+      setProjectToDelete(null);
+      setSelectedProject(null);
+      filesQuery.refetch();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to delete project");
+      setProjectToDelete(null);
+    },
+  });
+
+  const handleDeleteProject = useCallback((projectName: string) => {
+    setProjectToDelete(projectName);
+  }, []);
+
+  const confirmDeleteProject = useCallback(() => {
+    if (!projectToDelete) return;
+    deleteProjectMut.mutate({ projectName: projectToDelete });
+  }, [projectToDelete, deleteProjectMut]);
 
   // ── Derived data ──
   const allFiles: ProjectFile[] = useMemo(() => {
@@ -204,90 +241,96 @@ export default function ProjectFilesViewer() {
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
-  const handleDownloadFile = useCallback(async (file: ProjectFile) => {
+  /** Fetch a single file's content from the server */
+  const fetchFileContent = useCallback(async (file: ProjectFile): Promise<{ name: string; content: string } | null> => {
+    const fileName = file.path.split("/").pop() || "file";
+    // Always try DB content first (same-origin, no CORS issues)
     try {
-      // Try S3 URL via the download endpoint first
-      if (file.s3Key) {
+      const res = await fetch(`/api/trpc/sandbox.projectFileContent?input=${encodeURIComponent(JSON.stringify({ json: { fileId: file.id } }))}`);
+      const data = await res.json();
+      const content = data?.result?.data?.json?.content;
+      if (content) return { name: fileName, content };
+    } catch {}
+    // Fallback: try S3 signed URL (may fail due to CORS)
+    if (file.s3Key) {
+      try {
         const res = await fetch(`/api/trpc/sandbox.projectFileDownloadUrl?input=${encodeURIComponent(JSON.stringify({ json: { fileId: file.id } }))}`);
         const data = await res.json();
         const url = data?.result?.data?.json?.url;
         if (url) {
-          window.open(url, "_blank");
-          return;
+          const fileRes = await fetch(url).catch(() => null);
+          if (fileRes && fileRes.ok) {
+            const content = await fileRes.text();
+            return { name: fileName, content };
+          }
         }
-      }
-      // Fallback: fetch content and download as text
-      if (file.hasContent) {
-        const res = await fetch(`/api/trpc/sandbox.projectFileContent?input=${encodeURIComponent(JSON.stringify({ json: { fileId: file.id } }))}`);
-        const data = await res.json();
-        const content = data?.result?.data?.json?.content;
-        if (content) {
-          const blob = new Blob([content], { type: "text/plain" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = file.path.split("/").pop() || "file";
-          a.click();
-          URL.revokeObjectURL(url);
-          return;
-        }
+      } catch {}
+    }
+    return null;
+  }, []);
+
+  /** Download a single file */
+  const handleDownloadFile = useCallback(async (file: ProjectFile) => {
+    try {
+      const result = await fetchFileContent(file);
+      if (result) {
+        const blob = new Blob([result.content], { type: "application/octet-stream" });
+        saveAs(blob, result.name);
+        return;
       }
       toast.error("Download not available for this file");
     } catch (err) {
       toast.error("Download failed");
     }
-  }, []);
+  }, [fetchFileContent]);
 
+  /** Batch download all selected files as a ZIP */
   const handleBatchDownload = useCallback(async (files: ProjectFile[]) => {
     setDownloadingZip(true);
     try {
-      // Fetch all file contents and create a ZIP using JSZip (loaded from CDN if needed)
-      // For simplicity, download files individually if < 5, otherwise create a combined text file
-      if (files.length <= 3) {
-        for (const file of files) {
-          await handleDownloadFile(file);
-        }
+      // Single file — just download directly
+      if (files.length === 1) {
+        await handleDownloadFile(files[0]);
         setDownloadingZip(false);
         return;
       }
 
-      // Fetch all contents and create a combined download
-      const contents: { path: string; content: string }[] = [];
+      // Multiple files — create a proper ZIP
+      const zip = new JSZip();
+      let addedCount = 0;
+
       for (const file of files) {
         try {
-          const res = await fetch(`/api/trpc/sandbox.projectFileContent?input=${encodeURIComponent(JSON.stringify({ json: { fileId: file.id } }))}`);
-          const data = await res.json();
-          const content = data?.result?.data?.json?.content;
-          if (content) {
-            contents.push({ path: file.path, content });
+          const result = await fetchFileContent(file);
+          if (result) {
+            // Preserve folder structure from file path
+            const filePath = file.path.startsWith("/") ? file.path.slice(1) : file.path;
+            zip.file(filePath, result.content);
+            addedCount++;
           }
         } catch {}
       }
 
-      if (contents.length === 0) {
+      if (addedCount === 0) {
         toast.error("No downloadable files found");
         setDownloadingZip(false);
         return;
       }
 
-      // Create a combined text file with all contents (simple approach without JSZip dependency)
-      const combined = contents.map((c) =>
-        `${"=".repeat(60)}\n// FILE: ${c.path}\n${"=".repeat(60)}\n${c.content}\n`
-      ).join("\n\n");
+      const zipBlob = await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 },
+      });
 
-      const blob = new Blob([combined], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${selectedProject || "project"}-files.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`Downloaded ${contents.length} files`);
+      const zipName = `${selectedProject || "project"}-files.zip`;
+      saveAs(zipBlob, zipName);
+      toast.success(`Downloaded ${addedCount} files as ${zipName}`);
     } catch (err) {
       toast.error("Batch download failed");
     }
     setDownloadingZip(false);
-  }, [handleDownloadFile, selectedProject]);
+  }, [handleDownloadFile, fetchFileContent, selectedProject]);
 
   const handleDeleteSelected = useCallback(() => {
     if (selectedIds.size === 0) return;
@@ -541,6 +584,24 @@ export default function ProjectFilesViewer() {
               <Github className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Push to GitHub</span>
             </Button>
+
+            {/* Delete entire project */}
+            {!selectMode && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDeleteProject(currentProject.name)}
+                disabled={deleteProjectMut.isPending}
+                className="gap-1.5 h-8 text-xs text-red-400 hover:text-red-300 border-red-500/30 hover:border-red-500/50 hover:bg-red-500/10"
+              >
+                {deleteProjectMut.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FolderX className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline">Delete Project</span>
+              </Button>
+            )}
           </div>
         </div>
 
@@ -685,7 +746,39 @@ export default function ProjectFilesViewer() {
             );
           })}
         </div>
-      </div>
+      {/* Delete Project Confirmation Dialog (project detail view) */}
+      <AlertDialog open={!!projectToDelete} onOpenChange={(open) => { if (!open) setProjectToDelete(null); }}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-full bg-red-500/10">
+                <AlertTriangle className="h-5 w-5 text-red-400" />
+              </div>
+              <AlertDialogTitle className="text-lg">Delete Project</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to delete <span className="font-semibold text-foreground">{projectToDelete}</span>?
+              This will permanently remove all {projects.find(p => p.name === projectToDelete)?.files.length || 0} file(s)
+              in this project from both the database and cloud storage. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteProjectMut.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProject}
+              disabled={deleteProjectMut.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteProjectMut.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Deleting...</>
+              ) : (
+                <><Trash2 className="h-4 w-4 mr-2" /> Delete Project</>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
     );
   }
 
@@ -739,10 +832,10 @@ export default function ProjectFilesViewer() {
       {/* Project cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {filteredProjects.map((project) => (
-          <button
+          <div
             key={project.name}
+            className="relative text-left p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-muted/30 transition-all group cursor-pointer"
             onClick={() => setSelectedProject(project.name)}
-            className="text-left p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:bg-muted/30 transition-all group"
           >
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -751,7 +844,19 @@ export default function ProjectFilesViewer() {
                   {project.name}
                 </h3>
               </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteProject(project.name);
+                  }}
+                  className="p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  title="Delete project"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+                <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
             </div>
 
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -782,7 +887,7 @@ export default function ProjectFilesViewer() {
                   </Badge>
                 ))}
             </div>
-          </button>
+          </div>
         ))}
       </div>
 
@@ -792,6 +897,39 @@ export default function ProjectFilesViewer() {
           <p className="text-sm">No files matching "{searchQuery}"</p>
         </div>
       )}
+
+      {/* Delete Project Confirmation Dialog */}
+      <AlertDialog open={!!projectToDelete} onOpenChange={(open) => { if (!open) setProjectToDelete(null); }}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-full bg-red-500/10">
+                <AlertTriangle className="h-5 w-5 text-red-400" />
+              </div>
+              <AlertDialogTitle className="text-lg">Delete Project</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to delete <span className="font-semibold text-foreground">{projectToDelete}</span>?
+              This will permanently remove all {projects.find(p => p.name === projectToDelete)?.files.length || 0} file(s)
+              in this project from both the database and cloud storage. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteProjectMut.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteProject}
+              disabled={deleteProjectMut.isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteProjectMut.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Deleting...</>
+              ) : (
+                <><Trash2 className="h-4 w-4 mr-2" /> Delete Project</>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -92,6 +92,9 @@ import SelfImprovementDashboard from "./pages/SelfImprovementDashboard";
 // Project Files
 import ProjectFilesViewer from "./pages/ProjectFilesViewer";
 
+// Site Monitor
+import SiteMonitorPage from "./pages/SiteMonitorPage";
+
 function DashboardRouter() {
   return (
     <FetcherLayout>
@@ -161,6 +164,9 @@ function DashboardRouter() {
         <Route path="/fetcher/api-analytics" component={ApiAnalyticsPage} />
         <Route path="/fetcher/cli" component={CliToolPage} />
 
+        {/* Site Monitor */}
+        <Route path="/site-monitor" component={SiteMonitorPage} />
+
         {/* Admin */}
         <Route path="/fetcher/releases" component={ReleaseManagementPage} />
         <Route path="/fetcher/admin" component={AdminPanel} />
@@ -217,6 +223,7 @@ function Router() {
       <Route path="/seo" component={DashboardRouter} />
       <Route path="/blog-admin" component={DashboardRouter} />
       <Route path="/marketing" component={DashboardRouter} />
+      <Route path="/site-monitor" component={DashboardRouter} />
 
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

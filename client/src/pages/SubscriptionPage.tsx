@@ -43,6 +43,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { TIER_LOGOS } from "@/lib/logos";
 
 type BillingInterval = "month" | "year";
 
@@ -133,11 +134,15 @@ export default function SubscriptionPage() {
                   sub.isEnterprise ? "bg-purple-500/10" :
                   sub.isPro ? "bg-blue-500/10" : "bg-muted/50"
                 }`}>
-                  <Crown className={`h-5 w-5 ${
-                    sub.isCyber ? "text-red-400" :
-                    sub.isEnterprise ? "text-purple-400" :
-                    sub.isPro ? "text-blue-400" : "text-muted-foreground"
-                  }`} />
+                  {TIER_LOGOS[sub.planId] ? (
+                    <img src={TIER_LOGOS[sub.planId]} alt={currentTier?.name} className="h-8 w-8 object-contain" />
+                  ) : (
+                    <Crown className={`h-5 w-5 ${
+                      sub.isCyber ? "text-red-400" :
+                      sub.isEnterprise ? "text-purple-400" :
+                      sub.isPro ? "text-blue-400" : "text-muted-foreground"
+                    }`} />
+                  )}
                 </div>
                 <div>
                   <CardTitle className="text-xl">{currentTier?.name || "Free"} Plan</CardTitle>
@@ -305,6 +310,7 @@ export default function SubscriptionPage() {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
+                        {TIER_LOGOS[tier.id] && <img src={TIER_LOGOS[tier.id]} alt={tier.name} className="h-6 w-6 object-contain" />}
                         <span className="font-semibold">{tier.name}</span>
                         {isCurrentPlan && <Badge variant="secondary" className="text-xs">Current</Badge>}
                         {!isCurrentPlan && (

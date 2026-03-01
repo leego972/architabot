@@ -5,7 +5,7 @@
  * 
  * Revenue streams:
  * 1. Affiliate commissions — contextually recommend tools users already need
- * 2. Viral referral program — users market for free (3 refs = 1 free month)
+ * 2. Viral referral program — users market for free (5 verified sign-ups = 30% off first month)
  * 3. Cross-promotion deals — trade visibility, never pay for ads
  * 4. AI-powered partner outreach — auto-apply to high-paying programs
  * 5. Smart placement optimization — show right partner at right moment
@@ -90,13 +90,36 @@ export const KNOWN_AFFILIATE_PROGRAMS: InsertAffiliatePartner[] = [
 // ─── Referral Program Config ────────────────────────────────────────
 
 export const REFERRAL_CONFIG = {
-  referralsForFreeMonth: 3,
+  // ─── Deal 1: Volume Referral Reward ───
+  // 5 verified sign-ups = 30% off the referrer's next month payment (one-time)
+  referralsForDiscount: 5,
+  discountPercent: 30,
+  discountOneTime: true, // only applies to the FIRST month after qualifying
+  // ─── Deal 2: High-Value Referral Reward ───
+  // If a referred user subscribes to Cyber or above, the referrer gets
+  // 50% off their second year Pro membership (paid annually, one-time)
+  highValueReferral: {
+    qualifyingPlans: ["cyber", "cyber_plus", "titan"] as const, // referred user must subscribe to one of these
+    rewardPlan: "pro" as const,                                 // referrer gets discount on Pro
+    rewardInterval: "year" as const,                             // annual billing only
+    rewardDiscountPercent: 50,                                   // 50% off
+    rewardAppliesTo: "second_year" as const,                     // applies to their 2nd year renewal
+    oneTimeOnly: true,                                           // cannot stack or repeat
+  },
+  // ─── Deal 3: Titan Referral Reward ───
+  // Refer a user who subscribes to Titan tier → referrer gets 3 months of Titan features unlocked
+  titanReferral: {
+    qualifyingPlans: ["titan"] as const,       // referred user must subscribe to Titan specifically
+    rewardDurationMonths: 3,                   // 3 months of Titan features
+    rewardType: "titan_unlock" as const,       // temporary Titan tier access
+    oneTimeOnly: true,                         // one-time reward per referrer
+    requiresPayment: true,                     // referred user must have actually paid (not just signed up)
+  },
   // ─── Recurring Commission Model ───
   // Affiliates earn a % of every payment their referrals make for 12 months
   baseCommissionPercent: 10,
   commissionDurationMonths: 12,
-  referralCommissionCents: 500, // legacy: flat $5 fallback for non-subscription referrals
-  maxReferralRewardsPerMonth: 50, // increased to support serious affiliates
+  maxReferralRewardsPerMonth: 50,
   minPayoutCents: 5000, // $50 minimum payout threshold
   codePrefix: "TITAN",
   // ─── Payout Options ───
@@ -287,13 +310,13 @@ export async function trackReferralSignup(
     return { success: false, message: "User already referred" };
   }
 
-  // Record the conversion
+  // Record the conversion — status is "signed_up" (verified account creation)
   await db.insert(referralConversions).values({
     referralCodeId: codeRecord.id,
     referrerId: codeRecord.userId,
     referredUserId: newUserId,
     status: "signed_up",
-    rewardType: "free_month",
+    rewardType: "discount",
     rewardAmountCents: 0,
   });
 
@@ -302,20 +325,163 @@ export async function trackReferralSignup(
     .set({ totalReferrals: sql`${referralCodes.totalReferrals} + 1` })
     .where(eq(referralCodes.id, codeRecord.id));
 
-  // Check if referrer earned a free month (every 3 referrals)
+  // Check if referrer has reached 5 verified sign-ups → 30% off first month
   const [updatedCode] = await db.select().from(referralCodes)
     .where(eq(referralCodes.id, codeRecord.id))
     .limit(1);
   const totalRefs = updatedCode?.totalReferrals || 0;
 
-  if (totalRefs > 0 && totalRefs % REFERRAL_CONFIG.referralsForFreeMonth === 0) {
+  if (totalRefs === REFERRAL_CONFIG.referralsForDiscount && (updatedCode?.totalRewardsEarned || 0) === 0) {
+    // Mark that the discount has been earned (one-time only)
     await db.update(referralCodes)
-      .set({ totalRewardsEarned: sql`${referralCodes.totalRewardsEarned} + 1` })
+      .set({ totalRewardsEarned: 1 })
       .where(eq(referralCodes.id, codeRecord.id));
-    log.info(`[AffiliateEngine] User ${codeRecord.userId} earned a free month! (${totalRefs} referrals)`);
+    log.info(`[AffiliateEngine] User ${codeRecord.userId} earned ${REFERRAL_CONFIG.discountPercent}% off first month! (${totalRefs} verified referrals)`);
+    return { success: true, message: `Referral tracked! You've hit ${totalRefs} referrals — you've earned ${REFERRAL_CONFIG.discountPercent}% off your next month!` };
   }
 
-  return { success: true, message: `Referral tracked! ${totalRefs} total referrals.` };
+  const remaining = Math.max(0, REFERRAL_CONFIG.referralsForDiscount - totalRefs);
+  return { success: true, message: `Referral tracked! ${totalRefs} total referrals.${remaining > 0 ? ` ${remaining} more to unlock ${REFERRAL_CONFIG.discountPercent}% off!` : ""}` };
+}
+
+/**
+ * Check if a referred user just subscribed to Cyber+ and award the referrer
+ * 50% off their second year Pro annual membership.
+ * Called from the Stripe webhook when a new subscription is created.
+ */
+export async function checkHighValueReferralReward(
+  subscribedUserId: number,
+  planId: string
+): Promise<{ rewarded: boolean; referrerId?: number; message: string }> {
+  const db = await getDb();
+  if (!db) return { rewarded: false, message: "Database not available" };
+
+  const hvr = REFERRAL_CONFIG.highValueReferral;
+
+  // Only trigger for qualifying plans (cyber, cyber_plus, titan)
+  if (!(hvr.qualifyingPlans as readonly string[]).includes(planId)) {
+    return { rewarded: false, message: "Plan does not qualify for high-value referral reward" };
+  }
+
+  // Find if this user was referred by someone
+  const [conversion] = await db.select().from(referralConversions)
+    .where(eq(referralConversions.referredUserId, subscribedUserId))
+    .limit(1);
+
+  if (!conversion) {
+    return { rewarded: false, message: "User was not referred" };
+  }
+
+  // Check if the referrer already received this reward (one-time only)
+  const existingReward = await db.select().from(referralConversions)
+    .where(
+      and(
+        eq(referralConversions.referrerId, conversion.referrerId),
+        eq(referralConversions.rewardType, "high_value_discount")
+      )
+    )
+    .limit(1);
+
+  if (existingReward.length > 0) {
+    return { rewarded: false, message: "Referrer already received high-value reward" };
+  }
+
+  // Update the conversion record to mark the reward
+  await db.update(referralConversions)
+    .set({
+      status: "rewarded",
+      rewardType: "high_value_discount",
+      rewardGrantedAt: new Date(),
+    })
+    .where(eq(referralConversions.id, conversion.id));
+
+  log.info(
+    `[AffiliateEngine] HIGH-VALUE REFERRAL: User ${conversion.referrerId} earned ` +
+    `${hvr.rewardDiscountPercent}% off ${hvr.rewardPlan} annual (${hvr.rewardAppliesTo}) ` +
+    `because referred user ${subscribedUserId} subscribed to ${planId}`
+  );
+
+  return {
+    rewarded: true,
+    referrerId: conversion.referrerId,
+    message: `Referrer ${conversion.referrerId} earned ${hvr.rewardDiscountPercent}% off Pro annual for their second year!`,
+  };
+}
+
+/**
+ * Check if a referred user just subscribed to Titan and award the referrer
+ * 3 months of unlocked Titan features (temporary tier override).
+ * Called from the Stripe webhook when a new subscription is created.
+ */
+export async function checkTitanReferralReward(
+  subscribedUserId: number,
+  planId: string
+): Promise<{ rewarded: boolean; referrerId?: number; message: string }> {
+  const db = await getDb();
+  if (!db) return { rewarded: false, message: "Database not available" };
+
+  const tr = REFERRAL_CONFIG.titanReferral;
+
+  // Only trigger for Titan plan subscriptions
+  if (!(tr.qualifyingPlans as readonly string[]).includes(planId)) {
+    return { rewarded: false, message: "Plan does not qualify for Titan referral reward" };
+  }
+
+  // Find if this user was referred by someone
+  const [conversion] = await db.select().from(referralConversions)
+    .where(eq(referralConversions.referredUserId, subscribedUserId))
+    .limit(1);
+
+  if (!conversion) {
+    return { rewarded: false, message: "User was not referred" };
+  }
+
+  // Check if the referrer already received this reward (one-time only)
+  const existingReward = await db.select().from(referralConversions)
+    .where(
+      and(
+        eq(referralConversions.referrerId, conversion.referrerId),
+        eq(referralConversions.rewardType, "tier_upgrade")
+      )
+    )
+    .limit(1);
+
+  if (existingReward.length > 0) {
+    return { rewarded: false, message: "Referrer already received Titan unlock reward" };
+  }
+
+  // Calculate expiry: 3 months from now
+  const expiryDate = new Date();
+  expiryDate.setMonth(expiryDate.getMonth() + tr.rewardDurationMonths);
+
+  // Set the Titan unlock on the referrer's user record
+  await db.update(users)
+    .set({
+      titanUnlockExpiry: expiryDate,
+      titanUnlockGrantedBy: subscribedUserId,
+    })
+    .where(eq(users.id, conversion.referrerId));
+
+  // Record the reward in the conversion table
+  await db.update(referralConversions)
+    .set({
+      status: "rewarded",
+      rewardType: "tier_upgrade",
+      rewardGrantedAt: new Date(),
+    })
+    .where(eq(referralConversions.id, conversion.id));
+
+  log.info(
+    `[AffiliateEngine] TITAN REFERRAL UNLOCK: User ${conversion.referrerId} earned ` +
+    `${tr.rewardDurationMonths} months of Titan features (expires ${expiryDate.toISOString()}) ` +
+    `because referred user ${subscribedUserId} subscribed to ${planId}`
+  );
+
+  return {
+    rewarded: true,
+    referrerId: conversion.referrerId,
+    message: `Referrer ${conversion.referrerId} earned ${tr.rewardDurationMonths} months of Titan features!`,
+  };
 }
 
 /**
@@ -875,7 +1041,11 @@ export async function getUserReferralInfo(userId: number): Promise<{
   totalReferrals: number;
   totalRewards: number;
   tier: string;
-  nextRewardAt: number;
+  nextRewardAt?: number;
+  discountEarned: boolean;
+  discountPercent: number;
+  referralsNeeded: number;
+  remaining: number;
   referralLink: string;
 }> {
   const code = await generateReferralCode(userId);
@@ -894,14 +1064,17 @@ export async function getUserReferralInfo(userId: number): Promise<{
     .filter(t => totalReferrals >= t.minReferrals)
     .pop()?.name || "Starter";
 
-  const nextRewardAt = REFERRAL_CONFIG.referralsForFreeMonth - (totalReferrals % REFERRAL_CONFIG.referralsForFreeMonth);
-
+  const discountEarned = totalRewards > 0;
+  const remaining = Math.max(0, REFERRAL_CONFIG.referralsForDiscount - totalReferrals);
   return {
     code,
     totalReferrals,
     totalRewards,
     tier,
-    nextRewardAt,
+    discountEarned,
+    discountPercent: REFERRAL_CONFIG.discountPercent,
+    referralsNeeded: REFERRAL_CONFIG.referralsForDiscount,
+    remaining,
     referralLink: `https://www.archibaldtitan.com/signup?ref=${code}`,
   };
 }

@@ -31,8 +31,11 @@ import {
   auditLogs,
   builderActivityLog,
   sandboxFiles,
+  marketplaceListings,
+  sellerProfiles,
+  userSecrets,
 } from "../drizzle/schema";
-import { eq, and, desc, isNull, sql, gte } from "drizzle-orm";
+import { eq, and, desc, isNull, sql, gte, like, or } from "drizzle-orm";
 import { safeSqlIdentifier } from "./_core/sql-sanitize.js";
 import { PROVIDERS } from "../shared/fetcher";
 import {
@@ -45,8 +48,9 @@ import {
   activateKillSwitch as activateKS,
   encrypt,
   decrypt,
+  storeManualCredential,
 } from "./fetcher-db";
-import { getUserPlan } from "./subscription-gate";
+import { getUserPlan, enforceFeature, enforceFetchLimit, enforceProviderAccess, canUseCloneWebsite, isFeatureAllowed } from "./subscription-gate";
 import {
   readFile as selfReadFileImpl,
   listFiles as selfListFilesImpl,
@@ -101,6 +105,9 @@ import { invokeLLM } from "./_core/llm";
 import { sandboxes } from "../drizzle/schema";
 import { createLogger } from "./_core/logger.js";
 import { getErrorMessage } from "./_core/errors.js";
+import { validateToolCallNotSelfReplication } from "./anti-replication-guard";
+import { runVaultBridge, getVaultBridgeStatus } from "./vault-bridge";
+import { getAutonomousSystemStatus } from "./autonomous-sync";
 const log = createLogger("ChatExecutor");
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -123,6 +130,32 @@ export async function executeToolCall(
 ,
   conversationId?: number): Promise<ToolExecutionResult> {
   try {
+    // ── Subscription Tier Gating ──────────────────────────────────
+    // Premium tools accessed through AI chat must respect the same
+    // tier restrictions as their direct API counterparts.
+    const plan = await getUserPlan(userId);
+    const planId = plan.planId;
+
+    // Helper: return a friendly gating error instead of throwing
+    const gateResult = (feature: string, label: string): ToolExecutionResult | null => {
+      if (!isFeatureAllowed(planId, feature)) {
+        return {
+          success: false,
+          error: `${label} is not available on the ${plan.tier.name} plan. Upgrade to unlock this feature at /pricing.`,
+        };
+      }
+      return null;
+    };
+
+    // ── Anti-Self-Replication Guard ────────────────────────────
+    // Block any tool call that attempts to clone, copy, or export
+    // the Titan platform itself. Enforced at runtime.
+    const replicationBlock = validateToolCallNotSelfReplication(toolName, args);
+    if (replicationBlock) {
+      log.warn(`SELF-REPLICATION BLOCKED: user=${userId} tool=${toolName}`, { args });
+      return { success: false, error: replicationBlock };
+    }
+
     switch (toolName) {
       // ── Credentials & Fetching ──────────────────────────────────
   
@@ -304,22 +337,37 @@ export async function executeToolCall(
       case "list_providers":
         return execListProviders();
 
-      // ── API Keys ────────────────────────────────────────────────
-      case "list_api_keys":
+      // ── API Keys (Pro+) ──────────────────────────────────────────
+      case "list_api_keys": {
+        const gate = gateResult("api_access", "API Access");
+        if (gate) return gate;
         return await execListApiKeys(userId);
+      }
 
-      case "create_api_key":
+      case "create_api_key": {
+        const gate = gateResult("api_access", "API Access");
+        if (gate) return gate;
         return await execCreateApiKey(userId, args as any, userName, userEmail);
+      }
 
-      case "revoke_api_key":
+      case "revoke_api_key": {
+        const gate = gateResult("api_access", "API Access");
+        if (gate) return gate;
         return await execRevokeApiKey(userId, args.keyId as number, userName, userEmail);
+      }
 
-      // ── Leak Scanner ────────────────────────────────────────────
-      case "start_leak_scan":
+      // ── Leak Scanner (Cyber+) ─────────────────────────────────
+      case "start_leak_scan": {
+        const gate = gateResult("leak_scanner", "Credential Leak Scanner");
+        if (gate) return gate;
         return await execStartLeakScan(userId);
+      }
 
-      case "get_leak_scan_results":
+      case "get_leak_scan_results": {
+        const gate = gateResult("leak_scanner", "Credential Leak Scanner");
+        if (gate) return gate;
         return await execGetLeakScanResults(userId);
+      }
 
       // ── Vault ───────────────────────────────────────────────────
       case "list_vault_entries":
@@ -328,35 +376,66 @@ export async function executeToolCall(
       case "add_vault_entry":
         return await execAddVaultEntry(userId, args as any, userName);
 
-      // ── Bulk Sync ───────────────────────────────────────────────
-      case "trigger_bulk_sync":
+      // ── Save Credential (manual input via chat) ─────────────────
+      case "save_credential":
+        return await execSaveCredential(userId, args as any, userName, userEmail);
+
+      // ── Bulk Sync (Pro+) ──────────────────────────────────────────
+      case "trigger_bulk_sync": {
+        const gate = gateResult("scheduled_fetches", "Bulk Sync");
+        if (gate) return gate;
         return await execTriggerBulkSync(userId, args.providerIds as string[] | undefined);
+      }
 
-      case "get_bulk_sync_status":
+      case "get_bulk_sync_status": {
+        const gate = gateResult("scheduled_fetches", "Bulk Sync");
+        if (gate) return gate;
         return await execGetBulkSyncStatus(userId);
+      }
 
-      // ── Team ────────────────────────────────────────────────────
-      case "list_team_members":
+      // ── Team (Enterprise+) ──────────────────────────────────────
+      case "list_team_members": {
+        const gate = gateResult("team_management", "Team Management");
+        if (gate) return gate;
         return await execListTeamMembers(userId);
+      }
 
-      case "add_team_member":
+      case "add_team_member": {
+        const gate = gateResult("team_management", "Team Management");
+        if (gate) return gate;
         return await execAddTeamMember(userId, args as any, userName, userEmail);
+      }
 
-      case "remove_team_member":
+      case "remove_team_member": {
+        const gate = gateResult("team_management", "Team Management");
+        if (gate) return gate;
         return await execRemoveTeamMember(userId, args.memberId as number, userName, userEmail);
+      }
 
-      case "update_team_member_role":
+      case "update_team_member_role": {
+        const gate = gateResult("team_management", "Team Management");
+        if (gate) return gate;
         return await execUpdateTeamMemberRole(userId, args as any, userName, userEmail);
+      }
 
-      // ── Scheduler ───────────────────────────────────────────────
-      case "list_schedules":
+      // ── Scheduler (Pro+) ──────────────────────────────────────────
+      case "list_schedules": {
+        const gate = gateResult("scheduled_fetches", "Scheduled Fetches");
+        if (gate) return gate;
         return await execListSchedules(userId);
+      }
 
-      case "create_schedule":
+      case "create_schedule": {
+        const gate = gateResult("scheduled_fetches", "Scheduled Fetches");
+        if (gate) return gate;
         return await execCreateSchedule(userId, args as any);
+      }
 
-      case "delete_schedule":
+      case "delete_schedule": {
+        const gate = gateResult("scheduled_fetches", "Scheduled Fetches");
+        if (gate) return gate;
         return await execDeleteSchedule(userId, args.scheduleId as number);
+      }
 
       // ── Watchdog ────────────────────────────────────────────────
       case "get_watchdog_summary":
@@ -370,13 +449,19 @@ export async function executeToolCall(
       case "get_recommendations":
         return await execGetRecommendations(userId);
 
-      // ── Audit ───────────────────────────────────────────────────
-      case "get_audit_logs":
+      // ── Audit (Enterprise+) ────────────────────────────────────
+      case "get_audit_logs": {
+        const gate = gateResult("audit_logs", "Audit Logs");
+        if (gate) return gate;
         return await execGetAuditLogs(args as any);
+      }
 
-      // ── Kill Switch ─────────────────────────────────────────────
-      case "activate_kill_switch":
+      // ── Kill Switch (Pro+) ──────────────────────────────────────
+      case "activate_kill_switch": {
+        const gate = gateResult("kill_switch", "Kill Switch");
+        if (gate) return gate;
         return await execActivateKillSwitch(userId, args.code as string);
+      }
 
       // ── System ──────────────────────────────────────────────────
       case "get_system_status":
@@ -458,29 +543,55 @@ export async function executeToolCall(
       case "sandbox_list_files":
         return await execSandboxListFiles(userId, args);
 
-      // ── Security Tools ─────────────────────────────────────────
-      case "security_scan":
+      // ── Security Tools (Cyber+) ──────────────────────────────────
+      case "security_scan": {
+        const gate = gateResult("security_tools", "Security Scan");
+        if (gate) return gate;
         return await execSecurityScan(args);
-      case "code_security_review":
+      }
+      case "code_security_review": {
+        const gate = gateResult("security_tools", "Code Security Review");
+        if (gate) return gate;
         return await execCodeSecurityReview(args);
-      case "port_scan":
+      }
+      case "port_scan": {
+        const gate = gateResult("security_tools", "Port Scan");
+        if (gate) return gate;
         return await execPortScan(args);
-      case "ssl_check":
+      }
+      case "ssl_check": {
+        const gate = gateResult("security_tools", "SSL Check");
+        if (gate) return gate;
         return await execSSLCheck(args);
+      }
 
-      // ── Auto-Fix Tools ─────────────────────────────────────────
-      case "auto_fix_vulnerability":
+      // ── Auto-Fix Tools (Cyber+) ─────────────────────────────────
+      case "auto_fix_vulnerability": {
+        const gate = gateResult("security_tools", "Auto-Fix Vulnerability");
+        if (gate) return gate;
         return await execAutoFixVulnerability(args);
-      case "auto_fix_all_vulnerabilities":
+      }
+      case "auto_fix_all_vulnerabilities": {
+        const gate = gateResult("security_tools", "Auto-Fix All Vulnerabilities");
+        if (gate) return gate;
         return await execAutoFixAll(args);
+      }
 
       // ── App Research & Clone ───────────────────────────────────
       case "app_research":
         return await execAppResearch(args, userApiKey || undefined);
       case "app_clone":
         return await execAppClone(userId, args, userApiKey || undefined);
-      case "website_replicate":
+      case "website_replicate": {
+        const hasAccess = await canUseCloneWebsite(userId);
+        if (!hasAccess) {
+          return {
+            success: false,
+            error: "Website Clone is an exclusive feature for Cyber+ and Titan subscribers. Upgrade at /pricing to unlock this capability.",
+          };
+        }
         return await execWebsiteReplicate(userId, args);
+      }
 
       // ── Project Builder Tools ─────────────────────────────────
       case "create_file":
@@ -491,6 +602,17 @@ export async function executeToolCall(
         return await execPushToGithub(userId, args, conversationId);
       case "read_uploaded_file":
         return await execReadUploadedFile(args);
+      case "search_bazaar":
+        return await execSearchBazaar(args);
+      // ── Autonomous System Management ────────────────────────────────
+      case "get_autonomous_status":
+        return await execGetAutonomousStatus();
+      case "get_channel_status":
+        return await execGetChannelStatus();
+      case "refresh_vault_bridge":
+        return await execRefreshVaultBridge(args.force as boolean | undefined);
+      case "get_vault_bridge_info":
+        return await execGetVaultBridgeInfo();
       default:
         return { success: false, error: `Unknown tool: ${toolName}` };
     }
@@ -885,6 +1007,220 @@ async function execAddVaultEntry(
       category: args.category || "other",
     },
   };
+}
+
+async function execSaveCredential(
+  userId: number,
+  args: { providerId: string; providerName: string; keyType: string; value: string; label?: string },
+  userName?: string,
+  userEmail?: string
+): Promise<ToolExecutionResult> {
+  if (!args.value || !args.value.trim()) {
+    return { success: false, error: "Credential value cannot be empty" };
+  }
+  if (!args.providerId || !args.providerName || !args.keyType) {
+    return { success: false, error: "Provider ID, provider name, and key type are required" };
+  }
+
+  const trimmedValue = args.value.trim();
+  const db = await getDb();
+  if (!db) return { success: false, error: "Database unavailable" };
+
+  try {
+    // ── Map provider IDs to userSecrets secretType ──────────────────
+    // This ensures every token is stored in userSecrets so ALL systems
+    // (Builder, Deploy, Replicate, etc.) can find them.
+    const secretTypeMap: Record<string, string> = {
+      github: "github_pat",
+      openai: "openai_api_key",
+      anthropic: "anthropic_api_key",
+      stripe: "stripe_secret_key",
+      sendgrid: "sendgrid_api_key",
+      twilio: "twilio_auth_token",
+      aws: "aws_access_key",
+      cloudflare: "cloudflare_api_token",
+      heroku: "heroku_api_key",
+      digitalocean: "digitalocean_api_token",
+      firebase: "firebase_api_key",
+      google_cloud: "google_cloud_api_key",
+      huggingface: "huggingface_api_token",
+      discord: "discord_bot_token",
+      slack: "slack_bot_token",
+      vercel: "vercel_api_token",
+      netlify: "netlify_api_token",
+      railway: "railway_api_token",
+      supabase: "supabase_api_key",
+      replicate: "replicate_api_token",
+      // Marketing channels (vault-bridge compatible)
+      devto: "devto_api_key",
+      hashnode: "hashnode_api_key",
+      medium: "medium_access_token",
+      telegram: "telegram_bot_token",
+      mastodon: "mastodon_access_token",
+      tiktok: "tiktok_access_token",
+      pinterest: "pinterest_access_token",
+      meta: "meta_access_token",
+      google_ads: "google_ads_dev_token",
+      whatsapp: "whatsapp_access_token",
+      youtube: "youtube_api_key",
+      skool: "skool_api_key",
+      reddit: "reddit_client_id",
+      linkedin: "linkedin_access_token",
+      x: "x_api_key",
+      twitter: "x_api_key",
+      snapchat: "snapchat_access_token",
+      indiehackers: "indiehackers_username",
+    };
+
+    let validationMessage = "";
+    let maskedValue = trimmedValue.length > 8
+      ? `${trimmedValue.slice(0, 4)}...${trimmedValue.slice(-4)}`
+      : "****";
+
+    // ── Special handling: GitHub PAT validation ─────────────────────
+    if (args.providerId === "github" || trimmedValue.startsWith("ghp_") || trimmedValue.startsWith("github_pat_")) {
+      try {
+        const testResp = await fetch("https://api.github.com/user", {
+          headers: { Authorization: `token ${trimmedValue}`, "User-Agent": "ArchibaldTitan" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (testResp.ok) {
+          const userData = await testResp.json() as any;
+          const ghUsername = userData.login || "unknown";
+          maskedValue = `ghp_...${trimmedValue.slice(-4)} (${ghUsername})`;
+          validationMessage = ` Validated against GitHub API — connected as @${ghUsername}.`;
+        } else {
+          validationMessage = ` Warning: GitHub returned ${testResp.status} — token may be invalid or expired. Saved anyway.`;
+        }
+      } catch {
+        validationMessage = " Could not validate against GitHub API — saved anyway.";
+      }
+      // Force correct provider ID for GitHub tokens
+      args.providerId = "github";
+      args.providerName = "GitHub";
+      args.keyType = "personal_access_token";
+    }
+
+    // ── Special handling: OpenAI key validation ─────────────────────
+    if (args.providerId === "openai" || trimmedValue.startsWith("sk-")) {
+      validationMessage = validationMessage || " OpenAI key detected.";
+      args.providerId = args.providerId || "openai";
+      args.providerName = args.providerName || "OpenAI";
+      args.keyType = args.keyType || "api_key";
+    }
+
+    // ── 1. Save to userSecrets (primary vault — used by Builder, Deploy, etc.) ──
+    const secretType = secretTypeMap[args.providerId] || `${args.providerId}_${args.keyType}`;
+    const encryptedValue = encrypt(trimmedValue);
+    const label = args.label || `${args.providerName} ${args.keyType} (via chat)`;
+    const displayLabel = maskedValue || label;
+    let savedToUserSecrets = false;
+
+    try {
+      const existing = await db
+        .select({ id: userSecrets.id })
+        .from(userSecrets)
+        .where(
+          and(
+            eq(userSecrets.userId, userId),
+            eq(userSecrets.secretType, secretType)
+          )
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        // Don't set updatedAt — MySQL ON UPDATE CURRENT_TIMESTAMP handles it
+        await db
+          .update(userSecrets)
+          .set({ encryptedValue, label: displayLabel })
+          .where(eq(userSecrets.id, existing[0].id));
+      } else {
+        await db.insert(userSecrets).values({
+          userId,
+          secretType,
+          encryptedValue,
+          label: displayLabel,
+        });
+      }
+      savedToUserSecrets = true;
+    } catch (secretErr: unknown) {
+      // If drizzle ORM fails, try raw SQL as fallback
+      try {
+        await db.execute(
+          sql`INSERT INTO user_secrets (userId, secretType, encryptedValue, label)
+              VALUES (${userId}, ${secretType}, ${encryptedValue}, ${displayLabel})
+              ON DUPLICATE KEY UPDATE encryptedValue = VALUES(encryptedValue), label = VALUES(label)`
+        );
+        savedToUserSecrets = true;
+      } catch {
+        // Log but don't fail — we'll try fetcher credentials next
+        console.error("[save_credential] userSecrets save failed:", getErrorMessage(secretErr));
+      }
+    }
+
+    // ── 2. Also save to fetcher credentials (for the Fetcher system) ──
+    let savedToFetcher = false;
+    try {
+      await storeManualCredential(
+        userId,
+        args.providerId,
+        args.providerName,
+        args.keyType,
+        trimmedValue,
+        args.label,
+      );
+      savedToFetcher = true;
+    } catch {
+      // Fetcher credential storage is best-effort
+    }
+
+    // At least one vault must succeed
+    if (!savedToUserSecrets && !savedToFetcher) {
+      return { success: false, error: "Failed to save credential to any vault. Please try again or save manually at /fetcher/credentials." };
+    }
+
+    // ── Audit log ──────────────────────────────────────────────────
+    try {
+      await logAudit({
+        userId,
+        action: "credential.manual_save",
+        resource: `${args.providerName} (${args.keyType})`,
+        details: { method: "chat", provider: args.providerName, keyType: args.keyType, secretType, label: label, savedToUserSecrets, savedToFetcher },
+        ipAddress: "chat",
+        userAgent: "Titan Assistant",
+      });
+    } catch { /* audit logging is best-effort */ }
+
+    const storedIn: string[] = [];
+    if (savedToUserSecrets) storedIn.push("System Vault (Builder/Deploy/System)");
+    if (savedToFetcher) storedIn.push("Fetcher Vault");
+
+    // ── 3. Refresh vault bridge so marketing channels pick up the new token immediately ──
+    let vaultBridgeRefreshed = false;
+    try {
+      const bridgeResult = await runVaultBridge(true); // force=true to pick up the new token
+      vaultBridgeRefreshed = bridgeResult.patched.length > 0;
+      if (vaultBridgeRefreshed) {
+        storedIn.push(`Vault Bridge (patched ${bridgeResult.patched.join(", ")} into ENV)`);
+      }
+    } catch { /* vault bridge is best-effort */ }
+
+    return {
+      success: true,
+      data: {
+        message: `Credential saved successfully! Your ${args.providerName} ${args.keyType} has been encrypted with AES-256-GCM and stored securely.${validationMessage}`,
+        provider: args.providerName,
+        keyType: args.keyType,
+        secretType,
+        label: displayLabel,
+        storedIn,
+        tip: "I can now access this token for any operation that needs it — Builder, Deploy, Fetcher, etc. You can also view your credentials at /fetcher/credentials or /account.",
+        vaultBridgeRefreshed,
+      },
+    };
+  } catch (err: unknown) {
+    return { success: false, error: `Failed to save credential: ${getErrorMessage(err)}` };
+  }
 }
 
 async function execTriggerBulkSync(userId: number, providerIds?: string[]): Promise<ToolExecutionResult> {
@@ -1360,6 +1696,15 @@ async function execGetSystemStatus(userId: number): Promise<ToolExecutionResult>
     .from(apiKeys)
     .where(and(eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)));
 
+  // ─── Autonomous Systems Status ──────────────────────────────────
+  let autonomousStatus = null;
+  try {
+    const { getAutonomousSystemStatus } = await import("./autonomous-sync");
+    autonomousStatus = await getAutonomousSystemStatus();
+  } catch {
+    // Non-critical — module may not be loaded yet
+  }
+
   return {
     success: true,
     data: {
@@ -1369,6 +1714,25 @@ async function execGetSystemStatus(userId: number): Promise<ToolExecutionResult>
       proxies: { total: proxies[0].total, healthy: proxies[0].healthy || 0 },
       watchdogAlerts: watches[0].count,
       activeApiKeys: keys[0].count,
+      autonomousSystems: autonomousStatus ? {
+        summary: autonomousStatus.summary,
+        systems: autonomousStatus.systems.map((s: any) => ({
+          name: s.name,
+          category: s.category,
+          status: s.status,
+          schedule: s.schedule,
+          reason: s.reason,
+        })),
+        channels: autonomousStatus.channels.map((c: any) => ({
+          channel: c.channel,
+          configured: c.configured,
+          impact: c.impact,
+          freeToSetup: c.freeToSetup,
+          envVars: c.envVars,
+          setupUrl: c.setupUrl,
+        })),
+        recommendations: autonomousStatus.recommendations,
+      } : "Autonomous sync module not loaded yet",
     },
   };
 }
@@ -3271,7 +3635,7 @@ async function execCreateFile(
     const contentType = getContentType(fileName);
     let url = "";
     try {
-      const result = await storagePut(s3Key, content, contentType);
+      const result = await storagePut(s3Key, content, contentType, safeFileName);
       url = result.url;
     } catch (s3Err: unknown) {
       log.warn("[CreateFile] S3 upload failed (non-fatal):", { error: getErrorMessage(s3Err) });
@@ -3476,8 +3840,6 @@ async function getUserGithubToken(userId: number): Promise<string | null> {
   try {
     const db = await getDb();
     if (!db) return null;
-    const { userSecrets } = await import("../drizzle/schema");
-    const { decrypt } = await import("./fetcher-db");
     const secrets = await db
       .select()
       .from(userSecrets)
@@ -3623,4 +3985,270 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+
+// ─── Grand Bazaar Search ─────────────────────────────────────────────
+// Searches the marketplace for existing modules matching the user's needs.
+// Returns matching listings so Titan can recommend buying instead of building.
+
+async function execSearchBazaar(args: Record<string, unknown>): Promise<ToolExecutionResult> {
+  const query = String(args.query || "").trim();
+  if (!query) {
+    return { success: false, error: "Search query is required" };
+  }
+
+  const maxResults = Math.min(Number(args.maxResults) || 5, 10);
+  const category = args.category ? String(args.category) : undefined;
+
+  try {
+    const dbInst = await getDb();
+    if (!dbInst) {
+      return { success: false, error: "Database not available" };
+    }
+
+    // Build search conditions: only active, approved listings
+    const conditions: any[] = [
+      eq(marketplaceListings.status, "active"),
+      eq(marketplaceListings.reviewStatus, "approved"),
+    ];
+
+    // Add category filter if specified
+    if (category) {
+      conditions.push(eq(marketplaceListings.category, category as any));
+    }
+
+    // Split query into keywords for broader matching
+    const keywords = query.toLowerCase().split(/\s+/).filter(k => k.length > 2);
+
+    // Search across title, description, tags, and longDescription
+    if (keywords.length > 0) {
+      const keywordConditions = keywords.map(kw =>
+        or(
+          like(marketplaceListings.title, `%${kw}%`),
+          like(marketplaceListings.description, `%${kw}%`),
+          like(marketplaceListings.tags, `%${kw}%`),
+        )
+      );
+      // At least one keyword must match
+      conditions.push(or(...keywordConditions));
+    }
+
+    // Query with seller profile join for seller name
+    const results = await dbInst
+      .select({
+        id: marketplaceListings.id,
+        title: marketplaceListings.title,
+        slug: marketplaceListings.slug,
+        description: marketplaceListings.description,
+        category: marketplaceListings.category,
+        riskCategory: marketplaceListings.riskCategory,
+        priceCredits: marketplaceListings.priceCredits,
+        language: marketplaceListings.language,
+        tags: marketplaceListings.tags,
+        avgRating: marketplaceListings.avgRating,
+        totalSales: marketplaceListings.totalSales,
+        version: marketplaceListings.version,
+        sellerId: marketplaceListings.sellerId,
+      })
+      .from(marketplaceListings)
+      .where(and(...conditions))
+      .orderBy(desc(marketplaceListings.totalSales))
+      .limit(maxResults);
+
+    if (results.length === 0) {
+      return {
+        success: true,
+        data: {
+          query,
+          matchCount: 0,
+          listings: [],
+          message: "No matching modules found in the Grand Bazaar. You can proceed to build this from scratch.",
+        },
+      };
+    }
+
+    // Get seller names for the results
+    const sellerIds = [...new Set(results.map(r => r.sellerId))];
+    const sellerRows = await dbInst
+      .select({
+        userId: sellerProfiles.userId,
+        displayName: sellerProfiles.displayName,
+        verified: sellerProfiles.verified,
+      })
+      .from(sellerProfiles)
+      .where(or(...sellerIds.map(id => eq(sellerProfiles.userId, id))));
+
+    const sellerMap = new Map(sellerRows.map(s => [s.userId, s]));
+
+    // Calculate estimated build cost for comparison
+    // Simple: ~100cr, Medium: ~200cr, Complex: ~400cr, Enterprise: ~800cr
+    const estimateBuildCost = (price: number): number => {
+      if (price <= 100) return Math.round(price * 2.2);
+      if (price <= 300) return Math.round(price * 2.0);
+      if (price <= 1000) return Math.round(price * 1.8);
+      return Math.round(price * 1.6);
+    };
+
+    const listings = results.map(r => {
+      const seller = sellerMap.get(r.sellerId);
+      const buildCost = estimateBuildCost(r.priceCredits);
+      const savings = buildCost - r.priceCredits;
+      const savingsPercent = Math.round((savings / buildCost) * 100);
+
+      return {
+        title: r.title,
+        description: r.description,
+        category: r.category,
+        riskCategory: r.riskCategory,
+        priceCredits: r.priceCredits,
+        language: r.language,
+        tags: r.tags ? JSON.parse(r.tags) : [],
+        rating: r.avgRating ? `${(r.avgRating / 10).toFixed(1)}/5.0` : "No ratings yet",
+        totalSales: r.totalSales,
+        version: r.version,
+        seller: seller?.displayName || "Unknown",
+        sellerVerified: seller?.verified || false,
+        estimatedBuildCost: buildCost,
+        savingsVsBuild: `${savings} credits (${savingsPercent}% cheaper than building)`,
+        bazaarLink: `/marketplace/${r.slug}`,
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        query,
+        matchCount: listings.length,
+        listings,
+        recommendation: listings.length > 0
+          ? `Found ${listings.length} existing module(s) in the Grand Bazaar that match your needs. Buying a pre-built module is significantly cheaper and faster than building from scratch. I recommend checking these out before we build anything custom.`
+          : "No exact matches found.",
+      },
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Bazaar search failed: ${getErrorMessage(err)}`,
+    };
+  }
+}
+
+// ─── Autonomous System Management Executors ──────────────────────────
+
+async function execGetAutonomousStatus(): Promise<ToolExecutionResult> {
+  try {
+    const status = await getAutonomousSystemStatus();
+    return {
+      success: true,
+      data: {
+        summary: status.summary,
+        systems: status.systems.map(s => ({
+          name: s.name,
+          category: s.category,
+          status: s.status,
+          schedule: s.schedule,
+          reason: s.reason,
+          nextAction: s.nextAction,
+        })),
+        connectedChannels: status.channels.filter(c => c.configured).map(c => c.channel),
+        disconnectedChannels: status.channels.filter(c => !c.configured).map(c => ({
+          channel: c.channel,
+          impact: c.impact,
+          freeToSetup: c.freeToSetup,
+          setupUrl: c.setupUrl,
+          envVars: c.envVars,
+        })),
+        recommendations: status.recommendations,
+      },
+    };
+  } catch (err) {
+    return { success: false, error: `Failed to get autonomous status: ${getErrorMessage(err)}` };
+  }
+}
+
+async function execGetChannelStatus(): Promise<ToolExecutionResult> {
+  try {
+    const status = await getAutonomousSystemStatus();
+    const channels = status.channels.map(c => ({
+      channel: c.channel,
+      connected: c.configured,
+      impact: c.impact,
+      freeToSetup: c.freeToSetup,
+      description: c.description,
+      setupUrl: c.setupUrl,
+      requiredEnvVars: c.envVars,
+    }));
+
+    const connected = channels.filter(c => c.connected);
+    const disconnected = channels.filter(c => !c.connected);
+    const freeToSetup = disconnected.filter(c => c.freeToSetup);
+    const highImpactMissing = disconnected.filter(c => c.impact === "high");
+
+    return {
+      success: true,
+      data: {
+        totalChannels: channels.length,
+        connectedCount: connected.length,
+        disconnectedCount: disconnected.length,
+        connected: connected.map(c => c.channel),
+        disconnected,
+        freeToSetup: freeToSetup.map(c => ({
+          channel: c.channel,
+          setupUrl: c.setupUrl,
+          impact: c.impact,
+        })),
+        highImpactMissing: highImpactMissing.map(c => c.channel),
+        tip: disconnected.length > 0
+          ? `To connect a channel, paste the API token in chat and I'll save it to your vault. The vault bridge will automatically make it available to all marketing systems.`
+          : "All channels are connected! Your marketing engine is running at full capacity.",
+      },
+    };
+  } catch (err) {
+    return { success: false, error: `Failed to get channel status: ${getErrorMessage(err)}` };
+  }
+}
+
+async function execRefreshVaultBridge(force?: boolean): Promise<ToolExecutionResult> {
+  try {
+    const result = await runVaultBridge(force ?? false);
+    return {
+      success: true,
+      data: {
+        ownerUserId: result.ownerUserId,
+        totalSecrets: result.totalSecrets,
+        patched: result.patched,
+        skipped: result.skipped,
+        failed: result.failed,
+        unmapped: result.unmapped,
+        message: result.patched.length > 0
+          ? `Vault bridge refreshed! Patched ${result.patched.length} token(s) into ENV: ${result.patched.join(", ")}. These channels are now active.`
+          : result.totalSecrets === 0
+            ? "No secrets found in the vault. Save API tokens via chat and I'll bridge them to the marketing systems."
+            : `Vault bridge refreshed. ${result.skipped.length} token(s) already set via env vars, ${result.unmapped.length} unmapped.`,
+      },
+    };
+  } catch (err) {
+    return { success: false, error: `Failed to refresh vault bridge: ${getErrorMessage(err)}` };
+  }
+}
+
+async function execGetVaultBridgeInfo(): Promise<ToolExecutionResult> {
+  try {
+    const status = getVaultBridgeStatus();
+    return {
+      success: true,
+      data: {
+        lastRun: status.lastRun?.toISOString() || "Never (bridge hasn't run yet)",
+        ownerUserId: status.ownerUserId,
+        totalMappings: status.totalMappings,
+        activeSecrets: status.activeSecrets,
+        channelsUnlocked: status.channelsUnlocked,
+        channelsStillMissing: status.channelsStillMissing,
+        howItWorks: "The vault bridge reads encrypted API tokens from the owner's userSecrets table and patches them into the runtime ENV object. This allows all marketing channels to access tokens stored via chat without needing Railway env vars.",
+      },
+    };
+  } catch (err) {
+    return { success: false, error: `Failed to get vault bridge info: ${getErrorMessage(err)}` };
+  }
 }

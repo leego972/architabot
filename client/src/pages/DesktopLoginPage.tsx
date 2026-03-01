@@ -91,7 +91,7 @@ export default function DesktopLoginPage() {
         <div className="flex flex-col items-center gap-3 mb-8">
           <div className="relative">
             <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full" />
-            <img loading="lazy" src={FULL_LOGO_DARK_512} alt="Archibald Titan" className="relative h-64 w-auto object-contain drop-shadow-2xl" />
+            <img loading="eager" src={FULL_LOGO_DARK_512} alt="Archibald Titan" className="relative h-64 w-auto object-contain drop-shadow-2xl" />
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-1.5 mt-1">

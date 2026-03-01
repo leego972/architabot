@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { X, Sparkles, ChevronDown, Volume2, VolumeX } from "lucide-react";
 import { useArchibald } from "@/contexts/ArchibaldContext";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { AT_ICON_FULL } from "@/lib/logos";
+import { TitanLogo } from "@/components/TitanLogo";
 import {
   playAppearSound,
   playDisappearSound,
@@ -505,16 +505,15 @@ export default function ArchibaldWizard() {
         style={{ animation: "archibald-minimize-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards" }}
       >
         <div className="relative">
-          <img
-            src={AT_ICON_FULL}
-            loading="eager"
-            alt="Archibald"
-            className="w-14 h-14 object-contain drop-shadow-lg transition-transform group-hover:scale-110"
+          <div
+            className="w-14 h-14 transition-transform group-hover:scale-110"
             style={{
               animation: "archibald-bob 3s ease-in-out infinite",
               filter: "drop-shadow(0 4px 8px rgba(79, 70, 229, 0.3))",
             }}
-          />
+          >
+            <TitanLogo size="md" />
+          </div>
           <div className="absolute -top-1 -right-1 w-4 h-4 bg-cyan-400 rounded-full animate-pulse" />
         </div>
       </button>
@@ -624,11 +623,8 @@ export default function ArchibaldWizard() {
 
           {/* Archibald image */}
           <div className="relative">
-            <img
-              src={AT_ICON_FULL}
-              loading="eager"
-              alt="Archibald the Guide"
-              className="w-20 h-20 object-contain drop-shadow-lg"
+            <div
+              className="w-20 h-20 drop-shadow-lg"
               draggable={false}
               style={{
                 animation:
@@ -646,7 +642,9 @@ export default function ArchibaldWizard() {
                 filter: "drop-shadow(0 4px 12px rgba(79, 70, 229, 0.4))",
                 transform: isFlipped ? "scaleX(-1)" : "scaleX(1)",
               }}
-            />
+            >
+              <TitanLogo size="lg" />
+            </div>
 
             {/* Walking trail particles — only on Titan page where roaming happens */}
             {wizardState === "walking" && isOnTitanPage && (

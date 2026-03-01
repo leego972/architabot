@@ -45,7 +45,7 @@ export function UpgradeDialog({
             <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center">
               <Crown className="h-5 w-5 text-amber-500" />
             </div>
-            <DialogTitle className="text-lg">Upgrade Required</DialogTitle>
+            <DialogTitle className="text-lg">You discovered a premium feature!</DialogTitle>
           </div>
           <DialogDescription className="text-left">
             <span className="font-semibold text-foreground">{feature}</span> is
@@ -64,29 +64,41 @@ export function UpgradeDialog({
         <div className="bg-muted/50 rounded-lg p-4 space-y-2">
           <p className="text-sm font-medium flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-amber-500" />
-            {requiredPlan === "pro" ? "Pro plan includes:" : requiredPlan === "cyber" ? "Cyber plan includes:" : "Enterprise plan includes:"}
+            {requiredPlan === "pro" ? "Pro plan includes:" : requiredPlan === "cyber" ? "Cyber plan unlocks:" : "Enterprise plan includes:"}
           </p>
           <ul className="text-sm text-muted-foreground space-y-1 ml-6">
-            {requiredPlan === "pro" ? (
+            {requiredPlan === "cyber" ? (
               <>
-                <li>Unlimited fetches per month</li>
-                <li>All 15+ providers</li>
+                <li>75,000 AI credits/month</li>
+                <li>Credential Leak Scanner</li>
+                <li>TOTP Vault (2FA management)</li>
+                <li>Credential Health Monitor</li>
+                <li>Advanced threat modeling</li>
+                <li>Red team automation</li>
+                <li>Priority security support</li>
+              </>
+            ) : requiredPlan === "pro" ? (
+              <>
+                <li>5,000 AI credits/month</li>
+                <li>Unlimited fetches & all 15+ providers</li>
                 <li>CAPTCHA auto-solving</li>
-                <li>5 proxy slots</li>
-                <li>Kill switch protection</li>
+                <li>5 proxy slots & kill switch</li>
                 <li>JSON & .ENV export</li>
               </>
             ) : (
               <>
-                <li>Everything in Pro</li>
-                <li>Unlimited proxy slots</li>
+                <li>25,000 AI credits/month</li>
                 <li>Team management (25 seats)</li>
-                <li>API access & CSV export</li>
+                <li>Team Vault & shared credentials</li>
+                <li>Developer API (10,000 req/day)</li>
                 <li>Dedicated account manager</li>
               </>
             )}
           </ul>
         </div>
+        <p className="text-xs text-muted-foreground text-center">
+          7-day free trial included. 30-day money-back guarantee.
+        </p>
         <DialogFooter className="flex-col sm:flex-row gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Maybe later
@@ -158,11 +170,19 @@ export function UpgradeBanner({
       <div>
         <h3 className="text-lg font-semibold">{feature}</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          This feature is available on the{" "}
+          Unlock this feature with the{" "}
           <span className={`font-semibold ${accentColor} capitalize`}>
             {requiredPlan}
           </span>{" "}
-          plan and above.
+          plan.
+          {isCyber && (
+            <span className="block mt-1 text-xs text-muted-foreground/70">
+              Includes Leak Scanner, TOTP Vault, Health Monitor, and 75K credits/mo.
+            </span>
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground/60 mt-2">
+          7-day free trial. 30-day money-back guarantee.
         </p>
       </div>
       <Button

@@ -18,6 +18,8 @@ import { ENV } from "./_core/env";
 import { notifyOwner } from "./_core/notification";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email-service";
 import { createLogger } from "./_core/logger.js";
+import { checkGeoAnomaly, trackIncident } from "./security-fortress";
+import { logSecurityEvent } from "./security-hardening";
 const log = createLogger("EmailAuthRouter");
 
 const SALT_ROUNDS = 12;
@@ -526,6 +528,14 @@ export function registerEmailAuthRoutes(app: Express) {
 
       // Successful login — clear failed attempts
       clearFailedAttempts(clientIp, normalizedEmail);
+
+      // ── SECURITY: IP Geo-Anomaly Detection ──────────────────────
+      const geoCheck = await checkGeoAnomaly(user.id, clientIp);
+      if (geoCheck.suspicious) {
+        log.warn(`[EmailAuth] Geo-anomaly for user ${user.id}: ${geoCheck.warning}`);
+        await trackIncident(user.id, "impossible_travel", user.role === "admin");
+        // Don't block — just log. The user might be using a VPN.
+      }
 
       // ─── 2FA Challenge ──────────────────────────────────────────
       if (user.twoFactorEnabled && user.twoFactorSecret) {

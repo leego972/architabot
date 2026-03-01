@@ -11,6 +11,13 @@
  *   4. Google redirects back to manus.space/api/auth/google/callback
  *   5. Server creates a one-time token, redirects to archibaldtitan.com/api/auth/token-exchange?token=XXX
  *   6. Token-exchange endpoint sets the session cookie on archibaldtitan.com and redirects to /dashboard
+ * 
+ * STATE MANAGEMENT (v9.0.1 — bulletproof):
+ *   OAuth state is validated using a DUAL-LAYER approach:
+ *   Layer 1: In-memory Map (fast, works when server stays up)
+ *   Layer 2: Signed httpOnly cookie (survives server restarts & redeployments)
+ *   If either layer validates, the login proceeds. This eliminates the
+ *   "Invalid or expired state" error caused by Railway redeployments.
  */
 
 import { Express, Request, Response } from "express";
@@ -56,7 +63,7 @@ function shouldBeAdmin(openId: string | null, email: string | null, userId: numb
   return false;
 }
 
-// ─── CSRF State Store ──────────────────────────────────────────────
+// ─── CSRF State Store (Layer 1: In-Memory) ────────────────────────
 const pendingStates = new Map<string, { provider: string; returnPath: string; expiresAt: number; mode: string }>();
 
 // ─── One-Time Token Store (for cross-domain cookie transfer) ──────
@@ -72,6 +79,94 @@ setInterval(() => {
     if (now > val.expiresAt) pendingTokens.delete(key);
   }
 }, 5 * 60 * 1000);
+
+// ─── Cookie-Based State (Layer 2: Survives Restarts) ──────────────
+// HMAC-sign the state payload so it can't be forged.
+const STATE_COOKIE_NAME = "oauth_state";
+const STATE_TTL_MS = 30 * 60 * 1000; // 30 minutes — generous for mobile
+
+/**
+ * Derive a signing key from available secrets.
+ * Falls back to a stable hash of the GitHub client secret if no dedicated key exists.
+ */
+function getStateSigningKey(): string {
+  return ENV.githubClientSecret || ENV.googleClientSecret || "archibald-titan-fallback-key";
+}
+
+/**
+ * Create an HMAC signature for the state payload.
+ */
+function signStatePayload(payload: string): string {
+  return crypto.createHmac("sha256", getStateSigningKey()).update(payload).digest("hex");
+}
+
+/**
+ * Build a signed cookie value containing the OAuth state metadata.
+ * Format: base64(JSON) + "." + hmac
+ */
+function buildStateCookie(data: { state: string; provider: string; returnPath: string; mode: string; expiresAt: number }): string {
+  const json = JSON.stringify(data);
+  const b64 = Buffer.from(json).toString("base64url");
+  const sig = signStatePayload(b64);
+  return `${b64}.${sig}`;
+}
+
+/**
+ * Parse and verify a signed state cookie.
+ * Returns null if invalid, tampered, or expired.
+ */
+function parseStateCookie(cookieValue: string | undefined): { state: string; provider: string; returnPath: string; mode: string; expiresAt: number } | null {
+  if (!cookieValue) return null;
+  try {
+    const [b64, sig] = cookieValue.split(".");
+    if (!b64 || !sig) return null;
+    const expectedSig = signStatePayload(b64);
+    // Timing-safe comparison to prevent timing attacks
+    if (sig.length !== expectedSig.length) return null;
+    const sigBuf = Buffer.from(sig, "hex");
+    const expectedBuf = Buffer.from(expectedSig, "hex");
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
+    const json = Buffer.from(b64, "base64url").toString("utf-8");
+    const data = JSON.parse(json);
+    if (Date.now() > data.expiresAt) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate OAuth state using dual-layer approach.
+ * Returns the state metadata if valid from either layer, or null if both fail.
+ */
+function validateOAuthState(
+  stateParam: string,
+  provider: string,
+  req: Request
+): { returnPath: string; mode: string; source: string } | null {
+  // Layer 1: In-memory Map (fast path)
+  const memState = pendingStates.get(stateParam);
+  if (memState && memState.provider === provider) {
+    pendingStates.delete(stateParam);
+    if (Date.now() <= memState.expiresAt) {
+      log.info(`[OAuth State] Validated via in-memory map (provider=${provider})`);
+      return { returnPath: memState.returnPath, mode: memState.mode, source: "memory" };
+    }
+  }
+
+  // Layer 2: Signed cookie (survives server restarts/redeployments)
+  const cookies = req.cookies || {};
+  const cookieVal = cookies[STATE_COOKIE_NAME];
+  const cookieState = parseStateCookie(cookieVal);
+  if (cookieState && cookieState.state === stateParam && cookieState.provider === provider) {
+    log.info(`[OAuth State] Validated via signed cookie (provider=${provider}) — server likely restarted since auth started`);
+    return { returnPath: cookieState.returnPath, mode: cookieState.mode, source: "cookie" };
+  }
+
+  // Both layers failed
+  log.warn(`[OAuth State] BOTH layers failed for provider=${provider}, state=${stateParam.substring(0, 8)}...`);
+  return null;
+}
 
 // ─── GitHub OAuth Helpers ──────────────────────────────────────────
 
@@ -242,10 +337,13 @@ async function issueSessionAndRedirect(
   const isCrossDomain = callbackOrigin !== publicOrigin;
   log.info(`[Auth] publicOrigin=${publicOrigin}, callbackOrigin=${callbackOrigin}, isCrossDomain=${isCrossDomain}`);
 
+  // Clear the OAuth state cookie now that login is complete
+  res.clearCookie(STATE_COOKIE_NAME, { path: "/", httpOnly: true });
+
   if (isCrossDomain) {
     const oneTimeToken = crypto.randomBytes(32).toString("hex");
     pendingTokens.set(oneTimeToken, { sessionToken, returnPath, expiresAt: Date.now() + 2 * 60 * 1000 });
-    log.info(`${logPrefix} ${logDetail} → user ${result.userId} (${result.isNew ? "new" : "existing"}) [cross-domain token issued]`);
+    log.info(`${logPrefix} ${logDetail} → user ${result.userId} (${result.isNew ? "new" : "existing"}) → cross-domain token exchange`);
     return res.redirect(302, `${publicOrigin}/api/auth/token-exchange?token=${oneTimeToken}&returnPath=${encodeURIComponent(returnPath)}`);
   } else {
     const cookieOptions = getSessionCookieOptions(req);
@@ -255,6 +353,13 @@ async function issueSessionAndRedirect(
     log.info(`${logPrefix} ${logDetail} → user ${result.userId} (${result.isNew ? "new" : "existing"}) → redirecting to ${publicOrigin}${returnPath}`);
     return res.redirect(302, `${publicOrigin}${returnPath}`);
   }
+}
+
+// ─── Helper: Redirect to login with error (user-friendly) ─────────
+
+function redirectToLoginWithError(res: Response, message: string): void {
+  const publicOrigin = getPublicOrigin();
+  res.redirect(302, `${publicOrigin}/login?error=${encodeURIComponent(message)}`);
 }
 
 // ─── Route Registration ────────────────────────────────────────────
@@ -271,13 +376,13 @@ export function registerSocialAuthRoutes(app: Express) {
     const pending = pendingTokens.get(token);
     if (!pending) {
       log.warn("[Token Exchange] Invalid or expired token");
-      return res.redirect("/login?error=" + encodeURIComponent("Login session expired. Please try again."));
+      return redirectToLoginWithError(res, "Login session expired. Please try again.");
     }
     pendingTokens.delete(token);
 
     if (Date.now() > pending.expiresAt) {
       log.warn("[Token Exchange] Token expired");
-      return res.redirect("/login?error=" + encodeURIComponent("Login session expired. Please try again."));
+      return redirectToLoginWithError(res, "Login session expired. Please try again.");
     }
 
     const cookieOptions = getSessionCookieOptions(req);
@@ -291,7 +396,20 @@ export function registerSocialAuthRoutes(app: Express) {
     const returnPath = (req.query.returnPath as string) || "/dashboard";
     const mode = (req.query.mode as string) || "login";
     const state = crypto.randomBytes(32).toString("hex");
-    pendingStates.set(state, { provider: "github", returnPath, expiresAt: Date.now() + 10 * 60 * 1000, mode });
+    const expiresAt = Date.now() + STATE_TTL_MS;
+
+    // Layer 1: Store in memory
+    pendingStates.set(state, { provider: "github", returnPath, expiresAt, mode });
+
+    // Layer 2: Store in signed httpOnly cookie (survives server restarts)
+    const cookieVal = buildStateCookie({ state, provider: "github", returnPath, mode, expiresAt });
+    res.cookie(STATE_COOKIE_NAME, cookieVal, {
+      httpOnly: true,
+      path: "/",
+      sameSite: "lax",
+      secure: req.protocol === "https" || req.headers["x-forwarded-proto"] === "https",
+      maxAge: STATE_TTL_MS,
+    });
 
     const callbackOrigin = getOAuthCallbackOrigin();
     const params = new URLSearchParams({
@@ -307,12 +425,19 @@ export function registerSocialAuthRoutes(app: Express) {
   app.get("/api/auth/github/callback", async (req: Request, res: Response) => {
     const code = req.query.code as string;
     const state = req.query.state as string;
-    if (!code || !state) return res.status(400).send("Missing code or state parameter");
+    if (!code || !state) {
+      return redirectToLoginWithError(res, "Login failed — missing parameters. Please try again.");
+    }
 
-    const pending = pendingStates.get(state);
-    if (!pending || pending.provider !== "github") return res.status(400).send("Invalid or expired state. Please try again.");
-    pendingStates.delete(state);
-    if (Date.now() > pending.expiresAt) return res.status(400).send("OAuth state expired. Please try again.");
+    // Dual-layer state validation
+    const validated = validateOAuthState(state, "github", req);
+    if (!validated) {
+      log.warn(`[Social Auth] GitHub state validation failed (both layers). Redirecting to login.`);
+      return redirectToLoginWithError(res, "Your login session expired (likely due to a server update). Please try again — it will work immediately.");
+    }
+
+    // Clear the state cookie
+    res.clearCookie(STATE_COOKIE_NAME, { path: "/", httpOnly: true });
 
     try {
       const callbackOrigin = getOAuthCallbackOrigin();
@@ -325,11 +450,10 @@ export function registerSocialAuthRoutes(app: Express) {
         email: ghUser.email, name: ghUser.name || ghUser.login, avatarUrl: ghUser.avatar_url,
       });
 
-      await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `GitHub login: ${ghUser.login} (${ghUser.email})`);
+      await issueSessionAndRedirect(req, res, result, validated.returnPath, "[Social Auth]", `GitHub login: ${ghUser.login} (${ghUser.email})`);
     } catch (error: unknown) {
       log.error("[Social Auth] GitHub callback failed:", { error: String(error) });
-      const publicOrigin = getPublicOrigin();
-      res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("GitHub login failed. Please try again.")}`);
+      redirectToLoginWithError(res, "GitHub login failed. Please try again.");
     }
   });
 
@@ -338,7 +462,20 @@ export function registerSocialAuthRoutes(app: Express) {
     const returnPath = (req.query.returnPath as string) || "/dashboard";
     const mode = (req.query.mode as string) || "login";
     const state = crypto.randomBytes(32).toString("hex");
-    pendingStates.set(state, { provider: "google", returnPath, expiresAt: Date.now() + 10 * 60 * 1000, mode });
+    const expiresAt = Date.now() + STATE_TTL_MS;
+
+    // Layer 1: Store in memory
+    pendingStates.set(state, { provider: "google", returnPath, expiresAt, mode });
+
+    // Layer 2: Store in signed httpOnly cookie (survives server restarts)
+    const cookieVal = buildStateCookie({ state, provider: "google", returnPath, mode, expiresAt });
+    res.cookie(STATE_COOKIE_NAME, cookieVal, {
+      httpOnly: true,
+      path: "/",
+      sameSite: "lax",
+      secure: req.protocol === "https" || req.headers["x-forwarded-proto"] === "https",
+      maxAge: STATE_TTL_MS,
+    });
 
     const callbackOrigin = getOAuthCallbackOrigin();
     const params = new URLSearchParams({
@@ -357,12 +494,19 @@ export function registerSocialAuthRoutes(app: Express) {
   app.get("/api/auth/google/callback", async (req: Request, res: Response) => {
     const code = req.query.code as string;
     const state = req.query.state as string;
-    if (!code || !state) return res.status(400).send("Missing code or state parameter");
+    if (!code || !state) {
+      return redirectToLoginWithError(res, "Login failed — missing parameters. Please try again.");
+    }
 
-    const pending = pendingStates.get(state);
-    if (!pending || pending.provider !== "google") return res.status(400).send("Invalid or expired state. Please try again.");
-    pendingStates.delete(state);
-    if (Date.now() > pending.expiresAt) return res.status(400).send("OAuth state expired. Please try again.");
+    // Dual-layer state validation
+    const validated = validateOAuthState(state, "google", req);
+    if (!validated) {
+      log.warn(`[Social Auth] Google state validation failed (both layers). Redirecting to login.`);
+      return redirectToLoginWithError(res, "Your login session expired (likely due to a server update). Please try again — it will work immediately.");
+    }
+
+    // Clear the state cookie
+    res.clearCookie(STATE_COOKIE_NAME, { path: "/", httpOnly: true });
 
     try {
       const callbackOrigin = getOAuthCallbackOrigin();
@@ -375,11 +519,10 @@ export function registerSocialAuthRoutes(app: Express) {
         email: googleUser.email, name: googleUser.name, avatarUrl: googleUser.picture,
       });
 
-      await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `Google login: ${googleUser.email}`);
+      await issueSessionAndRedirect(req, res, result, validated.returnPath, "[Social Auth]", `Google login: ${googleUser.email}`);
     } catch (error: unknown) {
       log.error("[Social Auth] Google callback failed:", { error: String(error) });
-      const publicOrigin = getPublicOrigin();
-      res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("Google login failed. Please try again.")}`);
+      redirectToLoginWithError(res, "Google login failed. Please try again.");
     }
   });
 }

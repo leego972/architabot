@@ -32,7 +32,8 @@ function isS3Mode(): boolean {
 async function s3Put(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType: string
+  contentType: string,
+  originalFileName?: string
 ): Promise<{ key: string; url: string }> {
   const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
   
@@ -50,11 +51,15 @@ async function s3Put(
   const key = relKey.replace(/^\/+/, "");
   const body = typeof data === "string" ? Buffer.from(data) : data;
 
+  // Derive filename for Content-Disposition from the original filename or the S3 key
+  const dispositionName = originalFileName || key.split("/").pop() || "file";
+
   await client.send(new PutObjectCommand({
     Bucket: bucket,
     Key: key,
     Body: body,
     ContentType: contentType,
+    ContentDisposition: `attachment; filename="${dispositionName}"`,
     ACL: "public-read",
   }));
 
@@ -126,11 +131,12 @@ function buildAuthHeaders(apiKey: string): HeadersInit {
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream"
+  contentType = "application/octet-stream",
+  originalFileName?: string
 ): Promise<{ key: string; url: string }> {
   // Use S3 direct if AWS credentials are available
   if (isS3Mode()) {
-    return s3Put(relKey, data, contentType);
+    return s3Put(relKey, data, contentType, originalFileName);
   }
 
   // Fall back to Manus Forge proxy

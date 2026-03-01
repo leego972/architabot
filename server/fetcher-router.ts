@@ -19,6 +19,7 @@ import {
   deactivateKillSwitch,
   resetKillSwitch,
   isKillSwitchActive,
+  storeManualCredential,
 } from "./fetcher-db";
 import { executeJob, abortJob } from "./fetcher-engine/executor";
 import { PROVIDERS } from "../shared/fetcher";
@@ -182,6 +183,26 @@ export const fetcherRouter = router({
       const found = creds.filter(c => c.id === input.credentialId);
       if (found.length === 0) throw new Error("Credential not found");
       return found;
+    }),
+
+  addCredential: protectedProcedure
+    .input(z.object({
+      providerId: z.string().min(1),
+      providerName: z.string().min(1),
+      keyType: z.string().min(1),
+      value: z.string().min(1),
+      keyLabel: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await storeManualCredential(
+        ctx.user.id,
+        input.providerId,
+        input.providerName,
+        input.keyType,
+        input.value,
+        input.keyLabel,
+      );
+      return { success: true };
     }),
 
   deleteCredential: protectedProcedure

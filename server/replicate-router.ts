@@ -8,10 +8,16 @@ import { router, protectedProcedure } from "./_core/trpc";
 import { canUseCloneWebsite } from "./subscription-gate";
 import { consumeCredits } from "./credit-service";
 import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
-import { detectCloneComplexity, getClonePrice, type CloneComplexity } from "../shared/pricing";
+import { detectCloneComplexity, type CloneComplexity } from "../shared/pricing";
 import { searchDomains, getDomainPrice, purchaseDomain, configureDNS } from "./domain-service";
 import { deployProject, getDeploymentStatus, selectPlatform } from "./deploy-service";
 import { getErrorMessage } from "./_core/errors.js";
+import { getUserOpenAIKey, getUserGithubPat } from "./user-secrets-router";
+import {
+  validateExternalUrl,
+  checkUserRateLimit,
+  logSecurityEvent,
+} from "./security-hardening";
 import {
   createProject,
   getProject,
@@ -71,17 +77,35 @@ export const replicateRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      // ═══ GITHUB PAT VALIDATION: Require all-inclusive PAT for each clone ═══
-      if (!input.githubPat || input.githubPat.trim().length < 10) {
+      // ═══ REQUIRED API KEYS: Pull from vault or use per-project input ═══
+      // Users must have their own API keys saved — the platform does not subsidize API costs.
+
+      // 1. OpenAI API Key — required for all LLM calls (research, planning, building)
+      const userOpenAIKey = await getUserOpenAIKey(ctx.user.id);
+      if (!userOpenAIKey) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "A GitHub Personal Access Token is required for each clone project. Please provide a fresh all-inclusive PAT.",
+          message: "An OpenAI API key is required to use Clone Website. Please save your OpenAI API key in Settings → API Keys before cloning.",
         });
       }
-      // Validate PAT against GitHub API and check required scopes
+
+      // 2. GitHub PAT — required for pushing to GitHub
+      // Priority: per-project input > vault saved key
+      let resolvedGithubPat = input.githubPat?.trim() || null;
+      if (!resolvedGithubPat || resolvedGithubPat.length < 10) {
+        resolvedGithubPat = await getUserGithubPat(ctx.user.id);
+      }
+      if (!resolvedGithubPat || resolvedGithubPat.length < 10) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A GitHub Personal Access Token is required for Clone Website. Please save your GitHub PAT in Settings → API Keys, or provide one in the clone form.",
+        });
+      }
+
+      // Validate GitHub PAT against GitHub API and check required scopes
       try {
         const ghRes = await fetch("https://api.github.com/user", {
-          headers: { Authorization: `token ${input.githubPat.trim()}`, Accept: "application/json", "User-Agent": "ArchibaldTitan" },
+          headers: { Authorization: `token ${resolvedGithubPat}`, Accept: "application/json", "User-Agent": "ArchibaldTitan" },
         });
         if (!ghRes.ok) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid GitHub PAT — the token was rejected by GitHub. Please check it and try again." });
@@ -106,6 +130,23 @@ export const replicateRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Could not validate GitHub PAT — network error. Please try again." });
       }
 
+      // ═══ SECURITY: SSRF Prevention & Rate Limiting ═══
+      const isAdmin = ctx.user.role === "admin";
+      const urlCheck = validateExternalUrl(input.targetUrl, isAdmin);
+      if (!urlCheck.valid) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: urlCheck.error || "Invalid target URL — internal/private addresses are blocked.",
+        });
+      }
+      const cloneRateCheck = await checkUserRateLimit(ctx.user.id, "clone:create");
+      if (!cloneRateCheck.allowed) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: `Clone rate limit exceeded. Please wait ${Math.ceil((cloneRateCheck.retryAfterMs || 300000) / 1000)}s.`,
+        });
+      }
+
       // ═══ TIER GATE: Clone Website is Cyber+ and Titan exclusive ═══
       const hasAccess = await canUseCloneWebsite(ctx.user.id);
       if (!hasAccess) {
@@ -116,7 +157,6 @@ export const replicateRouter = router({
       }
 
       // ═══ SAFETY CHECK: Block prohibited websites ═══
-      const isAdmin = ctx.user.role === "admin";
       try {
         enforceCloneSafety(input.targetUrl, input.targetName, isAdmin);
       } catch (e: unknown) {
@@ -130,26 +170,40 @@ export const replicateRouter = router({
       // Complexity is initially set to "simple" and re-evaluated after research.
       // The initial credit hold ensures the user has credits for the base cost.
       try {
-        await consumeCredits(ctx.user.id, "clone_action" as any, "Website clone: " + input.targetUrl);
+        const creditResult = await consumeCredits(ctx.user.id, "clone_action", "Website clone: " + input.targetUrl);
+        if (!creditResult.success) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Insufficient credits for clone action. You need 50 credits to clone a website." });
+        }
       } catch (e: unknown) {
+        if (e instanceof TRPCError) throw e;
         throw new TRPCError({ code: "FORBIDDEN", message: getErrorMessage(e) || "Insufficient credits for clone action" });
       }
 
-      const project = await createProject(ctx.user.id, input.targetUrl, input.targetName, {
-        priority: input.priority,
-        branding: {
-          brandName: input.brandName,
-          brandColors: input.brandColors,
-          brandLogo: input.brandLogo,
-          brandTagline: input.brandTagline,
-        },
-        stripe: {
-          publishableKey: input.stripePublishableKey,
-          secretKey: input.stripeSecretKey,
-        },
-        githubPat: input.githubPat,
-      });
-      return project;
+      // ═══ CREATE PROJECT ═══
+      try {
+        const project = await createProject(ctx.user.id, input.targetUrl, input.targetName, {
+          priority: input.priority,
+          branding: {
+            brandName: input.brandName,
+            brandColors: input.brandColors,
+            brandLogo: input.brandLogo,
+            brandTagline: input.brandTagline,
+          },
+          stripe: {
+            publishableKey: input.stripePublishableKey,
+            secretKey: input.stripeSecretKey,
+          },
+          githubPat: resolvedGithubPat,
+        });
+        return project;
+      } catch (e: unknown) {
+        const msg = getErrorMessage(e);
+        console.error("[Clone] createProject failed:", msg, e);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed to create clone project: ${msg || "Database error. Please try again."}`,
+        });
+      }
     }),
 
   /**

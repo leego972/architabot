@@ -36,5 +36,15 @@ export const BAZAAR_LOGO_128 = "/logos/bazaar-logo-128.png";
 export const BAZAAR_LOGO_256 = "/logos/bazaar-logo-256.png";
 export const BAZAAR_LOGO_FULL = "/logos/bazaar-logo-full.png";
 
+// Tier membership logos (256x256, transparent)
+export const TIER_LOGOS: Record<string, string> = {
+  free: "/logos/tiers/free.png",
+  pro: "/logos/tiers/pro.png",
+  enterprise: "/logos/tiers/enterprise.png",
+  cyber: "/logos/tiers/cyber.png",
+  cyber_plus: "/logos/tiers/cyber_plus.png",
+  titan: "/logos/tiers/titan.png",
+};
+
 // Favicon
 export const FAVICON_URL = "/logos/at-icon-32.png";

@@ -26,6 +26,9 @@ export const users = mysqlTable("users", {
   hasPaymentMethod: boolean("hasPaymentMethod").default(false).notNull(), // Stripe payment method on file
   stripeCustomerId: varchar("stripeCustomerId", { length: 128 }), // Stripe customer ID for this user
   trialConvertedAt: timestamp("trialConvertedAt"), // when trial auto-converted to paid
+  // ── Referral Titan Unlock ──
+  titanUnlockExpiry: timestamp("titanUnlockExpiry"), // if set and in the future, user gets Titan features
+  titanUnlockGrantedBy: int("titanUnlockGrantedBy"), // userId of the referred user who triggered the unlock
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -1470,7 +1473,7 @@ export const referralConversions = mysqlTable("referral_conversions", {
   referrerId: int("referrerId").notNull(), // the user who referred
   referredUserId: int("referredUserId").notNull(), // the new user
   status: mysqlEnum("status", ["signed_up", "subscribed", "rewarded"]).default("signed_up").notNull(),
-  rewardType: mysqlEnum("rewardType", ["free_month", "commission", "credit", "tier_upgrade"]).default("free_month"),
+  rewardType: mysqlEnum("rewardType", ["free_month", "commission", "credit", "tier_upgrade", "discount", "high_value_discount"]).default("discount"),
   rewardAmountCents: int("rewardAmountCents").default(0).notNull(),
   rewardGrantedAt: timestamp("rewardGrantedAt"),
   subscriptionId: varchar("subscriptionId", { length: 256 }), // Stripe subscription ID if they paid
@@ -1837,3 +1840,203 @@ export const sellerPayoutMethods = mysqlTable("seller_payout_methods", {
 });
 export type SellerPayoutMethod = typeof sellerPayoutMethods.$inferSelect;
 export type InsertSellerPayoutMethod = typeof sellerPayoutMethods.$inferInsert;
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Website Health Monitor ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Monitored websites — each site a user wants Titan to watch.
+ * Stores connection details (API keys, SSH, login creds) for auto-repair.
+ */
+export const monitoredSites = mysqlTable("monitored_sites", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 256 }).notNull(),
+  url: varchar("url", { length: 2048 }).notNull(),
+  checkIntervalSeconds: int("checkIntervalSeconds").notNull().default(300),
+
+  // ── Access Method ──
+  accessMethod: mysqlEnum("accessMethod", [
+    "none", "api", "ssh", "ftp", "login", "webhook",
+    "railway", "vercel", "netlify", "render", "heroku",
+  ]).notNull().default("none"),
+
+  // ── Generic API Access ──
+  apiEndpoint: text("apiEndpoint"),
+  apiKey: text("apiKey"),                     // encrypted at rest
+  apiHeaders: text("apiHeaders"),             // JSON — custom headers
+
+  // ── Login-based Access ──
+  loginUrl: text("loginUrl"),
+  loginUsername: text("loginUsername"),        // encrypted
+  loginPassword: text("loginPassword"),       // encrypted
+
+  // ── SSH Access ──
+  sshHost: varchar("sshHost", { length: 512 }),
+  sshPort: int("sshPort").default(22),
+  sshUsername: varchar("sshUsername", { length: 256 }),
+  sshPrivateKey: text("sshPrivateKey"),       // encrypted
+
+  // ── Platform-specific (Railway, Vercel, Netlify, Render, Heroku) ──
+  platformProjectId: varchar("platformProjectId", { length: 256 }),
+  platformServiceId: varchar("platformServiceId", { length: 256 }),
+  platformToken: text("platformToken"),       // encrypted
+  platformEnvironmentId: varchar("platformEnvironmentId", { length: 256 }),
+
+  // ── Webhook-based Repair ──
+  repairWebhookUrl: text("repairWebhookUrl"),
+  repairWebhookSecret: text("repairWebhookSecret"),
+
+  // ── Health Check Configuration ──
+  expectedStatusCode: int("expectedStatusCode").default(200),
+  expectedBodyContains: text("expectedBodyContains"),
+  timeoutMs: int("timeoutMs").default(30000),
+  followRedirects: boolean("followRedirects").default(true).notNull(),
+  sslCheckEnabled: boolean("sslCheckEnabled").default(true).notNull(),
+  performanceThresholdMs: int("performanceThresholdMs").default(5000),
+
+  // ── Alert Configuration ──
+  alertsEnabled: boolean("alertsEnabled").default(true).notNull(),
+  alertEmail: varchar("alertEmail", { length: 320 }),
+  alertWebhookUrl: text("alertWebhookUrl"),
+  alertAfterConsecutiveFailures: int("alertAfterConsecutiveFailures").default(3),
+  autoRepairEnabled: boolean("autoRepairEnabled").default(true).notNull(),
+
+  // ── State ──
+  isPaused: boolean("isPaused").default(false).notNull(),
+  lastCheckAt: timestamp("lastCheckAt"),
+  lastStatus: mysqlEnum("lastStatus", ["healthy", "degraded", "down", "error", "unknown"]).default("unknown").notNull(),
+  lastResponseTimeMs: int("lastResponseTimeMs"),
+  lastHttpStatusCode: int("lastHttpStatusCode"),
+  consecutiveFailures: int("consecutiveFailures").default(0).notNull(),
+  uptimePercent24h: varchar("uptimePercent24h", { length: 8 }),
+  uptimePercent7d: varchar("uptimePercent7d", { length: 8 }),
+  uptimePercent30d: varchar("uptimePercent30d", { length: 8 }),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MonitoredSite = typeof monitoredSites.$inferSelect;
+export type InsertMonitoredSite = typeof monitoredSites.$inferInsert;
+
+/**
+ * Individual health check results — one row per check per site.
+ */
+export const healthChecks = mysqlTable("health_checks", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  userId: int("userId").notNull(),
+
+  status: mysqlEnum("status", ["healthy", "degraded", "down", "error"]).notNull(),
+  httpStatusCode: int("httpStatusCode"),
+  responseTimeMs: int("responseTimeMs"),
+
+  // ── SSL Info ──
+  sslValid: boolean("sslValid"),
+  sslExpiresAt: timestamp("sslExpiresAt"),
+  sslIssuer: varchar("sslIssuer", { length: 512 }),
+
+  // ── Performance Metrics ──
+  dnsTimeMs: int("dnsTimeMs"),
+  connectTimeMs: int("connectTimeMs"),
+  tlsTimeMs: int("tlsTimeMs"),
+  ttfbMs: int("ttfbMs"),                     // time to first byte
+  downloadTimeMs: int("downloadTimeMs"),
+  totalTimeMs: int("totalTimeMs"),
+
+  // ── Content Validation ──
+  bodyContainsMatch: boolean("bodyContainsMatch"),
+  contentLength: int("contentLength"),
+
+  // ── Error Details ──
+  errorMessage: text("errorMessage"),
+  errorType: varchar("errorType", { length: 128 }),
+
+  // ── Request Metadata ──
+  checkedFromRegion: varchar("checkedFromRegion", { length: 64 }),
+  checkedAt: timestamp("checkedAt").defaultNow().notNull(),
+});
+export type HealthCheck = typeof healthChecks.$inferSelect;
+export type InsertHealthCheck = typeof healthChecks.$inferInsert;
+
+/**
+ * Incidents — detected problems that may require attention or auto-repair.
+ */
+export const siteIncidents = mysqlTable("site_incidents", {
+  id: int("id").autoincrement().primaryKey(),
+  siteId: int("siteId").notNull(),
+  userId: int("userId").notNull(),
+
+  type: mysqlEnum("type", [
+    "downtime", "ssl_expiry", "ssl_invalid", "performance_degradation",
+    "error_spike", "deploy_failure", "content_mismatch", "dns_failure",
+  ]).notNull(),
+  severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]).notNull(),
+  status: mysqlEnum("status", [
+    "open", "investigating", "repairing", "resolved", "ignored",
+  ]).notNull().default("open"),
+
+  title: varchar("title", { length: 512 }).notNull(),
+  description: text("description"),
+
+  // ── Timeline ──
+  detectedAt: timestamp("detectedAt").defaultNow().notNull(),
+  acknowledgedAt: timestamp("acknowledgedAt"),
+  resolvedAt: timestamp("resolvedAt"),
+  resolutionNote: text("resolutionNote"),
+
+  // ── Auto-Repair ──
+  autoRepairAttempted: boolean("autoRepairAttempted").default(false).notNull(),
+  autoRepairSucceeded: boolean("autoRepairSucceeded"),
+  autoRepairAttempts: int("autoRepairAttempts").default(0).notNull(),
+
+  // ── Metrics at time of incident ──
+  triggerHttpStatus: int("triggerHttpStatus"),
+  triggerResponseTimeMs: int("triggerResponseTimeMs"),
+  triggerErrorMessage: text("triggerErrorMessage"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SiteIncident = typeof siteIncidents.$inferSelect;
+export type InsertSiteIncident = typeof siteIncidents.$inferInsert;
+
+/**
+ * Repair logs — every auto-repair or manual repair action taken.
+ */
+export const repairLogs = mysqlTable("repair_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  incidentId: int("incidentId"),
+  siteId: int("siteId").notNull(),
+  userId: int("userId").notNull(),
+
+  action: mysqlEnum("action", [
+    "restart_service", "redeploy", "rollback", "clear_cache",
+    "fix_config", "ssl_renew", "dns_flush", "custom_command",
+    "webhook_trigger", "platform_restart",
+  ]).notNull(),
+  method: mysqlEnum("method", ["api", "ssh", "login", "webhook", "platform"]).notNull(),
+  status: mysqlEnum("status", ["pending", "running", "success", "failed", "cancelled"]).notNull().default("pending"),
+
+  // ── Execution Details ──
+  command: text("command"),                   // the command or API call made
+  requestPayload: text("requestPayload"),     // what was sent
+  responsePayload: text("responsePayload"),   // what came back
+  output: text("output"),                     // stdout/stderr or response body
+  errorMessage: text("errorMessage"),
+
+  // ── Timing ──
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  durationMs: int("durationMs"),
+
+  // ── Verification ──
+  verificationCheckId: int("verificationCheckId"), // health_check that verified the repair
+  siteHealthAfterRepair: mysqlEnum("siteHealthAfterRepair", ["healthy", "degraded", "down", "error"]),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RepairLog = typeof repairLogs.$inferSelect;
+export type InsertRepairLog = typeof repairLogs.$inferInsert;

@@ -394,3 +394,74 @@ export async function getUserOpenAIKey(userId: number): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Get the user's stored GitHub PAT from their vault (decrypted).
+ * Returns null if not set or decryption fails.
+ */
+export async function getUserGithubPat(userId: number): Promise<string | null> {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+
+    const rows = await db
+      .select()
+      .from(userSecrets)
+      .where(
+        and(
+          eq(userSecrets.userId, userId),
+          eq(userSecrets.secretType, "github_pat")
+        )
+      )
+      .limit(1);
+
+    if (rows.length === 0) return null;
+
+    const decrypted = decrypt(rows[0].encryptedValue);
+
+    // Update lastUsedAt asynchronously (fire and forget)
+    db.update(userSecrets)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(userSecrets.id, rows[0].id))
+      .catch(() => {}); // ignore errors
+
+    return decrypted;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get any user secret by type from their vault (decrypted).
+ * Supports: "openai_api_key", "github_pat", "stripe_secret_key", etc.
+ */
+export async function getUserSecret(userId: number, secretType: string): Promise<string | null> {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+
+    const rows = await db
+      .select()
+      .from(userSecrets)
+      .where(
+        and(
+          eq(userSecrets.userId, userId),
+          eq(userSecrets.secretType, secretType)
+        )
+      )
+      .limit(1);
+
+    if (rows.length === 0) return null;
+
+    const decrypted = decrypt(rows[0].encryptedValue);
+
+    db.update(userSecrets)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(userSecrets.id, rows[0].id))
+      .catch(() => {});
+
+    return decrypted;
+  } catch {
+    return null;
+  }
+}

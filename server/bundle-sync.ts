@@ -154,6 +154,48 @@ async function generateTarball(): Promise<Buffer | null> {
   }
 }
 
+// ─── SSE: Real-time deploy notifications ───────────────────────────
+// Desktop apps connect to this endpoint and receive instant notifications
+// when a new deployment is detected (bundle hash changes).
+const sseClients: Set<Response> = new Set();
+let lastNotifiedHash: string | null = null;
+
+/**
+ * Check if the bundle has changed and notify all connected desktop clients.
+ * Called on server startup and can be triggered by a deploy webhook.
+ */
+export function notifyDesktopClients() {
+  const manifest = getManifest();
+  if (!manifest) return;
+  if (lastNotifiedHash === manifest.hash) return;
+  lastNotifiedHash = manifest.hash;
+
+  const payload = JSON.stringify({
+    type: "bundle-updated",
+    version: manifest.version,
+    hash: manifest.hash,
+    buildTime: manifest.buildTime,
+  });
+
+  for (const client of sseClients) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+
+  log.info(`Notified ${sseClients.size} desktop clients of new bundle`, {
+    version: manifest.version,
+    hash: manifest.hash,
+  });
+}
+
+// Periodically check for bundle changes (catches Railway deploys)
+setInterval(() => {
+  notifyDesktopClients();
+}, 60_000); // Check every 60 seconds
+
 export function registerBundleSyncRoutes(app: Express) {
   /**
    * GET /api/desktop/bundle-manifest
@@ -202,5 +244,68 @@ export function registerBundleSyncRoutes(app: Express) {
     }
   );
 
-  log.info("Bundle sync routes registered");
+  /**
+   * GET /api/desktop/bundle-stream
+   * SSE endpoint for real-time deploy notifications.
+   * Desktop apps connect here and receive instant updates when a new
+   * deployment is detected, triggering immediate bundle sync.
+   */
+  app.get("/api/desktop/bundle-stream", (_req: Request, res: Response) => {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    // Send initial connected event with current manifest
+    const manifest = getManifest();
+    res.write(
+      `data: ${JSON.stringify({ type: "connected", version: manifest?.version, hash: manifest?.hash })}\n\n`
+    );
+
+    sseClients.add(res);
+    log.info(`Desktop client connected to bundle stream (total: ${sseClients.size})`);
+
+    // Keep-alive ping every 30 seconds
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(": ping\n\n");
+      } catch {
+        clearInterval(keepAlive);
+        sseClients.delete(res);
+      }
+    }, 30_000);
+
+    _req.on("close", () => {
+      clearInterval(keepAlive);
+      sseClients.delete(res);
+      log.info(`Desktop client disconnected from bundle stream (total: ${sseClients.size})`);
+    });
+  });
+
+  /**
+   * POST /api/desktop/notify-deploy
+   * Webhook endpoint that can be called by CI/CD (Railway deploy hook)
+   * to instantly notify all connected desktop apps of a new deployment.
+   * Requires CRON_SECRET for authentication.
+   */
+  app.post("/api/desktop/notify-deploy", (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Invalidate cached manifest and tarball to pick up new build
+    cachedManifest = null;
+    cachedTarball = null;
+
+    // Notify all connected clients
+    notifyDesktopClients();
+
+    res.json({ success: true, clientsNotified: sseClients.size });
+  });
+
+  log.info("Bundle sync routes registered (with SSE stream and deploy webhook)");
 }

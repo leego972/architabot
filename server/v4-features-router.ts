@@ -18,6 +18,7 @@ import {
 } from "../drizzle/schema";
 import { PROVIDERS } from "../shared/fetcher";
 import { invokeLLM } from "./_core/llm";
+import { getUserOpenAIKey } from "./user-secrets-router";
 import { getUserPlan, enforceFeature } from "./subscription-gate";
 import { logAudit } from "./audit-log-db";
 import crypto from "crypto";
@@ -102,6 +103,7 @@ export const leakScannerRouter = router({
     .mutation(async ({ ctx, input }) => {
       const plan = await getUserPlan(ctx.user.id);
       enforceFeature(plan.planId, "leak_scanner", "Credential Leak Scanner");
+      const userApiKey = await getUserOpenAIKey(ctx.user.id) || undefined;
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -168,6 +170,7 @@ Rules:
 
         const response = await invokeLLM({
           systemTag: "misc",
+          userApiKey,
           messages: [
             { role: "system", content: "You are a JSON-only response bot. Return only valid JSON." },
             { role: "user", content: scanPrompt },

@@ -17,6 +17,13 @@ import { sql } from "drizzle-orm";
 import { safeDDLStatement } from "./_core/sql-sanitize.js";
 import { createLogger } from "./_core/logger.js";
 import { getErrorMessage } from "./_core/errors.js";
+import {
+  trackPurchase,
+  checkUserRateLimit,
+  logSecurityEvent,
+  signModuleContent,
+} from "./security-hardening";
+import { auditQueryParam } from "./security-fortress";
 const log = createLogger("MarketplaceRouter");
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -120,6 +127,14 @@ export const marketplaceRouter = router({
       }).optional()
     )
     .query(async ({ input }) => {
+      // ── SECURITY: SQL Injection Audit on search inputs ─────────
+      if (input?.search) {
+        const sqlCheck = await auditQueryParam("search", input.search, 0);
+        if (sqlCheck.blocked) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid search query" });
+        }
+      }
+
       const listings = await db.listMarketplaceListings({
         category: input?.category,
         search: input?.search,
@@ -532,8 +547,27 @@ export const marketplaceRouter = router({
     .mutation(async ({ ctx, input }) => {
       if (!ctx.user?.id) throw new TRPCError({ code: "UNAUTHORIZED" });
 
+      // ── SECURITY: Per-User Purchase Rate Limiting ──────────────────
+      const rateCheck = await checkUserRateLimit(ctx.user.id, "marketplace:purchase");
+      if (!rateCheck.allowed) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: `Purchase rate limit exceeded. Please wait ${Math.ceil((rateCheck.retryAfterMs || 60000) / 1000)}s.`,
+        });
+      }
+
+      // ── SECURITY: Purchase Velocity Fraud Detection ────────────────
       const listing = await db.getListingById(input.listingId);
       if (!listing) throw new TRPCError({ code: "NOT_FOUND", message: "Listing not found" });
+
+      const velocityCheck = await trackPurchase(ctx.user.id, listing.priceCredits);
+      if (!velocityCheck.allowed) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: velocityCheck.reason || "Unusual purchase activity detected. Please try again later.",
+        });
+      }
+
       if (listing.status !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: "Listing is not available" });
       if (listing.reviewStatus !== "approved") throw new TRPCError({ code: "BAD_REQUEST", message: "Listing is pending review" });
       if (listing.sellerId === ctx.user.id) throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot purchase your own listing" });

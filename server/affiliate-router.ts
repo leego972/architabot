@@ -52,6 +52,23 @@ import {
   resetSignupKillSwitch,
   isSignupKilled,
 } from "./affiliate-signup-engine";
+import {
+  calculatePartnerEPCs,
+  getSmartRecommendations,
+  trackClickWithFraudCheck,
+  getRevenueAnalytics,
+  generateSmartLink,
+  getConversionSignals,
+  getSeasonalMultiplier,
+  getEnhancedReferralInfo,
+  generateRevenueForecast,
+  runOptimizationCycleV2,
+  aiScorePartner,
+  MILESTONE_BONUSES,
+  TWO_SIDED_REWARDS,
+  AFFILIATE_V2_VERSION,
+  AFFILIATE_V2_FEATURES,
+} from "./affiliate-engine-v2";
 
 export const affiliateRouter = router({
   // ─── Admin: Stats & Dashboard ───────────────────────────────────
@@ -366,7 +383,9 @@ export const affiliateRouter = router({
   // ─── Public: Config ─────────────────────────────────────────────
   getReferralConfig: publicProcedure.query(() => {
     return {
-      referralsForFreeMonth: REFERRAL_CONFIG.referralsForFreeMonth,
+      referralsForDiscount: REFERRAL_CONFIG.referralsForDiscount,
+      discountPercent: REFERRAL_CONFIG.discountPercent,
+      discountOneTime: REFERRAL_CONFIG.discountOneTime,
       baseCommissionPercent: REFERRAL_CONFIG.baseCommissionPercent,
       commissionDurationMonths: REFERRAL_CONFIG.commissionDurationMonths,
       minPayoutCents: REFERRAL_CONFIG.minPayoutCents,
@@ -374,5 +393,123 @@ export const affiliateRouter = router({
       tiers: REFERRAL_CONFIG.tiers,
       contexts: Object.keys(CONTEXTUAL_PLACEMENTS),
     };
+  }),
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ─── AFFILIATE ENGINE V2 — MAXIMUM PROFITABILITY ──────────────────
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ─── Admin: Revenue Analytics Dashboard ────────────────────────────
+  getRevenueAnalytics: adminProcedure.query(async () => {
+    return await getRevenueAnalytics();
+  }),
+
+  // ─── Admin: Partner EPC Rankings ──────────────────────────────────
+  getPartnerEPCs: adminProcedure.query(async () => {
+    return await calculatePartnerEPCs();
+  }),
+
+  // ─── Admin: Revenue Forecast ──────────────────────────────────────
+  getRevenueForecast: adminProcedure.query(async () => {
+    return await generateRevenueForecast();
+  }),
+
+  // ─── Admin: AI Score Partner ──────────────────────────────────────
+  aiScorePartner: adminProcedure
+    .input(z.object({
+      name: z.string(),
+      domain: z.string(),
+      vertical: z.string(),
+      commissionType: z.string(),
+      commissionRate: z.number(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      return await aiScorePartner(input);
+    }),
+
+  // ─── Admin: Run v2 Optimization Cycle ─────────────────────────────
+  runOptimizationV2: adminProcedure.mutation(async () => {
+    return await runOptimizationCycleV2();
+  }),
+
+  // ─── Admin: v2 System Info ────────────────────────────────────────
+  getV2Info: adminProcedure.query(() => {
+    const seasonal = getSeasonalMultiplier();
+    return {
+      version: AFFILIATE_V2_VERSION,
+      features: AFFILIATE_V2_FEATURES,
+      seasonalMultiplier: seasonal,
+      milestoneBonuses: MILESTONE_BONUSES,
+      twoSidedRewards: TWO_SIDED_REWARDS,
+    };
+  }),
+
+  // ─── User: Enhanced Referral Dashboard ─────────────────────────────
+  getMyEnhancedReferral: protectedProcedure.query(async ({ ctx }) => {
+    return await getEnhancedReferralInfo(ctx.user.id);
+  }),
+
+  // ─── Public: Smart Recommendations (EPC-weighted) ─────────────────
+  getSmartRecommendations: publicProcedure
+    .input(z.object({
+      context: z.string(),
+      limit: z.number().min(1).max(10).default(3),
+      userId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      return await getSmartRecommendations(input.context, input.limit, input.userId);
+    }),
+
+  // ─── Public: Track Click with Fraud Prevention ────────────────────
+  trackClickV2: publicProcedure
+    .input(z.object({
+      partnerId: z.number(),
+      userId: z.number().optional(),
+      utmSource: z.string().optional(),
+      utmMedium: z.string().optional(),
+      utmCampaign: z.string().optional(),
+      subId: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return await trackClickWithFraudCheck({
+        partnerId: input.partnerId,
+        userId: input.userId,
+        ipAddress: ctx.req.ip,
+        userAgent: ctx.req.headers["user-agent"],
+        referrer: ctx.req.headers["referer"],
+        utmSource: input.utmSource,
+        utmMedium: input.utmMedium,
+        utmCampaign: input.utmCampaign,
+        subId: input.subId,
+      });
+    }),
+
+  // ─── Public: Conversion Signals ───────────────────────────────────
+  getConversionSignals: publicProcedure
+    .input(z.object({
+      context: z.string(),
+      userId: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      return await getConversionSignals(input.context, input.userId);
+    }),
+
+  // ─── Public: Smart Link Generator ─────────────────────────────────
+  generateSmartLink: publicProcedure
+    .input(z.object({
+      partnerId: z.number(),
+      affiliateUrl: z.string(),
+      placement: z.string(),
+      userId: z.number().optional(),
+      deepLinkPath: z.string().optional(),
+    }))
+    .query(({ input }) => {
+      return generateSmartLink(input);
+    }),
+
+  // ─── Public: Seasonal Info ────────────────────────────────────────
+  getSeasonalInfo: publicProcedure.query(() => {
+    return getSeasonalMultiplier();
   }),
 });

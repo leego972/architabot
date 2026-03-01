@@ -73,6 +73,7 @@ import {
   Sun,
   Moon,
   FolderOpen,
+  Globe,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -87,7 +88,6 @@ import { isDesktop } from "@/lib/desktop";
 import { useArchibald } from "@/contexts/ArchibaldContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { LanguageSelector } from "@/i18n";
-import { AT_ICON_128 } from "@/lib/logos";
 
 type MenuItem = {
   icon: any;
@@ -136,6 +136,7 @@ const menuGroups: MenuGroup[] = [
       { icon: TrendingUp, label: "Health Trends", path: "/fetcher/health-trends", isCyber: true },
       { icon: ScanSearch, label: "Leak Scanner", path: "/fetcher/leak-scanner", isCyber: true },
       { icon: ShieldCheck, label: "Credential Health", path: "/fetcher/credential-health", isCyber: true },
+      { icon: Globe, label: "Site Monitor", path: "/site-monitor", premiumOnly: true, isNew: true },
     ],
   },
   // ═══════════════════════════════════════════════════════════════
@@ -370,7 +371,7 @@ function FetcherLayoutContent({
               </button>
               {!isCollapsed && (
                 <div className="flex items-center gap-2 min-w-0">
-                  <img loading="eager" src={AT_ICON_128} alt="AT" className="h-8 w-8 shrink-0 object-contain" />
+                  <TitanLogo size="sm" />
                   <span className="font-semibold tracking-tight truncate bg-gradient-to-r from-blue-400 to-blue-200 bg-clip-text text-transparent">
                     Archibald Titan
                   </span>
@@ -442,6 +443,29 @@ function FetcherLayoutContent({
                 </div>
               );
             })}
+            {/* Created by Leego branding */}
+            {!isCollapsed && (
+              <div className="flex justify-center py-3 mt-auto">
+                <img
+                  src="/Madebyleego.png"
+                  alt="Created by Leego"
+                  className="h-14 w-14 object-contain opacity-100 brightness-110 transition-all duration-300 drop-shadow-[0_0_14px_rgba(0,255,50,0.8)] hover:drop-shadow-[0_0_22px_rgba(0,255,50,1)] hover:brightness-125 animate-pulse"
+                  style={{ filter: 'drop-shadow(0 0 10px rgba(0, 255, 50, 0.7)) drop-shadow(0 0 20px rgba(0, 255, 50, 0.4)) drop-shadow(0 0 40px rgba(0, 255, 50, 0.2))' }}
+                  loading="lazy"
+                />
+              </div>
+            )}
+            {isCollapsed && (
+              <div className="flex justify-center py-2 mt-auto">
+                <img
+                  src="/Madebyleego.png"
+                  alt="Created by Leego"
+                  className="h-8 w-8 object-contain opacity-100 brightness-110 transition-all duration-300 drop-shadow-[0_0_10px_rgba(0,255,50,0.8)] hover:drop-shadow-[0_0_18px_rgba(0,255,50,1)] hover:brightness-125 animate-pulse"
+                  style={{ filter: 'drop-shadow(0 0 8px rgba(0, 255, 50, 0.7)) drop-shadow(0 0 16px rgba(0, 255, 50, 0.4))' }}
+                  loading="lazy"
+                />
+              </div>
+            )}
           </SidebarContent>
 
           <SidebarFooter className="p-3 border-t border-white/5">
@@ -545,7 +569,7 @@ function FetcherLayoutContent({
             <div className="flex items-center gap-3">
               <SidebarTrigger className="h-10 w-10 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-foreground [&_svg]:!h-5 [&_svg]:!w-5" />
               <div className="flex items-center gap-2">
-                <img loading="eager" src={AT_ICON_128} alt="AT" className="h-8 w-8 object-contain" />
+                <TitanLogo size="sm" />
                 <span className="tracking-tight text-foreground font-semibold text-sm">
                   {activeMenuItem?.label ?? "Archibald Titan"}
                 </span>

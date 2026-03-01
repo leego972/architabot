@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { AT_ICON_128 } from "@/lib/logos";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -105,8 +105,8 @@ export default function OnboardingWizard() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 pb-[env(safe-area-inset-bottom,16px)]" style={{ height: '100dvh' }}>
+      <div className="w-full max-w-xl max-h-[85dvh] max-h-[85vh] flex flex-col">
         {/* Close button */}
         <div className="flex justify-end mb-2 shrink-0">
           <button
@@ -137,7 +137,7 @@ export default function OnboardingWizard() {
           <CardContent className="pt-6 pb-4 px-6 overflow-y-auto min-h-0 flex-1">
             <div className="text-center space-y-3">
               {currentStep.id === "welcome" ? (
-                <img loading="eager" src={AT_ICON_128} alt="AT" className="mx-auto w-14 h-14 object-contain" />
+                <div className="mx-auto"><TitanLogo size="md" /></div>
               ) : (
                 <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 flex items-center justify-center">
                   <Icon className="w-7 h-7 text-blue-400" />
@@ -219,7 +219,7 @@ export default function OnboardingWizard() {
           </CardContent>
 
           {/* Navigation — fixed at bottom */}
-          <div className="flex items-center justify-between px-6 py-3 border-t border-border/30 shrink-0">
+          <div className="flex items-center justify-between px-6 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-border/30 shrink-0">
             <Button
               variant="ghost"
               size="sm"

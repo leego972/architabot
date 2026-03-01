@@ -14,6 +14,7 @@ import {
 } from "../drizzle/schema";
 import { PROVIDERS } from "../shared/fetcher";
 import { invokeLLM } from "./_core/llm";
+import { getUserOpenAIKey } from "./user-secrets-router";
 import { createLogger } from "./_core/logger.js";
 const log = createLogger("V3FeaturesRouter");
 
@@ -323,6 +324,7 @@ export const recommendationsRouter = router({
   generate: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+    const userApiKey = await getUserOpenAIKey(ctx.user.id) || undefined;
 
     // Gather user's credential data for analysis
     const credentials = await db
@@ -443,6 +445,7 @@ Return ONLY a valid JSON array, no other text.`;
     try {
       const response = await invokeLLM({
         systemTag: "misc",
+        userApiKey,
         messages: [
           { role: "system", content: "You are a JSON-only response bot. Return only valid JSON arrays." },
           { role: "user", content: analysisPrompt },

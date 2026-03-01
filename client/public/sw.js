@@ -1,13 +1,17 @@
 /**
- * ArchibaldTitan Service Worker — Offline-First PWA
+ * ArchibaldTitan Service Worker — Network-First PWA
  * 
- * Strategy:
- * - App shell (HTML, CSS, JS) → Cache-first with network fallback
+ * Strategy (v10.0 — fixed cache-first stale content bug):
+ * - App shell (HTML, CSS, JS) → Network-first with cache fallback
  * - API calls → Network-first with cache fallback
  * - Images/fonts → Cache-first with stale-while-revalidate
+ * 
+ * Key change: App shell is now NETWORK-FIRST to prevent stale cached
+ * pages from being served after deployments. Cache is only used when
+ * the user is genuinely offline.
  */
 
-const CACHE_VERSION = 'titan-v8.0';
+const CACHE_VERSION = 'titan-v10.0';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -16,7 +20,6 @@ const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 const APP_SHELL = [
   '/',
   '/manifest.json',
-  '/og-image.png',
 ];
 
 // ── Install: Pre-cache app shell ────────────────────────────────
@@ -33,14 +36,20 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// ── Activate: Clean old caches ──────────────────────────────────
+// ── Activate: Clean ALL old caches aggressively ─────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys
-          .filter((key) => key.startsWith('titan-') && key !== STATIC_CACHE && key !== API_CACHE && key !== IMAGE_CACHE)
-          .map((key) => caches.delete(key))
+          .filter((key) => {
+            // Delete ANY cache that doesn't match current version
+            return key !== STATIC_CACHE && key !== API_CACHE && key !== IMAGE_CACHE;
+          })
+          .map((key) => {
+            console.log('[SW] Deleting old cache:', key);
+            return caches.delete(key);
+          })
       );
     })
   );
@@ -56,6 +65,9 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests (POST, PUT, DELETE, etc.)
   if (request.method !== 'GET') return;
 
+  // Skip cross-origin requests
+  if (url.origin !== self.location.origin) return;
+
   // Skip WebSocket, SSE, and streaming endpoints
   if (url.pathname.startsWith('/api/chat/stream')) return;
   if (url.pathname.startsWith('/api/chat/abort')) return;
@@ -63,7 +75,7 @@ self.addEventListener('fetch', (event) => {
 
   // API calls → Network-first with cache fallback
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(networkFirstWithCache(request, API_CACHE, 5000));
+    event.respondWith(networkFirst(request, API_CACHE, 8000));
     return;
   }
 
@@ -73,17 +85,29 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell (HTML, JS, CSS) → Cache-first with network fallback
-  event.respondWith(cacheFirstWithFallback(request, STATIC_CACHE));
+  // App shell (HTML, JS, CSS) → NETWORK-FIRST (prevents stale content after deploys)
+  event.respondWith(networkFirst(request, STATIC_CACHE, 5000));
+});
+
+// ── Message handler: Force refresh ──────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data === 'CLEAR_ALL_CACHES') {
+    caches.keys().then((keys) => {
+      Promise.all(keys.map((key) => caches.delete(key)));
+    });
+  }
 });
 
 // ── Caching Strategies ──────────────────────────────────────────
 
 /**
- * Network-first: Try network, fall back to cache if offline.
- * Good for API calls where freshness matters.
+ * Network-first: Always try the network, fall back to cache only when offline.
+ * This ensures users always get the latest content after deployments.
  */
-async function networkFirstWithCache(request, cacheName, timeout) {
+async function networkFirst(request, cacheName, timeout) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -96,8 +120,27 @@ async function networkFirstWithCache(request, cacheName, timeout) {
     }
     return response;
   } catch (err) {
+    // Network failed — try cache as fallback (offline mode)
     const cached = await caches.match(request);
     if (cached) return cached;
+
+    // For navigation requests, try returning cached index.html (SPA fallback)
+    if (request.mode === 'navigate') {
+      const fallback = await caches.match('/');
+      if (fallback) return fallback;
+    }
+
+    // Nothing cached — return a proper error
+    if (request.mode === 'navigate') {
+      return new Response(
+        '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline</title></head>' +
+        '<body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a1a;color:#fff;text-align:center">' +
+        '<div><h1>You\'re Offline</h1><p>Please check your internet connection and try again.</p>' +
+        '<button onclick="location.reload()" style="margin-top:16px;padding:12px 24px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer">Retry</button></div></body></html>',
+        { status: 503, headers: { 'Content-Type': 'text/html' } }
+      );
+    }
+
     return new Response(JSON.stringify({ error: 'Offline — no cached data available' }), {
       status: 503,
       headers: { 'Content-Type': 'application/json' },
@@ -122,31 +165,6 @@ async function cacheFirstWithRevalidate(request, cacheName) {
     .catch(() => null);
 
   return cached || fetchPromise || new Response('', { status: 404 });
-}
-
-/**
- * Cache-first with network fallback: Serve from cache if available,
- * otherwise fetch from network and cache. Good for app shell.
- */
-async function cacheFirstWithFallback(request, cacheName) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (err) {
-    // For navigation requests, return the cached index.html (SPA fallback)
-    if (request.mode === 'navigate') {
-      const fallback = await caches.match('/');
-      if (fallback) return fallback;
-    }
-    return new Response('Offline', { status: 503 });
-  }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

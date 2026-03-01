@@ -245,6 +245,30 @@ export async function storeCredential(userId: number, jobId: number, taskId: num
   });
 }
 
+export async function storeManualCredential(
+  userId: number,
+  providerId: string,
+  providerName: string,
+  keyType: string,
+  value: string,
+  keyLabel?: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const encryptedValue = encrypt(value);
+  // jobId=0 and taskId=0 indicate a manually-added credential
+  await db.insert(fetcherCredentials).values({
+    userId,
+    jobId: 0,
+    taskId: 0,
+    providerId,
+    providerName,
+    keyType,
+    keyLabel: keyLabel ?? null,
+    encryptedValue,
+  });
+}
+
 export async function getCredentials(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

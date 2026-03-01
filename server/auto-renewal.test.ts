@@ -24,7 +24,7 @@ describe("Auto-Renewal Billing — Invoice Handling", () => {
 
   it("auto-renewal refills correct credits per plan tier", () => {
     const plans: PlanId[] = ["free", "pro", "enterprise"];
-    const expectedAllocations = { free: 100, pro: 5000, enterprise: 25000 };
+    const expectedAllocations = { free: 300, pro: 5000, enterprise: 25000 };
 
     for (const planId of plans) {
       const tier = PRICING_TIERS.find((t) => t.id === planId)!;

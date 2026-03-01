@@ -280,6 +280,45 @@ const addVaultEntry: Tool = {
   },
 };
 
+const saveCredential: Tool = {
+  type: "function",
+  function: {
+    name: "save_credential",
+    description:
+      "Save a credential (API key, token, secret, password, etc.) to the user's encrypted vault. Use this when the user provides a credential and wants to store it. Auto-detect the provider and key type from the value format when possible. Common patterns: 'sk-...' = OpenAI API key, 'AKIA...' = AWS Access Key ID, 'ghp_...' = GitHub Personal Access Token, 'SG....' = SendGrid API key, 'xoxb-...' = Slack Bot Token. If you can't detect the provider, ask the user or use 'custom' as the providerId.",
+    parameters: {
+      type: "object",
+      properties: {
+        providerId: {
+          type: "string",
+          description:
+            "Provider ID (e.g. 'openai', 'aws', 'github', 'stripe', 'anthropic', 'cloudflare', 'sendgrid', 'twilio', 'heroku', 'digitalocean', 'godaddy', 'firebase', 'google_cloud', 'huggingface', 'mailgun', 'meta', 'tiktok', 'google_ads', 'snapchat', 'discord', 'roblox', or 'custom' for unknown providers)",
+        },
+        providerName: {
+          type: "string",
+          description:
+            "Human-readable provider name (e.g. 'OpenAI', 'AWS', 'GitHub'). Use the official name.",
+        },
+        keyType: {
+          type: "string",
+          description:
+            "Type of credential (e.g. 'api_key', 'secret_key', 'access_token', 'personal_access_token', 'bot_token', 'password', 'oauth_client_id', 'oauth_client_secret', 'webhook_url')",
+        },
+        value: {
+          type: "string",
+          description: "The actual credential value to store (will be encrypted with AES-256-GCM)",
+        },
+        label: {
+          type: "string",
+          description:
+            "Optional label to identify this credential (e.g. 'Production key', 'My personal token', 'Staging environment')",
+        },
+      },
+      required: ["providerId", "providerName", "keyType", "value"],
+    },
+  },
+};
+
 // ─── Bulk Sync Tools ─────────────────────────────────────────────────
 
 const triggerBulkSync: Tool = {
@@ -564,7 +603,7 @@ const getSystemStatus: Tool = {
   function: {
     name: "get_system_status",
     description:
-      "Get a comprehensive system status overview: plan info, usage stats, credential count, job count, proxy health, watchdog alerts, and provider health.",
+      "Get a comprehensive system status overview: plan info, usage stats, credential count, job count, proxy health, watchdog alerts, provider health, AND full autonomous systems status (SEO engines, advertising orchestrator, affiliate engines, content generators, marketing channels, connected/disconnected channels with setup instructions, and recommendations for maximizing traffic).",
     parameters: {
       type: "object",
       properties: {},
@@ -1600,6 +1639,99 @@ const readUploadedFile: Tool = {
   },
 };
 
+// ─── Grand Bazaar Search ───────────────────────────────────────────────
+
+const searchBazaar: Tool = {
+  type: "function",
+  function: {
+    name: "search_bazaar",
+    description:
+      "Search the Grand Bazaar marketplace for existing modules, blueprints, agents, exploits, and templates that match the user's needs. IMPORTANT: You MUST call this tool BEFORE building anything from scratch. If a matching module exists, recommend it to the user — buying is always cheaper and faster than building. Returns matching listings with title, description, price in credits, seller name, rating, and category.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search keywords describing what the user wants to build or needs. Examples: 'SQL injection scanner', 'password manager', 'API security testing', 'phishing detection', 'SIEM pipeline'",
+        },
+        category: {
+          type: "string",
+          enum: ["agents", "modules", "blueprints", "artifacts", "exploits", "templates", "datasets", "other"],
+          description: "Optional category filter to narrow results",
+        },
+        maxResults: {
+          type: "number",
+          description: "Maximum number of results to return (default 5, max 10)",
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+// ─── Autonomous System Management Tools ─────────────────────────────────
+
+const getAutonomousStatus: Tool = {
+  type: "function",
+  function: {
+    name: "get_autonomous_status",
+    description:
+      "Get the full status of all autonomous systems (SEO, advertising, affiliate, content generation, security sweeps, marketplace). Shows which systems are active, degraded, or blocked, which marketing channels are connected, content queue size, and recommendations. Use this when the user asks about system health, what's running, or channel status.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+const getChannelStatus: Tool = {
+  type: "function",
+  function: {
+    name: "get_channel_status",
+    description:
+      "Get the connection status of all marketing/advertising channels. Shows which channels have API tokens configured and which are missing. Includes setup URLs for easy configuration. Use when the user asks which channels are active or what tokens are needed.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+const refreshVaultBridge: Tool = {
+  type: "function",
+  function: {
+    name: "refresh_vault_bridge",
+    description:
+      "Refresh the vault-to-ENV bridge. This re-reads all API tokens from the owner's encrypted vault and patches them into the runtime environment so marketing channels can use them. Call this after saving a new credential to make it immediately available to all autonomous systems.",
+    parameters: {
+      type: "object",
+      properties: {
+        force: {
+          type: "boolean",
+          description: "If true, overwrite existing ENV values with vault values. Default false (only fills empty values).",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+const getVaultBridgeInfo: Tool = {
+  type: "function",
+  function: {
+    name: "get_vault_bridge_info",
+    description:
+      "Get information about the vault-to-ENV bridge — shows which channels are unlocked via vault tokens, which are still missing, and when the bridge last ran. Use this to diagnose why a channel isn't working or to check if a newly saved token has been picked up.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
+};
+
 // ─── Export All Tools ────────────────────────────────────────────────────
 
 export const TITAN_TOOLS: Tool[] = [
@@ -1626,6 +1758,8 @@ export const TITAN_TOOLS: Tool[] = [
   // Vault
   listVaultEntries,
   addVaultEntry,
+  // Save Credential (manual input via chat)
+  saveCredential,
   // Bulk Sync
   triggerBulkSync,
   getBulkSyncStatus,
@@ -1664,6 +1798,8 @@ export const TITAN_TOOLS: Tool[] = [
   // Auto-Fix
   autoFixVulnerability,
   autoFixAll,
+  // Grand Bazaar — search before building
+  searchBazaar,
   // App Research & Clone
   appResearch,
   appClone,
@@ -1686,6 +1822,11 @@ export const TITAN_TOOLS: Tool[] = [
   selfTypeCheck,
   selfRunTests,
   selfMultiFileModify,
+  // Autonomous System Management
+  getAutonomousStatus,
+  getChannelStatus,
+  refreshVaultBridge,
+  getVaultBridgeInfo,
   // Advanced Builder Tools
   selfDependencyAudit,
   selfGrepCodebase,
@@ -1724,6 +1865,8 @@ export const BUILDER_TOOLS: Tool[] = [
   // Builder verification tools
   selfTypeCheck,
   selfRunTests,
+  // Grand Bazaar — search before building
+  searchBazaar,
   // Professional builder tools — engineering competence
   selfDependencyAudit,
   selfGrepCodebase,
@@ -1758,6 +1901,8 @@ export const EXTERNAL_BUILD_TOOLS: Tool[] = [
   // Web Research
   webSearch,
   webPageRead,
+  // Grand Bazaar — search before building
+  searchBazaar,
   // GitHub integration
   createGithubRepo,
   pushToGithubRepo,

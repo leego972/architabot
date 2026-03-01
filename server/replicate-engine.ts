@@ -13,7 +13,7 @@
  * 6. Integrate: Wire up Stripe payment if keys provided
  */
 
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   replicateProjects,
@@ -29,11 +29,14 @@ import {
   listFiles,
   readFile,
   persistWorkspace,
+  writeBinaryFile,
 } from "./sandbox-engine";
 import { enforceCloneSafety, checkScrapedContent } from "./clone-safety";
 import { storagePut } from "./storage";
 import { scrapeProductCatalog, type CatalogResult, type ScrapedProduct, type SiteType } from "./product-scraper";
 import { getErrorMessage } from "./_core/errors.js";
+import { getUserOpenAIKey, getUserGithubPat } from "./user-secrets-router";
+import { isBlockedCloneTarget } from "./anti-replication-guard";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -103,32 +106,84 @@ export async function createProject(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const [row] = await db
-    .insert(replicateProjects)
-    .values({
-      userId,
-      targetUrl,
-      targetName,
-      status: "researching",
-      priority: options?.priority ?? "mvp",
-      brandName: options?.branding?.brandName,
-      brandColors: options?.branding?.brandColors,
-      brandLogo: options?.branding?.brandLogo,
-      brandTagline: options?.branding?.brandTagline,
-      stripePublishableKey: options?.stripe?.publishableKey,
-      stripeSecretKey: options?.stripe?.secretKey,
-      stripePriceIds: options?.stripe?.priceIds,
-      githubPat: options?.githubPat,
-      buildLog: [],
-    })
-    .$returningId();
+  // ─── Anti-Self-Replication Guard ─────────────────────────────
+  if (isBlockedCloneTarget(targetUrl)) {
+    throw new Error("BLOCKED: Cannot clone the Titan platform itself. This action violates the anti-self-replication security policy.");
+  }
 
-  const [project] = await db
-    .select()
-    .from(replicateProjects)
-    .where(eq(replicateProjects.id, row.id));
+  // Ensure the replicate_projects table exists (auto-create if missing)
+  try {
+    await db.execute(sql`SELECT 1 FROM replicate_projects LIMIT 1`);
+  } catch {
+    console.log("[Clone] replicate_projects table missing, creating...");
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS replicate_projects (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        userId INT NOT NULL,
+        sandboxId INT,
+        targetUrl VARCHAR(2048) NOT NULL,
+        targetName VARCHAR(256) NOT NULL,
+        targetDescription TEXT,
+        researchData JSON,
+        buildPlan JSON,
+        brandName VARCHAR(256),
+        brandColors JSON,
+        brandLogo TEXT,
+        brandTagline VARCHAR(512),
+        stripePublishableKey TEXT,
+        stripeSecretKey TEXT,
+        stripePriceIds JSON,
+        githubPat TEXT,
+        githubRepoUrl TEXT,
+        status ENUM('researching','research_complete','planning','plan_complete','building','build_complete','branded','pushing','pushed','deploying','deployed','testing','complete','error') NOT NULL DEFAULT 'researching',
+        currentStep INT NOT NULL DEFAULT 0,
+        totalSteps INT NOT NULL DEFAULT 0,
+        statusMessage TEXT,
+        errorMessage TEXT,
+        buildLog JSON,
+        outputFiles JSON,
+        previewUrl TEXT,
+        priority ENUM('mvp','full') NOT NULL DEFAULT 'mvp',
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
+      )
+    `);
+  }
 
-  return project;
+  try {
+    const result = await db
+      .insert(replicateProjects)
+      .values({
+        userId,
+        targetUrl,
+        targetName,
+        status: "researching",
+        priority: options?.priority ?? "mvp",
+        brandName: options?.branding?.brandName ?? null,
+        brandColors: options?.branding?.brandColors ?? null,
+        brandLogo: options?.branding?.brandLogo ?? null,
+        brandTagline: options?.branding?.brandTagline ?? null,
+        stripePublishableKey: options?.stripe?.publishableKey ?? null,
+        stripeSecretKey: options?.stripe?.secretKey ?? null,
+        stripePriceIds: options?.stripe?.priceIds ?? null,
+        githubPat: options?.githubPat ?? null,
+        buildLog: [],
+      });
+
+    const insertId = result[0].insertId;
+
+    const [project] = await db
+      .select()
+      .from(replicateProjects)
+      .where(eq(replicateProjects.id, insertId));
+
+    if (!project) throw new Error(`Project insert succeeded (id=${insertId}) but SELECT returned nothing`);
+    return project;
+  } catch (e: unknown) {
+    const msg = getErrorMessage(e);
+    console.error("[Clone] createProject DB error:", msg, e);
+    throw new Error(`Database error creating clone project: ${msg}`);
+  }
 }
 
 export async function getProject(
@@ -262,51 +317,136 @@ async function deepCrawlSite(
   return pages;
 }
 
-// ─── Extract all images from HTML ──────────────────────────────────
+// ─── Extract ALL images from HTML (comprehensive) ────────────────
 function extractImages(html: string, baseUrl: string): Array<{ src: string; alt: string; context: string }> {
   const images: Array<{ src: string; alt: string; context: string }> = [];
   const seen = new Set<string>();
   const baseOrigin = new URL(baseUrl).origin;
 
-  // Match <img> tags
-  const imgRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
-  let match;
-  while ((match = imgRegex.exec(html)) !== null) {
-    let src = match[1];
-    if (src.startsWith("data:")) continue; // skip data URIs
+  // Helper: normalize a URL
+  const normalize = (raw: string): string | null => {
+    if (!raw || raw.startsWith("data:") || raw.startsWith("blob:") || raw.length < 5) return null;
+    let src = raw.trim();
     if (src.startsWith("//")) src = "https:" + src;
     else if (src.startsWith("/")) src = baseOrigin + src;
-    else if (!src.startsWith("http")) src = baseOrigin + "/" + src;
+    else if (!src.startsWith("http")) {
+      try { src = new URL(src, baseUrl).href; } catch { return null; }
+    }
+    return src;
+  };
 
-    if (seen.has(src)) continue;
+  // Helper: classify image context from surrounding HTML
+  const classify = (tag: string, alt: string): string => {
+    const t = (tag + " " + alt).toLowerCase();
+    if (t.includes("logo") || t.includes("brand")) return "logo";
+    if (t.includes("hero") || t.includes("banner") || t.includes("slider") || t.includes("carousel") || t.includes("jumbotron")) return "hero";
+    if (t.includes("product") || t.includes("item") || t.includes("menu-item") || t.includes("card") || t.includes("thumbnail") || t.includes("catalog")) return "product";
+    if (t.includes("team") || t.includes("avatar") || t.includes("staff") || t.includes("author")) return "team";
+    if (t.includes("gallery") || t.includes("lightbox") || t.includes("portfolio")) return "gallery";
+    if (t.includes("icon") || t.includes("svg")) return "icon";
+    if (t.includes("testimonial") || t.includes("review")) return "testimonial";
+    return "general";
+  };
+
+  const addImage = (src: string | null, alt: string, context: string) => {
+    if (!src) return;
+    if (seen.has(src)) return;
     seen.add(src);
-
-    const altMatch = match[0].match(/alt=["']([^"']*)["']/i);
-    const alt = altMatch ? altMatch[1] : "";
-
-    // Try to determine context (product image, hero, logo, etc.)
-    const parentContext = match[0].toLowerCase();
-    let context = "general";
-    if (parentContext.includes("logo")) context = "logo";
-    else if (parentContext.includes("hero") || parentContext.includes("banner")) context = "hero";
-    else if (parentContext.includes("product") || parentContext.includes("item") || parentContext.includes("menu")) context = "product";
-    else if (parentContext.includes("team") || parentContext.includes("avatar")) context = "team";
-    else if (parentContext.includes("gallery")) context = "gallery";
-
     images.push({ src, alt, context });
+  };
+
+  let match;
+
+  // 1. Standard <img> tags — src attribute
+  const imgRegex = /<img[^>]*>/gi;
+  while ((match = imgRegex.exec(html)) !== null) {
+    const tag = match[0];
+    const srcMatch = tag.match(/\bsrc=["']([^"']+)["']/i);
+    const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
+    const alt = altMatch ? altMatch[1] : "";
+    const context = classify(tag, alt);
+
+    if (srcMatch) addImage(normalize(srcMatch[1]), alt, context);
+
+    // 2. Lazy-loaded images: data-src, data-lazy-src, data-original, loading="lazy"
+    const lazySrcMatch = tag.match(/\bdata-(?:src|lazy-src|original|lazy|srcset|bg|image)=["']([^"']+)["']/i);
+    if (lazySrcMatch) addImage(normalize(lazySrcMatch[1]), alt, context);
+
+    // 3. srcset — extract ALL resolutions (pick the largest)
+    const srcsetMatch = tag.match(/\bsrcset=["']([^"']+)["']/i);
+    if (srcsetMatch) {
+      const srcsetParts = srcsetMatch[1].split(",").map(s => s.trim());
+      for (const part of srcsetParts) {
+        const url = part.split(/\s+/)[0];
+        addImage(normalize(url), alt, context);
+      }
+    }
   }
 
-  // Also match CSS background images
+  // 4. <picture> / <source> elements
+  const sourceRegex = /<source[^>]*srcset=["']([^"']+)["'][^>]*>/gi;
+  while ((match = sourceRegex.exec(html)) !== null) {
+    const srcsetParts = match[1].split(",").map(s => s.trim());
+    for (const part of srcsetParts) {
+      const url = part.split(/\s+/)[0];
+      addImage(normalize(url), "", "general");
+    }
+  }
+
+  // 5. Open Graph & Twitter Card images
+  const metaImgRegex = /<meta[^>]*(?:property|name)=["'](?:og:image|twitter:image|twitter:image:src)["'][^>]*content=["']([^"']+)["'][^>]*>/gi;
+  while ((match = metaImgRegex.exec(html)) !== null) {
+    addImage(normalize(match[1]), "", "hero");
+  }
+  // Also match reversed attribute order
+  const metaImgRegex2 = /<meta[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:image|twitter:image|twitter:image:src)["'][^>]*>/gi;
+  while ((match = metaImgRegex2.exec(html)) !== null) {
+    addImage(normalize(match[1]), "", "hero");
+  }
+
+  // 6. Favicon and apple-touch-icon
+  const iconRegex = /<link[^>]*rel=["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]*href=["']([^"']+)["'][^>]*>/gi;
+  while ((match = iconRegex.exec(html)) !== null) {
+    addImage(normalize(match[1]), "favicon", "logo");
+  }
+
+  // 7. CSS background-image in <style> blocks
   const bgRegex = /background(?:-image)?\s*:\s*url\(["']?([^"')]+)["']?\)/gi;
   while ((match = bgRegex.exec(html)) !== null) {
-    let src = match[1];
-    if (src.startsWith("data:")) continue;
-    if (src.startsWith("//")) src = "https:" + src;
-    else if (src.startsWith("/")) src = baseOrigin + src;
-    if (!seen.has(src)) {
-      seen.add(src);
-      images.push({ src, alt: "", context: "background" });
-    }
+    addImage(normalize(match[1]), "", "background");
+  }
+
+  // 8. Inline style background-image on elements
+  const inlineStyleRegex = /style=["'][^"']*background(?:-image)?\s*:\s*url\(["']?([^"')]+)["']?\)[^"']*["']/gi;
+  while ((match = inlineStyleRegex.exec(html)) !== null) {
+    addImage(normalize(match[1]), "", "background");
+  }
+
+  // 9. <video> poster images
+  const posterRegex = /<video[^>]*poster=["']([^"']+)["'][^>]*>/gi;
+  while ((match = posterRegex.exec(html)) !== null) {
+    addImage(normalize(match[1]), "", "hero");
+  }
+
+  // 10. JSON-LD image fields (products, organizations, etc.)
+  const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  while ((match = jsonLdRegex.exec(html)) !== null) {
+    try {
+      const data = JSON.parse(match[1]);
+      const extractJsonImages = (obj: any) => {
+        if (!obj || typeof obj !== "object") return;
+        if (typeof obj.image === "string") addImage(normalize(obj.image), obj.name || "", "product");
+        if (Array.isArray(obj.image)) obj.image.forEach((i: any) => {
+          if (typeof i === "string") addImage(normalize(i), obj.name || "", "product");
+          else if (i?.url) addImage(normalize(i.url), obj.name || "", "product");
+        });
+        if (obj.logo) addImage(normalize(typeof obj.logo === "string" ? obj.logo : obj.logo?.url), "", "logo");
+        if (obj.thumbnailUrl) addImage(normalize(obj.thumbnailUrl), obj.name || "", "product");
+        if (Array.isArray(obj["@graph"])) obj["@graph"].forEach(extractJsonImages);
+        if (Array.isArray(obj.itemListElement)) obj.itemListElement.forEach((item: any) => extractJsonImages(item.item || item));
+      };
+      extractJsonImages(data);
+    } catch { /* skip invalid JSON-LD */ }
   }
 
   return images;
@@ -358,7 +498,7 @@ function extractProductData(html: string): string {
 // ─── Download images and store them for the build ──────────────────
 async function downloadImages(
   images: Array<{ src: string; alt: string; context: string }>,
-  maxImages: number = 50
+  maxImages: number = 200
 ): Promise<Array<{ originalSrc: string; localPath: string; alt: string; context: string }>> {
   const downloaded: Array<{ originalSrc: string; localPath: string; alt: string; context: string }> = [];
   const toDownload = images.slice(0, maxImages);
@@ -506,7 +646,11 @@ export async function researchTarget(
   // ═══ EXTRACT IMAGES from all pages (fallback + supplement) ═══
   appendBuildLog(projectId, { step: 0, status: "running", message: `Found ${subpages.length} subpages. Extracting images and product data...`, timestamp: new Date().toISOString() });
   const allImages = extractImages(allPagesHtml, targetUrl);
-  const downloadedImages = await downloadImages(allImages, 50);
+  // Download ALL extracted images — products, heroes, logos, backgrounds, etc.
+  // Prioritize product images first, then hero/logo, then general
+  const priorityOrder: Record<string, number> = { product: 0, hero: 1, logo: 2, gallery: 3, background: 4, team: 5, testimonial: 6, icon: 7, general: 8 };
+  allImages.sort((a, b) => (priorityOrder[a.context] ?? 9) - (priorityOrder[b.context] ?? 9));
+  const downloadedImages = await downloadImages(allImages, 200);
 
   // ═══ EXTRACT PRODUCT/MENU DATA (basic fallback) ═══
   const productData = extractProductData(allPagesHtml);
@@ -533,9 +677,13 @@ export async function researchTarget(
 
   appendBuildLog(projectId, { step: 0, status: "running", message: `Analyzing with AI... (${subpages.length + 1} pages, ${downloadedImages.length} images)`, timestamp: new Date().toISOString() });
 
+  // Pull user's own OpenAI key from their vault — required for clone feature
+  const userApiKey = await getUserOpenAIKey(userId) || undefined;
+
   // LLM analysis
   const analysis = await invokeLLM({
     systemTag: "chat",
+    userApiKey,
     messages: [
       {
         role: "system",
@@ -793,8 +941,12 @@ export async function generateBuildPlan(
 - Use environment variables for Stripe keys (STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY)`
     : "";
 
+  // Pull user's own OpenAI key from their vault
+  const userApiKey = await getUserOpenAIKey(userId) || undefined;
+
   const buildPlanResponse = await invokeLLM({
     systemTag: "chat",
+    userApiKey,
     messages: [
       {
         role: "system",
@@ -966,6 +1118,9 @@ export async function executeBuild(
 
   const plan = project.buildPlan;
 
+  // Pull user's own OpenAI key from their vault for LLM calls during build
+  const userApiKey = await getUserOpenAIKey(userId) || undefined;
+
   // Create or reuse sandbox
   let sandboxId = project.sandboxId;
   if (!sandboxId) {
@@ -1016,7 +1171,8 @@ export async function executeBuild(
             publishableKey: project.stripePublishableKey,
             secretKey: project.stripeSecretKey ?? undefined,
             priceIds: project.stripePriceIds ?? undefined,
-          } : undefined
+          } : undefined,
+          userApiKey
         );
 
         // Write each file to the sandbox
@@ -1080,25 +1236,79 @@ export async function executeBuild(
   // Retrieve images from the research phase and write them to the sandbox
   try {
     // Create image directories
-    await executeCommand(sandboxId, userId, `mkdir -p /home/sandbox/${plan.projectName}/public/images/{products,hero,logo,general,background,team,gallery}`, {
+    await executeCommand(sandboxId, userId, `mkdir -p /home/sandbox/${plan.projectName}/public/images/{products,hero,logo,general,background,team,gallery,icon,testimonial,product}`, {
       timeoutMs: 5000,
       triggeredBy: "system",
     });
 
-    // Write catalog product images (downloaded during research)
-    const catalogImageRefs = (project.researchData as any)?.catalogImageBuffers || [];
+    // ═══ PHASE A: Write ALL basic extracted images (hero, logo, background, product, team, gallery, general) ═══
+    const basicImageRefs = (project.researchData as any)?.imageInventory || [];
     let imagesWritten = 0;
+    let imagesFailed = 0;
+
+    if (basicImageRefs.length > 0) {
+      appendBuildLog(projectId, {
+        step: plan.buildSteps.length + 1,
+        status: "running",
+        message: `Re-downloading ${basicImageRefs.length} site images (heroes, logos, backgrounds, products)...`,
+        timestamp: new Date().toISOString(),
+      });
+
+      for (const imgRef of basicImageRefs) {
+        try {
+          const resp = await fetch(imgRef.originalSrc, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (!resp.ok) { imagesFailed++; continue; }
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          if (buffer.length < 200) { imagesFailed++; continue; }
+
+          // Write directly via filesystem — avoids shell command length limits for large images
+          const imgPath = `/home/sandbox/${plan.projectName}/public/${imgRef.localPath}`;
+          const written = await writeBinaryFile(sandboxId, userId, imgPath, buffer);
+          if (written) {
+            imagesWritten++;
+          } else {
+            imagesFailed++;
+            continue;
+          }
+
+          if (imagesWritten % 25 === 0) {
+            appendBuildLog(projectId, {
+              step: plan.buildSteps.length + 1,
+              status: "running",
+              message: `Written ${imagesWritten}/${basicImageRefs.length} site images...`,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } catch {
+          imagesFailed++;
+        }
+      }
+    }
+
+    appendBuildLog(projectId, {
+      step: plan.buildSteps.length + 1,
+      status: "running",
+      message: `Site images: ${imagesWritten} written, ${imagesFailed} failed`,
+      timestamp: new Date().toISOString(),
+    });
+
+    // ═══ PHASE B: Write deep catalog product images (from product-scraper) ═══
+    const catalogImageRefs = (project.researchData as any)?.catalogImageBuffers || [];
+    let catalogImagesWritten = 0;
+
     if (catalogImageRefs.length > 0) {
       appendBuildLog(projectId, {
         step: plan.buildSteps.length + 1,
         status: "running",
-        message: `Re-downloading ${catalogImageRefs.length} product images for the build...`,
+        message: `Re-downloading ${catalogImageRefs.length} catalog product images...`,
         timestamp: new Date().toISOString(),
       });
 
       for (const imgRef of catalogImageRefs) {
         try {
-          // Re-download the image (buffers aren't stored in DB, only metadata)
           const resp = await fetch(imgRef.originalUrl, {
             headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
             signal: AbortSignal.timeout(15000),
@@ -1107,25 +1317,20 @@ export async function executeBuild(
           const buffer = Buffer.from(await resp.arrayBuffer());
           if (buffer.length < 200) continue;
 
-          // Write to sandbox as base64
-          const filePath = `/home/sandbox/${plan.projectName}/public/${imgRef.localPath}`;
-          const dir = filePath.substring(0, filePath.lastIndexOf("/"));
-          await executeCommand(sandboxId, userId, `mkdir -p "${dir}"`, { timeoutMs: 5000, triggeredBy: "system" });
-          
-          // Write the image file via base64 encoding
-          const base64 = buffer.toString("base64");
-          await executeCommand(sandboxId, userId, `echo '${base64}' | base64 -d > "${filePath}"`, {
-            timeoutMs: 15000,
-            triggeredBy: "system",
-          });
-          imagesWritten++;
+          // Write directly via filesystem — avoids shell command length limits
+          const catImgPath = `/home/sandbox/${plan.projectName}/public/${imgRef.localPath}`;
+          const catWritten = await writeBinaryFile(sandboxId, userId, catImgPath, buffer);
+          if (catWritten) {
+            catalogImagesWritten++;
+          } else {
+            continue;
+          }
 
-          // Rate limit
-          if (imagesWritten % 20 === 0) {
+          if (catalogImagesWritten % 25 === 0) {
             appendBuildLog(projectId, {
               step: plan.buildSteps.length + 1,
               status: "running",
-              message: `Written ${imagesWritten}/${catalogImageRefs.length} product images...`,
+              message: `Written ${catalogImagesWritten}/${catalogImageRefs.length} catalog images...`,
               timestamp: new Date().toISOString(),
             });
           }
@@ -1135,10 +1340,11 @@ export async function executeBuild(
       }
     }
 
+    const totalImagesWritten = imagesWritten + catalogImagesWritten;
     appendBuildLog(projectId, {
       step: plan.buildSteps.length + 1,
       status: "success",
-      message: `Written ${imagesWritten} product images to project`,
+      message: `Written ${totalImagesWritten} total images to project (${imagesWritten} site + ${catalogImagesWritten} catalog)`,
       timestamp: new Date().toISOString(),
     });
   } catch {
@@ -1312,7 +1518,8 @@ async function generateFileContents(
   step: BuildPlan["buildSteps"][0],
   research: ResearchResult,
   branding?: BrandConfig,
-  stripe?: StripeConfig
+  stripe?: StripeConfig,
+  userApiKey?: string
 ): Promise<Array<{ path: string; content: string }>> {
   const brandingInfo = branding?.brandName
     ? `\nBranding: name="${branding.brandName}", tagline="${branding.brandTagline || ""}", colors=${branding.brandColors ? JSON.stringify(branding.brandColors) : "modern defaults"}`
@@ -1386,6 +1593,7 @@ async function generateFileContents(
 
   const response = await invokeLLM({
     systemTag: "chat",
+    userApiKey,
     messages: [
       {
         role: "system",
@@ -1402,8 +1610,16 @@ CRITICAL RULES:
 - For job boards: include ALL job listings with company, salary, location, type
 - Use the exact branding provided (colors, name, tagline) — this replaces the original branding
 - Wire up the payment system with the USER's Stripe keys (not the original site's)
-- Reference downloaded images from /public/images/ directory
-- For any images not downloaded, use the original URLs as fallback
+
+IMAGE RULES (CRITICAL — the clone MUST look identical to the original):
+- ALL images have been downloaded and are available at /public/images/{context}/ directories
+- Context folders: products/, hero/, logo/, general/, background/, team/, gallery/, icon/, testimonial/, product/
+- Use the LOCAL paths from the AVAILABLE IMAGES list below — these are REAL files on disk
+- For EVERY product, listing, menu item, or article: use the image path provided in the catalog data
+- For hero banners, logos, and backgrounds: use the local paths from the image inventory
+- If a local path is not available for a specific image, use the ORIGINAL URL as a direct fallback (hotlink)
+- NEVER use placeholder images (like via.placeholder.com or placehold.it) — always use real images
+- Include ALL product images in product cards, detail pages, and galleries
 - Make it production-ready, responsive, and SEO-optimized
 - Include proper meta tags, Open Graph tags, and structured data${brandingInfo}${stripeInfo}${imageInfo}`,
       },
@@ -1477,10 +1693,14 @@ export async function pushToGithub(
   const plan = project.buildPlan;
   if (!plan) throw new Error("No build plan found");
 
-  // Use the per-project GitHub PAT stored during clone creation
-  const githubToken = project.githubPat;
+  // Use the per-project GitHub PAT, or fall back to user's vault PAT
+  let githubToken = project.githubPat;
   if (!githubToken) {
-    throw new Error("GitHub Personal Access Token not found for this project. Please recreate the clone with a valid PAT.");
+    // Auto-pull from user's saved secrets vault
+    githubToken = await getUserGithubPat(userId);
+  }
+  if (!githubToken) {
+    throw new Error("No GitHub PAT found. Please save a GitHub Personal Access Token in your API Keys settings, or provide one when creating the clone.");
   }
 
   await updateProjectStatus(projectId, "pushing", `Pushing to GitHub: ${repoName}...`);

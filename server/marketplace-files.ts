@@ -11,6 +11,7 @@ import * as db from "./db";
 import crypto from "crypto";
 import { createLogger } from "./_core/logger.js";
 import { getErrorMessage } from "./_core/errors.js";
+import { scanFileForMalware, trackIncident } from "./security-fortress";
 const log = createLogger("MarketplaceFiles");
 
 // Max file size: 100MB
@@ -160,6 +161,24 @@ export function registerMarketplaceFileRoutes(app: Express) {
           }
         } catch (antiResaleErr: unknown) {
           log.warn("[Marketplace] Anti-resale check warning (non-fatal):", { error: getErrorMessage(antiResaleErr) });
+        }
+      }
+
+      // ── SECURITY: Malware Scanning ───────────────────────────────
+      // Scan uploaded files for malware patterns, reverse shells, crypto miners,
+      // obfuscated code, data exfiltration, and prototype pollution.
+      const scannable = [".js", ".ts", ".py", ".json", ".md", ".txt"];
+      if (scannable.some(s => lowerName.endsWith(s))) {
+        const fileContent = result.fileBuffer.toString("utf-8");
+        const malwareScan = await scanFileForMalware(fileContent, result.fileName, user.id);
+        if (!malwareScan.safe) {
+          log.error(`[Marketplace] Malware detected in upload "${result.fileName}" (risk: ${malwareScan.riskScore}/100)`);
+          await trackIncident(user.id, "malware_upload", user.role === "admin");
+          return res.status(403).json({
+            error: "Security scan failed: This file contains suspicious code patterns and cannot be uploaded.",
+            riskScore: malwareScan.riskScore,
+            threats: malwareScan.threats.map(t => t.label),
+          });
         }
       }
 

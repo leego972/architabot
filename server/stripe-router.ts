@@ -1,12 +1,14 @@
 import Stripe from "stripe";
 import { z } from "zod";
-import { eq, and, isNotNull, ne } from "drizzle-orm";
+import { eq, and, isNotNull, ne, sql } from "drizzle-orm";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { ENV } from "./_core/env";
 import { getDb } from "./db";
 import { subscriptions, users, creditBalances } from "../drizzle/schema";
 import { PRICING_TIERS, CREDIT_PACKS, type PlanId } from "../shared/pricing";
 import { addCredits, processMonthlyRefill, getCreditBalance } from "./credit-service";
+import { referralCodes } from "../drizzle/schema";
+import { REFERRAL_CONFIG } from "./affiliate-engine";
 import { sellerProfiles } from "../drizzle/schema";
 import type { Express, Request, Response } from "express";
 import { createLogger } from "./_core/logger.js";
@@ -200,12 +202,73 @@ export const stripeRouter = router({
 
       const origin = ctx.req.headers.origin || process.env.APP_URL || "https://www.archibaldtitan.com";
 
+      // ─── Check if user has earned the referral discount ───
+      // 5 verified sign-ups = 30% off first month (one-time)
+      let discounts: Array<{ coupon: string }> = [];
+      try {
+        const db = await getDb();
+        if (db) {
+          const [userCode] = await db.select().from(referralCodes)
+            .where(eq(referralCodes.userId, ctx.user.id))
+            .limit(1);
+          if (
+            userCode &&
+            userCode.totalReferrals >= REFERRAL_CONFIG.referralsForDiscount &&
+            userCode.totalRewardsEarned > 0
+          ) {
+            // Check if they haven't already used the discount
+            const existingSubs = await db.select().from(subscriptions)
+              .where(eq(subscriptions.userId, ctx.user.id))
+              .limit(1);
+            const isFirstSubscription = existingSubs.length === 0;
+            if (isFirstSubscription) {
+              // Create or retrieve the Stripe coupon for referral discount
+              const couponId = `REFERRAL_${REFERRAL_CONFIG.discountPercent}PCT_OFF`;
+              try {
+                await stripe.coupons.retrieve(couponId);
+              } catch {
+                await stripe.coupons.create({
+                  id: couponId,
+                  percent_off: REFERRAL_CONFIG.discountPercent,
+                  duration: "once",
+                  name: `Referral Reward: ${REFERRAL_CONFIG.discountPercent}% off first month`,
+                });
+              }
+              discounts = [{ coupon: couponId }];
+              log.info(`[Stripe] Applying ${REFERRAL_CONFIG.discountPercent}% referral discount for user ${ctx.user.id}`);
+            }
+          }
+
+          // ─── Deal 2: High-Value Referral ───
+          // If user earned 50% off Pro annual (referred someone who subscribed to Cyber+)
+          if (
+            discounts.length === 0 &&
+            input.planId === "pro" &&
+            input.interval === "year"
+          ) {
+            const hvrCouponId = `HVR_50PCT_PRO_ANNUAL_USER_${ctx.user.id}`;
+            try {
+              const hvrCoupon = await stripe.coupons.retrieve(hvrCouponId);
+              if (hvrCoupon && hvrCoupon.valid) {
+                discounts = [{ coupon: hvrCouponId }];
+                log.info(`[Stripe] Applying 50% high-value referral discount for user ${ctx.user.id} on Pro annual`);
+              }
+            } catch {
+              // No high-value referral coupon exists for this user — that's fine
+            }
+          }
+        }
+      } catch (e) {
+        log.warn(`[Stripe] Could not check referral discount: ${getErrorMessage(e)}`);
+      }
+
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
         client_reference_id: ctx.user.id.toString(),
         customer_email: undefined, // Already set on customer object
         mode: "subscription",
-        allow_promotion_codes: true,
+        allow_promotion_codes: discounts.length === 0, // Don't allow promo codes if referral discount already applied
+        ...(discounts.length > 0 ? { discounts } : {}),
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: `${origin}/pricing?success=true&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/pricing?canceled=true`,
@@ -213,6 +276,7 @@ export const stripeRouter = router({
           user_id: ctx.user.id.toString(),
           plan_id: input.planId,
           interval: input.interval,
+          referral_discount: discounts.length > 0 ? "true" : "false",
         },
         subscription_data: {
           metadata: {
@@ -222,7 +286,7 @@ export const stripeRouter = router({
         },
       });
 
-      return { url: session.url };
+      return { url: session.url, referralDiscountApplied: discounts.length > 0 };
     }),
 
   // Purchase a credit top-up pack (one-time payment)
@@ -330,6 +394,20 @@ export const stripeRouter = router({
         .update(subscriptions)
         .set({ plan: input.planId })
         .where(eq(subscriptions.userId, ctx.user.id));
+
+      // Grant credit difference on upgrade (so users get extra credits immediately)
+      const oldTier = PRICING_TIERS.find((t) => t.id === sub[0].plan);
+      const newTier = PRICING_TIERS.find((t) => t.id === input.planId);
+      if (oldTier && newTier && newTier.credits.monthlyAllocation > oldTier.credits.monthlyAllocation) {
+        const creditDiff = newTier.credits.monthlyAllocation - oldTier.credits.monthlyAllocation;
+        await addCredits(
+          ctx.user.id,
+          creditDiff,
+          "admin_adjustment",
+          `Plan upgrade (${oldTier.name} → ${newTier.name}): +${creditDiff} bonus credits`
+        );
+        log.info(`[Stripe] Upgrade credit bonus: user=${ctx.user.id}, ${oldTier.name} → ${newTier.name}, +${creditDiff} credits`);
+      }
 
       return { success: true, newPlan: input.planId };
     }),
@@ -742,6 +820,11 @@ export function registerStripeWebhook(app: Express) {
             await handleCheckoutCompleted(session);
             break;
           }
+          case "customer.subscription.created": {
+            const subscription = event.data.object as Stripe.Subscription;
+            await handleSubscriptionCreated(subscription);
+            break;
+          }
           case "customer.subscription.updated": {
             const subscription = event.data.object as Stripe.Subscription;
             await handleSubscriptionUpdated(subscription);
@@ -772,6 +855,86 @@ export function registerStripeWebhook(app: Express) {
       res.json({ received: true });
     }
   );
+
+  // ─── Stripe Sync / Reconciliation Endpoint ──────────────────────
+  // Reconciles local subscription state with Stripe's actual state.
+  // Call this periodically or manually to recover from missed webhooks.
+  app.post("/api/stripe/sync", async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const cronSecret = process.env.CRON_SECRET || ENV.cookieSecret;
+
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "Database not available" });
+
+      const stripe = getStripe();
+
+      // Get all local subscriptions with a Stripe subscription ID
+      const localSubs = await db
+        .select()
+        .from(subscriptions)
+        .where(isNotNull(subscriptions.stripeSubscriptionId));
+
+      let synced = 0;
+      let errors = 0;
+      const changes: string[] = [];
+
+      for (const localSub of localSubs) {
+        if (!localSub.stripeSubscriptionId) continue;
+        try {
+          const stripeSub = await stripe.subscriptions.retrieve(localSub.stripeSubscriptionId);
+          const stripeStatus = mapStripeStatus(stripeSub.status);
+          const stripePlan = (stripeSub.metadata?.plan_id || localSub.plan) as PlanId;
+          const currentPeriodEnd = new Date(
+            ((stripeSub as any).current_period_end || Math.floor(Date.now() / 1000)) * 1000
+          );
+
+          // Check for drift
+          const statusDrift = localSub.status !== stripeStatus;
+          const planDrift = localSub.plan !== stripePlan;
+
+          if (statusDrift || planDrift) {
+            await db
+              .update(subscriptions)
+              .set({
+                status: stripeStatus,
+                plan: stripePlan,
+                currentPeriodEnd,
+              })
+              .where(eq(subscriptions.userId, localSub.userId));
+
+            const change = `user=${localSub.userId}: status ${localSub.status}→${stripeStatus}, plan ${localSub.plan}→${stripePlan}`;
+            changes.push(change);
+            log.info(`[Stripe Sync] Fixed drift: ${change}`);
+          }
+          synced++;
+        } catch (err: unknown) {
+          errors++;
+          // If subscription not found in Stripe, mark as canceled locally
+          if ((err as any)?.statusCode === 404 || (err as any)?.code === "resource_missing") {
+            await db
+              .update(subscriptions)
+              .set({ status: "canceled", plan: "free", stripeSubscriptionId: null, currentPeriodEnd: new Date() })
+              .where(eq(subscriptions.userId, localSub.userId));
+            changes.push(`user=${localSub.userId}: Stripe sub not found, marked canceled`);
+            log.warn(`[Stripe Sync] Subscription ${localSub.stripeSubscriptionId} not found in Stripe, marked user ${localSub.userId} as canceled`);
+          } else {
+            log.error(`[Stripe Sync] Error syncing user ${localSub.userId}:`, { error: getErrorMessage(err) });
+          }
+        }
+      }
+
+      log.info(`[Stripe Sync] Complete: synced=${synced}, errors=${errors}, changes=${changes.length}`);
+      return res.json({ synced, errors, changes });
+    } catch (err: unknown) {
+      log.error("[Stripe Sync] Fatal error:", { error: getErrorMessage(err) });
+      return res.status(500).json({ error: "Sync failed" });
+    }
+  });
 
   // ─── Monthly Credit Refill Cron Endpoint ─────────────────────────
   // Called by an external cron service (e.g., cron-job.org) on the 1st of each month
@@ -827,6 +990,116 @@ export async function processAllMonthlyRefills(): Promise<{ processed: number; r
 }
 
 // ─── Webhook Event Handlers ─────────────────────────────────────────
+
+/**
+ * Handle subscription created — catches subscriptions created outside checkout
+ * (e.g., via Stripe dashboard or API). Ensures local DB stays in sync.
+ */
+async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
+  const db = await getDb();
+  if (!db) return;
+
+  const userId = parseInt(subscription.metadata?.user_id || "0");
+  const planId = (subscription.metadata?.plan_id || "pro") as PlanId;
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id || "";
+  const currentPeriodEnd = new Date(
+    ((subscription as any).current_period_end || Math.floor(Date.now() / 1000)) * 1000
+  );
+
+  // Skip Bazaar Seller subscriptions (handled separately)
+  if (subscription.metadata?.type === "bazaar_seller") return;
+
+  // If no userId in metadata, try to look up from customer ID
+  let resolvedUserId = userId;
+  if (!resolvedUserId && customerId) {
+    resolvedUserId = (await getUserIdFromCustomerId(customerId)) || 0;
+  }
+  if (!resolvedUserId) {
+    log.warn(`[Stripe Webhook] subscription.created: could not resolve userId for subscription ${subscription.id}`);
+    return;
+  }
+
+  // Check if local record already exists (checkout.session.completed may have created it)
+  const existing = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, resolvedUserId))
+    .limit(1);
+
+  if (existing.length > 0 && existing[0].stripeSubscriptionId === subscription.id) {
+    // Already synced — no action needed
+    return;
+  }
+
+  const status = mapStripeStatus(subscription.status);
+
+  if (existing.length > 0) {
+    await db
+      .update(subscriptions)
+      .set({
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscription.id,
+        plan: planId,
+        status,
+        currentPeriodEnd,
+      })
+      .where(eq(subscriptions.userId, resolvedUserId));
+  } else {
+    await db.insert(subscriptions).values({
+      userId: resolvedUserId,
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscription.id,
+      plan: planId,
+      status,
+      currentPeriodEnd,
+    });
+  }
+
+  log.info(`[Stripe Webhook] Subscription created (sync): user=${resolvedUserId}, plan=${planId}, sub=${subscription.id}`);
+
+  // ─── HIGH-VALUE REFERRAL CHECK ───
+  // If this user was referred and just subscribed to Cyber+, reward the referrer
+  // with 50% off their second year Pro annual membership
+  try {
+    const { checkHighValueReferralReward } = await import("./affiliate-engine");
+    const result = await checkHighValueReferralReward(resolvedUserId, planId);
+    if (result.rewarded && result.referrerId) {
+      // Create a Stripe coupon for the referrer's next Pro annual renewal
+      const stripe = getStripe();
+      const couponId = `HVR_50PCT_PRO_ANNUAL_USER_${result.referrerId}`;
+      try {
+        await stripe.coupons.retrieve(couponId);
+      } catch {
+        await stripe.coupons.create({
+          id: couponId,
+          percent_off: 50,
+          duration: "once",
+          name: `High-Value Referral: 50% off Pro Annual (2nd year) for user ${result.referrerId}`,
+          max_redemptions: 1,
+        });
+      }
+      log.info(`[Stripe Webhook] Created 50% off Pro annual coupon ${couponId} for referrer ${result.referrerId}`);
+    }
+  } catch (e) {
+    log.warn(`[Stripe Webhook] High-value referral check failed: ${getErrorMessage(e)}`);
+  }
+
+  // ─── TITAN REFERRAL UNLOCK CHECK ───
+  // If this user was referred and just subscribed to Titan,
+  // the referrer gets 3 months of unlocked Titan features
+  try {
+    const { checkTitanReferralReward } = await import("./affiliate-engine");
+    const titanResult = await checkTitanReferralReward(resolvedUserId, planId);
+    if (titanResult.rewarded && titanResult.referrerId) {
+      log.info(
+        `[Stripe Webhook] Titan referral unlock granted to user ${titanResult.referrerId} ` +
+        `(3 months of Titan features) because user ${resolvedUserId} subscribed to ${planId}`
+      );
+    }
+  } catch (e) {
+    log.warn(`[Stripe Webhook] Titan referral check failed: ${getErrorMessage(e)}`);
+  }
+}
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const db = await getDb();
@@ -1164,11 +1437,23 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     })
     .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
 
-  // If plan changed (upgrade or downgrade), log it
+  // If plan changed (upgrade or downgrade), handle credit difference
   if (previousPlan && previousPlan !== planId && subRecord[0]) {
     const newTier = PRICING_TIERS.find((t) => t.id === planId);
     const oldTier = PRICING_TIERS.find((t) => t.id === previousPlan);
     log.info(`[Stripe Webhook] Plan changed: user=${subRecord[0].userId}, ${oldTier?.name || previousPlan} → ${newTier?.name || planId}`);
+
+    // Grant credit difference on upgrade
+    if (oldTier && newTier && newTier.credits.monthlyAllocation > oldTier.credits.monthlyAllocation) {
+      const creditDiff = newTier.credits.monthlyAllocation - oldTier.credits.monthlyAllocation;
+      await addCredits(
+        subRecord[0].userId,
+        creditDiff,
+        "admin_adjustment",
+        `Plan upgrade via webhook (${oldTier.name} → ${newTier.name}): +${creditDiff} bonus credits`
+      );
+      log.info(`[Stripe Webhook] Upgrade credit bonus: user=${subRecord[0].userId}, +${creditDiff} credits`);
+    }
   }
 
   log.info(`[Stripe Webhook] Subscription updated: ${subscription.id}, status=${status}, plan=${planId}`);
@@ -1212,6 +1497,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
       plan: "free",
       status: "canceled",
       stripeSubscriptionId: null,
+      currentPeriodEnd: new Date(), // Clear stale period end date
     })
     .where(eq(subscriptions.stripeSubscriptionId, subscription.id));
 

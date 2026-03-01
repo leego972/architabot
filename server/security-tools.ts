@@ -16,6 +16,7 @@
 import https from "node:https";
 import http from "node:http";
 import { invokeLLM } from "./_core/llm";
+import { getUserOpenAIKey } from "./user-secrets-router";
 
 // ─── 1. Passive Web Scanner ─────────────────────────────────────────
 
@@ -230,14 +231,17 @@ export type CodeReviewReport = {
 };
 
 export async function analyzeCodeSecurity(
-  files: Array<{ filename: string; content: string }>
+  files: Array<{ filename: string; content: string }>,
+  userId?: number
 ): Promise<CodeReviewReport> {
+  const userApiKey = userId ? (await getUserOpenAIKey(userId) || undefined) : undefined;
   const codeContext = files
     .map((file) => `// File: ${file.filename}\n${file.content}`)
     .join("\n\n---\n\n");
 
   const response = await invokeLLM({
     systemTag: "misc",
+    userApiKey,
     messages: [
       {
         role: "system",

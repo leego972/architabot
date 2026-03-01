@@ -17,14 +17,24 @@ import { registerDownloadRoute } from "../download-gate";
 import { registerApiRoutes } from "../api-access-router";
 import { registerV5ApiRoutes } from "../v5-features-router";
 import { registerEmailAuthRoutes } from "../email-auth-router";
-import { registerReleaseUploadRoute, registerUpdateFeedRoutes } from "../releases-router";
+import { registerReleaseUploadRoute, registerUpdateFeedRoutes, registerGitHubSyncRoute } from "../releases-router";
 import { registerVoiceUploadRoute } from "../voice-router";
 import { registerSocialAuthRoutes } from "../social-auth-router";
 import { startScheduledDiscovery } from "../affiliate-discovery-engine";
+import { startScheduledSignups } from "../affiliate-signup-engine";
+import { runOptimizationCycleV2 } from "../affiliate-engine-v2";
+import { seedMarketplaceWithMerchants as seedMarketplace } from "../marketplace-seed";
 import { startAdvertisingScheduler } from "../advertising-orchestrator";
+import { startModuleGeneratorScheduler } from "../module-generator-engine";
+import { startSecuritySweepScheduler } from "../security-hardening";
+import { startFortressSweepScheduler } from "../security-fortress";
 import { registerBinancePayWebhook } from "../binance-pay-webhook";
 import { registerSeoRoutes, startScheduledSeo } from "../seo-engine";
+import { registerSeoV4Routes, runGeoOptimization } from "../seo-engine-v4";
+import { runStartupDiagnostic, registerIndexNowRoute, patchIndexNowKey, startPeriodicSync } from "../autonomous-sync";
 import { registerChatStreamRoutes } from "../chat-stream";
+import { registerChatUploadRoute } from "../chat-upload";
+import { registerProjectDownloadRoutes } from "../project-download-router";
 import { registerMarketplaceFileRoutes } from "../marketplace-files";
 import { registerBundleSyncRoutes } from "../bundle-sync";
 import rateLimit from "express-rate-limit";
@@ -221,6 +231,29 @@ async function startServer() {
   });
   // SEO routes (sitemap.xml, robots.txt, security.txt, RSS feed, structured data, redirects)
   registerSeoRoutes(app);
+  // SEO v4 routes (llms.txt, programmatic SEO, enhanced structured data, GEO optimization)
+  registerSeoV4Routes(app);
+  // Autonomous sync: IndexNow verification route + auto-generated key
+  patchIndexNowKey();
+  registerIndexNowRoute(app);
+  // Affiliate v2 cloaked redirect: /go/{partner-slug}
+  app.get('/go/:slug', async (req, res) => {
+    try {
+      const { handleAffiliateRedirect } = await import('../affiliate-engine-v2.js');
+      const result = await handleAffiliateRedirect(req.params.slug, {
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+        referrer: req.headers['referer'],
+      });
+      if (result) {
+        res.redirect(302, result.redirectUrl);
+      } else {
+        res.redirect(302, 'https://www.archibaldtitan.com');
+      }
+    } catch {
+      res.redirect(302, 'https://www.archibaldtitan.com');
+    }
+  });
   // Token-gated download endpoint
   registerDownloadRoute(app);
   // REST API endpoints for API key access
@@ -231,12 +264,18 @@ async function startServer() {
   registerReleaseUploadRoute(app);
   // Auto-update feed for electron-updater (latest.yml endpoints)
   registerUpdateFeedRoutes(app);
+  // GitHub release sync webhook endpoint
+  registerGitHubSyncRoute(app);
   // Desktop bundle sync — serves latest web client for auto-sync
   registerBundleSyncRoutes(app);
   // Voice audio upload endpoint
   registerVoiceUploadRoute(app);
   // Marketplace file upload/download endpoints
   registerMarketplaceFileRoutes(app);
+  // Chat file upload endpoint
+  registerChatUploadRoute(app);
+  // Project file download (single + ZIP batch)
+  registerProjectDownloadRoutes(app);
   // Chat SSE streaming and abort endpoints
   registerChatStreamRoutes(app);
   // tRPC API
@@ -316,6 +355,9 @@ async function startServer() {
         "ALTER TABLE `users` ADD COLUMN `trialConvertedAt` datetime NULL",
         "ALTER TABLE `users` ADD COLUMN `hasPaymentMethod` boolean NOT NULL DEFAULT false",
         "ALTER TABLE `users` ADD COLUMN `stripeCustomerId` varchar(128) NULL",
+        // Titan Referral Unlock columns
+        "ALTER TABLE `users` ADD COLUMN `titanUnlockExpiry` datetime NULL",
+        "ALTER TABLE `users` ADD COLUMN `titanUnlockGrantedBy` int NULL",
         // seller_profiles subscription columns
         "ALTER TABLE `seller_profiles` ADD COLUMN `sellerSubscriptionActive` boolean NOT NULL DEFAULT false",
         "ALTER TABLE `seller_profiles` ADD COLUMN `sellerSubscriptionExpiresAt` datetime NULL",
@@ -325,6 +367,10 @@ async function startServer() {
         // marketplace_listings anti-resale columns
         "ALTER TABLE `marketplace_listings` ADD COLUMN `fileHash` varchar(128) NULL",
         "ALTER TABLE `marketplace_listings` ADD COLUMN `originalListingId` int NULL",
+        // Security hardening: audit_logs category column for security event filtering
+        "ALTER TABLE `audit_logs` ADD COLUMN `category` varchar(64) DEFAULT 'general' NOT NULL",
+        // Security hardening: audit_logs severity column for triage
+        "ALTER TABLE `audit_logs` ADD COLUMN `severity` varchar(16) DEFAULT 'low'",
       ];
       for (const sql of missingColumns) {
         try {
@@ -523,10 +569,86 @@ async function startServer() {
     // Runs weekly: meta tag analysis, keyword research, health scoring
     startScheduledSeo();
 
+    // ─── GEO Optimization (SEO v4) ──────────────────────────────────
+    // Runs 8 hours after deploy, then weekly: submits programmatic pages
+    // to IndexNow, updates llms.txt cache, refreshes AI citation signals
+    setTimeout(async () => {
+      try {
+        log.info('[SEO v4] Running first GEO optimization...');
+        await runGeoOptimization();
+      } catch (err: unknown) {
+        log.error('[SEO v4] First GEO optimization failed:', { error: String(err) });
+      }
+    }, 8 * 60 * 60 * 1000); // 8 hours after deploy
+    setInterval(async () => {
+      try { await runGeoOptimization(); } catch { /* non-critical */ }
+    }, 7 * 24 * 60 * 60 * 1000); // Weekly
+
     // ─── Autonomous Advertising Orchestrator ──────────────────────
     // Runs daily: blog generation, social media, community engagement,
     // email nurture, backlink outreach, affiliate optimization, SEO
     startAdvertisingScheduler();
+
+    // ─── Affiliate Engine v2 Optimization ─────────────────────────
+    // Runs daily at 4 AM UTC: EPC recalculation, fraud cleanup,
+    // revenue forecasting, milestone checks, seasonal multiplier updates
+    setTimeout(async () => {
+      try {
+        log.info('[Affiliate v2] Running first v2 optimization cycle...');
+        await runOptimizationCycleV2();
+      } catch (err: unknown) {
+        log.error('[Affiliate v2] First optimization failed:', { error: String(err) });
+      }
+    }, 6 * 60 * 60 * 1000); // 6 hours after deploy
+    setInterval(async () => {
+      try { await runOptimizationCycleV2(); } catch { /* non-critical */ }
+    }, 24 * 60 * 60 * 1000); // Daily
+
+    // ─── Autonomous Module Generator ─────────────────────────────
+    // Runs weekly on Sundays at 3 AM: generates 3-5 fresh cyber
+    // security modules, verifies code quality, and lists them on
+    // Grand Bazaar through seller bots (CyberForge, GhostNet,
+    // VaultKeeper, dEciever000). Deduplicates against existing titles.
+    startModuleGeneratorScheduler();
+    // ─── Marketplace Seeding ──────────────────────────────────────
+    // Seeds seller bot accounts and their module listings on first run.
+    // Idempotent — skips if bots already exist.
+    setTimeout(async () => {
+      try {
+        await seedMarketplace();
+        log.info('Marketplace seeded successfully');
+      } catch (err) {
+        log.error('Marketplace seed failed', { error: String(err) });
+      }
+    }, 12000);
+    // ─── Autonomous Affiliate Signup Engine ───────────────────────
+    // Runs weekly: auto-signs up for discovered affiliate programs,
+    // generates unique referral links, and tracks conversions.
+    startScheduledSignups();
+
+    // ─── Security Hardening Sweep Scheduler ──────────────────────
+    // Runs every 30 minutes: cleans expired rate-limit windows,
+    // flushes security event buffer to DB, audits credit balances
+    // for active users, and detects anomalous patterns.
+    startSecuritySweepScheduler();
+
+    // ─── Security Fortress Sweep Scheduler ───────────────────────
+    // Runs every 30 minutes: checks canary tokens, cleans incident
+    // counters, prunes geo-history, and validates 2FA sessions.
+    startFortressSweepScheduler();
+
+    // ─── Autonomous System Sync ──────────────────────────────────
+    // Runs startup diagnostic (logs all system statuses, patches
+    // IndexNow key, auto-enables marketing engine), then starts
+    // periodic sync check every 6 hours.
+    setTimeout(async () => {
+      try {
+        await runStartupDiagnostic();
+        startPeriodicSync();
+      } catch (err: unknown) {
+        log.error('[AutonomousSync] Startup diagnostic failed:', { error: String(err) });
+      }
+    }, 15_000); // 15 seconds after startup — let DB settle
   });
 }
 

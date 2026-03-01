@@ -250,6 +250,112 @@ export const releasesRouter = router({
       .orderBy(desc(releases.publishedAt))
       .limit(50);
   }),
+
+  /**
+   * Sync releases from GitHub.
+   * Fetches the latest release from GitHub API and upserts it into the database.
+   * Public endpoint — can be called by anyone (e.g., webhook, cron, or on page load).
+   * Rate-limited by GitHub API (60 req/hr unauthenticated).
+   */
+  syncFromGitHub: publicProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+    const GITHUB_OWNER = "leego972";
+    const GITHUB_REPO = "archibald-titan-ai";
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "ArchibaldTitan",
+    };
+    // Use PAT if available for higher rate limits
+    const pat = process.env.GITHUB_PAT;
+    if (pat) headers.Authorization = `token ${pat}`;
+
+    try {
+      // Fetch all releases from GitHub (up to 30)
+      const ghRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=30`,
+        { headers }
+      );
+      if (!ghRes.ok) {
+        const errText = await ghRes.text();
+        log.error("[GitHub Sync] Failed to fetch releases", { status: ghRes.status, body: errText });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `GitHub API error: ${ghRes.status}` });
+      }
+
+      const ghReleases = (await ghRes.json()) as Array<{
+        tag_name: string;
+        name: string;
+        body: string;
+        prerelease: boolean;
+        published_at: string;
+        draft: boolean;
+      }>;
+
+      if (!ghReleases.length) {
+        return { synced: 0, message: "No releases found on GitHub" };
+      }
+
+      let synced = 0;
+      let latestVersion = "";
+
+      // Find the latest non-draft, non-prerelease version
+      const latestStable = ghReleases.find((r) => !r.draft && !r.prerelease);
+      if (latestStable) {
+        latestVersion = latestStable.tag_name.replace(/^v/, "");
+      }
+
+      for (const ghRelease of ghReleases) {
+        if (ghRelease.draft) continue; // Skip drafts
+
+        const version = ghRelease.tag_name.replace(/^v/, "");
+        const title = ghRelease.name || `v${version}`;
+        const changelog = ghRelease.body || "No changelog provided.";
+        const isPrerelease = ghRelease.prerelease ? 1 : 0;
+        const isLatest = version === latestVersion ? 1 : 0;
+
+        // Check if this version already exists
+        const [existing] = await db
+          .select()
+          .from(releases)
+          .where(eq(releases.version, version))
+          .limit(1);
+
+        if (existing) {
+          // Update existing release
+          await db.update(releases).set({
+            title,
+            changelog,
+            isPrerelease,
+            isLatest,
+            publishedAt: new Date(ghRelease.published_at),
+          }).where(eq(releases.id, existing.id));
+        } else {
+          // Insert new release
+          // First, clear isLatest from all other releases if this is the latest
+          if (isLatest) {
+            await db.update(releases).set({ isLatest: 0 }).where(eq(releases.isLatest, 1));
+          }
+          await db.insert(releases).values({
+            version,
+            title,
+            changelog,
+            isPrerelease,
+            isLatest,
+            publishedAt: new Date(ghRelease.published_at),
+          });
+        }
+        synced++;
+      }
+
+      log.info(`[GitHub Sync] Synced ${synced} releases from GitHub, latest: v${latestVersion}`);
+      return { synced, latestVersion, message: `Synced ${synced} releases from GitHub` };
+    } catch (err: unknown) {
+      if (err instanceof TRPCError) throw err;
+      log.error("[GitHub Sync] Error", { error: String(err) });
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: getErrorMessage(err) || "GitHub sync failed" });
+    }
+  }),
 });
 
 // ─── Express Route: Binary Upload ──────────────────────────────────
@@ -366,6 +472,64 @@ export function registerUpdateFeedRoutes(app: Express) {
     } catch (err: unknown) {
       log.error("[Update Feed] Error:", { error: String(getErrorMessage(err)) });
       res.status(500).send("Internal error");
+    }
+  });
+}
+
+// ─── GitHub Webhook / Manual Sync Endpoint ──────────────────────
+// POST /api/releases/sync-github — triggers a sync from GitHub releases
+// Can be used as a GitHub webhook or called manually
+export function registerGitHubSyncRoute(app: Express) {
+  app.post("/api/releases/sync-github", async (_req: Request, res: Response) => {
+    try {
+      const db = await getDb();
+      if (!db) return res.status(503).json({ error: "Database unavailable" });
+
+      const GITHUB_OWNER = "leego972";
+      const GITHUB_REPO = "archibald-titan-ai";
+      const headers: Record<string, string> = {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "ArchibaldTitan",
+      };
+      const pat = process.env.GITHUB_PAT;
+      if (pat) headers.Authorization = `token ${pat}`;
+
+      const ghRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=30`,
+        { headers }
+      );
+      if (!ghRes.ok) {
+        return res.status(502).json({ error: `GitHub API error: ${ghRes.status}` });
+      }
+
+      const ghReleases = (await ghRes.json()) as any[];
+      const latestStable = ghReleases.find((r: any) => !r.draft && !r.prerelease);
+      const latestVersion = latestStable ? latestStable.tag_name.replace(/^v/, "") : "";
+      let synced = 0;
+
+      for (const ghRelease of ghReleases) {
+        if (ghRelease.draft) continue;
+        const version = ghRelease.tag_name.replace(/^v/, "");
+        const title = ghRelease.name || `v${version}`;
+        const changelog = ghRelease.body || "No changelog provided.";
+        const isPrerelease = ghRelease.prerelease ? 1 : 0;
+        const isLatest = version === latestVersion ? 1 : 0;
+
+        const [existing] = await db.select().from(releases).where(eq(releases.version, version)).limit(1);
+        if (existing) {
+          await db.update(releases).set({ title, changelog, isPrerelease, isLatest, publishedAt: new Date(ghRelease.published_at) }).where(eq(releases.id, existing.id));
+        } else {
+          if (isLatest) await db.update(releases).set({ isLatest: 0 }).where(eq(releases.isLatest, 1));
+          await db.insert(releases).values({ version, title, changelog, isPrerelease, isLatest, publishedAt: new Date(ghRelease.published_at) });
+        }
+        synced++;
+      }
+
+      log.info(`[GitHub Webhook Sync] Synced ${synced} releases, latest: v${latestVersion}`);
+      return res.json({ synced, latestVersion });
+    } catch (err: unknown) {
+      log.error("[GitHub Webhook Sync] Error", { error: String(err) });
+      return res.status(500).json({ error: getErrorMessage(err) || "Sync failed" });
     }
   });
 }

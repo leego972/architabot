@@ -1,6 +1,7 @@
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
+import { getUserOpenAIKey } from "./user-secrets-router";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { refreshGrantsForCountry, refreshAllGrants, getSupportedCountries } from "./grant-refresh-service";
@@ -101,9 +102,10 @@ export const businessPlanRouter = router({
     projectDescription: z.string(),
     targetMarket: z.string().optional(),
     competitiveAdvantage: z.string().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const company = await db.getCompanyById(input.companyId);
     if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Company not found" });
+    const userApiKey = await getUserOpenAIKey(ctx.user.id) || undefined;
 
     const prompt = `Generate a comprehensive business plan for a grant application.
 
@@ -132,6 +134,7 @@ Generate the following sections with detailed, professional content:
 
     const response = await invokeLLM({
       systemTag: "misc",
+      userApiKey,
       model: "fast", messages: [{ role: "user", content: prompt }] });
     const content = String(response.choices[0]?.message?.content || '');
 
@@ -168,9 +171,10 @@ export const grantRouter = router({
   get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
     return db.getGrantOpportunityById(input.id);
   }),
-  match: protectedProcedure.input(z.object({ companyId: z.number() })).mutation(async ({ input }) => {
+  match: protectedProcedure.input(z.object({ companyId: z.number() })).mutation(async ({ input, ctx }) => {
     const company = await db.getCompanyById(input.companyId);
     if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Company not found" });
+    const userApiKey = await getUserOpenAIKey(ctx.user.id) || undefined;
 
     const grants = await db.listGrantOpportunities();
     const prompt = `Analyze this company and score each grant opportunity for fit.
@@ -201,6 +205,7 @@ Return ONLY a JSON array, no other text.`;
 
     const response = await invokeLLM({
       systemTag: "misc",
+      userApiKey,
       model: "fast",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_schema", json_schema: { name: "grant_matches", strict: true, schema: { type: "object", properties: { matches: { type: "array", items: { type: "object", properties: { grantId: { type: "number" }, matchScore: { type: "number" }, eligibilityScore: { type: "number" }, alignmentScore: { type: "number" }, competitivenessScore: { type: "number" }, reason: { type: "string" }, successProbability: { type: "number" } }, required: ["grantId", "matchScore", "eligibilityScore", "alignmentScore", "competitivenessScore", "reason", "successProbability"], additionalProperties: false } } }, required: ["matches"], additionalProperties: false } } },
@@ -248,9 +253,10 @@ export const grantApplicationRouter = router({
     companyId: z.number(),
     grantOpportunityId: z.number(),
     businessPlanId: z.number().optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const company = await db.getCompanyById(input.companyId);
     if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Company not found" });
+    const userApiKey = await getUserOpenAIKey(ctx.user.id) || undefined;
     const grant = await db.getGrantOpportunityById(input.grantOpportunityId);
     if (!grant) throw new TRPCError({ code: "NOT_FOUND", message: "Grant not found" });
 
@@ -294,6 +300,7 @@ Also provide:
 
     const response = await invokeLLM({
       systemTag: "misc",
+      userApiKey,
       model: "fast", messages: [{ role: "user", content: prompt }] });
     const content = String(response.choices[0]?.message?.content || '');
 

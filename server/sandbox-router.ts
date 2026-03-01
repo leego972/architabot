@@ -581,6 +581,52 @@ export const sandboxRouter = router({
       return { success: true };
     }),
 
+  // ── Delete an entire project (all files with matching path prefix) ──
+  deleteProject: protectedProcedure
+    .input(z.object({ projectName: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const { getDb } = await import("./db");
+      const { sandboxFiles } = await import("../drizzle/schema");
+      const { eq, and, like } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return { success: false, error: "Database unavailable", deleted: 0 };
+      const sandboxes = await listSandboxes(ctx.user.id);
+      if (sandboxes.length === 0) return { success: false, error: "No sandbox found", deleted: 0 };
+      // Find all files belonging to this project (path starts with projectName/)
+      const files = await db
+        .select()
+        .from(sandboxFiles)
+        .where(and(
+          eq(sandboxFiles.sandboxId, sandboxes[0].id),
+          like(sandboxFiles.filePath, `${input.projectName}/%`)
+        ));
+      // Also include files with exact match (no subdirectory)
+      const exactFiles = await db
+        .select()
+        .from(sandboxFiles)
+        .where(and(
+          eq(sandboxFiles.sandboxId, sandboxes[0].id),
+          eq(sandboxFiles.filePath, input.projectName)
+        ));
+      const allFiles = [...files, ...exactFiles];
+      if (allFiles.length === 0) return { success: false, error: "No files found for this project", deleted: 0 };
+      // Delete S3 objects
+      for (const file of allFiles) {
+        if (file.s3Key) {
+          try {
+            const { storageDelete } = await import("./storage");
+            await storageDelete(file.s3Key);
+          } catch {}
+        }
+      }
+      // Delete from DB
+      const { inArray } = await import("drizzle-orm");
+      await db.delete(sandboxFiles).where(
+        inArray(sandboxFiles.id, allFiles.map(f => f.id))
+      );
+      return { success: true, deleted: allFiles.length };
+    }),
+
   // ── Delete multiple project files ──
   deleteProjectFiles: protectedProcedure
     .input(z.object({ fileIds: z.array(z.number().int()) }))

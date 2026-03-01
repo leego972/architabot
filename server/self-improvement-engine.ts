@@ -38,6 +38,11 @@ import {
   snapshotFiles,
   selfModificationLog,
 } from "../drizzle/schema";
+import {
+  checkUserRateLimit,
+  logSecurityEvent,
+  validateFilePath,
+} from "./security-hardening";
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -70,6 +75,8 @@ const PROTECTED_PATHS: string[] = [
   // Stripe/payment — financial operations are critical
   "server/stripe-router.ts",
   "server/subscription-gate.ts",
+  // Anti-self-replication — MUST NEVER be modified or disabled
+  "server/anti-replication-guard.ts",
 ];
 
 /**
@@ -583,6 +590,46 @@ export async function applyModifications(
 ): Promise<ModificationResult> {
   const db = await getDb();
   if (!db) return { success: false, error: "Database unavailable", modifications: [] };
+
+  // ── SECURITY: Per-User Self-Modification Rate Limiting ──────────
+  if (userId) {
+    const rateCheck = await checkUserRateLimit(userId, "self_modify");
+    if (!rateCheck.allowed) {
+      return {
+        success: false,
+        error: `Self-modification rate limit exceeded. Please wait ${Math.ceil((rateCheck.retryAfterMs || 300000) / 1000)}s.`,
+        modifications: modifications.map((m) => ({
+          filePath: m.filePath,
+          action: m.action,
+          applied: false,
+          error: "Rate limited",
+        })),
+      };
+    }
+  }
+
+  // ── SECURITY: Path Traversal Validation ──────────────────────
+  for (const mod of modifications) {
+    const pathCheck = validateFilePath(mod.filePath);
+    if (!pathCheck.valid) {
+      if (userId) {
+        await logSecurityEvent(userId, "path_traversal_attempt", {
+          filePath: mod.filePath,
+          error: pathCheck.error,
+        });
+      }
+      return {
+        success: false,
+        error: `Security violation: ${pathCheck.error}`,
+        modifications: modifications.map((m) => ({
+          filePath: m.filePath,
+          action: m.action,
+          applied: false,
+          error: "Path validation failed",
+        })),
+      };
+    }
+  }
 
   // Anti-Self-Break: Circuit breaker check
   const cbCheck = checkCircuitBreaker();

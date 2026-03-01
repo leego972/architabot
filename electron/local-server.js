@@ -124,6 +124,59 @@ async function checkAndSyncBundle() {
   }
 }
 
+// ─── SSE Bundle Stream: Instant deploy notifications ───────────────
+let bundleStreamRetryTimeout = null;
+function connectBundleStream() {
+  const url = REMOTE_URL + "/api/desktop/bundle-stream";
+  console.log("[BundleStream] Connecting to " + url);
+
+  fetch(url, { headers: { "Accept": "text/event-stream" } })
+    .then(async (res) => {
+      if (!res.ok || !res.body) {
+        console.warn("[BundleStream] Connection failed: " + res.status);
+        scheduleBundleStreamReconnect();
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      console.log("[BundleStream] Connected — listening for deploy notifications");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === "bundle-updated") {
+                console.log("[BundleStream] New deploy detected: v" + event.version + " (" + event.hash + ")");
+                checkAndSyncBundle();
+              }
+            } catch {}
+          }
+        }
+      }
+      // Stream ended — reconnect
+      scheduleBundleStreamReconnect();
+    })
+    .catch((e) => {
+      console.warn("[BundleStream] Error: " + e.message);
+      scheduleBundleStreamReconnect();
+    });
+}
+
+function scheduleBundleStreamReconnect() {
+  if (bundleStreamRetryTimeout) clearTimeout(bundleStreamRetryTimeout);
+  bundleStreamRetryTimeout = setTimeout(() => {
+    console.log("[BundleStream] Reconnecting...");
+    connectBundleStream();
+  }, 15000); // Retry every 15 seconds
+}
+
 // Allow main.js to set a callback for notifying the renderer
 let sendToMainWindow = null;
 function setSendToMainWindow(fn) { sendToMainWindow = fn; }
@@ -312,7 +365,8 @@ function startServer() {
     // ── Health ──
     app.get("/api/health", (_, res) => {
       const bundleVer = getLocalBundleVersion();
-      res.json({ status: "ok", mode: "desktop", version: "8.2.0", bundleVersion: bundleVer?.version || "built-in", bundleHash: bundleVer?.hash || null });
+      const pkgVersion = require("./package.json").version || "8.1.0";
+      res.json({ status: "ok", mode: "desktop", version: pkgVersion, bundleVersion: bundleVer?.version || "built-in", bundleHash: bundleVer?.hash || null });
     });
 
     // ── Bundle Sync Status ──
@@ -882,6 +936,58 @@ function startServer() {
       }
     });
 
+    // ── Stripe proxy (subscription management from desktop) ──
+    app.all("/api/stripe/*", requireAuth, async (req, res) => {
+      const license = loadLicense();
+      if (!license?.licenseKey) return res.status(401).json({ error: "Not authenticated" });
+      try {
+        const url = REMOTE_URL + req.originalUrl;
+        const fetchOpts = {
+          method: req.method,
+          headers: {
+            "Content-Type": req.headers["content-type"] || "application/json",
+            "Cookie": `titan_session=${license.licenseKey}`,
+          },
+        };
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          fetchOpts.body = JSON.stringify(req.body);
+        }
+        const remoteRes = await fetch(url, fetchOpts);
+        const contentType = remoteRes.headers.get("content-type") || "application/json";
+        res.set("Content-Type", contentType);
+        const data = await remoteRes.text();
+        res.status(remoteRes.status).send(data);
+      } catch (e) {
+        res.status(503).json({ error: "Stripe proxy failed: " + e.message });
+      }
+    });
+
+    // ── Releases API proxy ──
+    app.all("/api/releases/*", requireAuth, async (req, res) => {
+      const license = loadLicense();
+      if (!license?.licenseKey) return res.status(401).json({ error: "Not authenticated" });
+      try {
+        const url = REMOTE_URL + req.originalUrl;
+        const fetchOpts = {
+          method: req.method,
+          headers: {
+            "Content-Type": "application/json",
+            "Cookie": `titan_session=${license.licenseKey}`,
+          },
+        };
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          fetchOpts.body = JSON.stringify(req.body);
+        }
+        const remoteRes = await fetch(url, fetchOpts);
+        const contentType = remoteRes.headers.get("content-type") || "application/json";
+        res.set("Content-Type", contentType);
+        const data = await remoteRes.text();
+        res.status(remoteRes.status).send(data);
+      } catch (e) {
+        res.status(503).json({ error: "Releases proxy failed: " + e.message });
+      }
+    });
+
     // ── Serve synced bundle static assets ──
     // Priority: synced bundle > built-in public > remote proxy
     app.use((req, res, next) => {
@@ -931,9 +1037,12 @@ function startServer() {
       console.log("[Titan] http://127.0.0.1:" + port);
       resolve(port);
 
-      // Start bundle sync: check immediately, then every 30 minutes
+      // Start bundle sync: check immediately, then every 30 minutes as fallback
       setTimeout(() => checkAndSyncBundle(), 3000);
       setInterval(() => checkAndSyncBundle(), 30 * 60 * 1000);
+
+      // Connect to SSE stream for instant deploy notifications
+      connectBundleStream();
     });
   });
 }

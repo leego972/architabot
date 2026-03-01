@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { TitanLogo } from "@/components/TitanLogo";
 import AffiliateRecommendations from "@/components/AffiliateRecommendations";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 import {
   Send,
   User,
@@ -169,6 +171,7 @@ const HELP_CATEGORIES = [
       "Credentials → /fetcher/credentials",
       "Auto-Sync → /fetcher/auto-sync",
       "Leak Scanner → /fetcher/leak-scanner",
+      "Site Monitor → /site-monitor",
       "Team Management → /fetcher/team",
       "Pricing → /pricing",
     ],
@@ -192,6 +195,17 @@ const HELP_CATEGORIES = [
       "Configure watchdog monitoring",
     ],
   },
+  {
+    icon: "activity",
+    title: "Website Health Monitor",
+    items: [
+      "Monitor website uptime and response times",
+      "Track SSL certificate expiry and errors",
+      "Auto-repair via Railway, Vercel, SSH, and more",
+      "View incidents and repair logs",
+      "Site Monitor → /site-monitor",
+    ],
+  },
 ];
 
 const HELP_ICONS: Record<string, React.ReactNode> = {
@@ -202,6 +216,7 @@ const HELP_ICONS: Record<string, React.ReactNode> = {
   navigation: <Navigation className="h-4 w-4" />,
   users: <Users className="h-4 w-4" />,
   calendar: <Calendar className="h-4 w-4" />,
+  activity: <Activity className="h-4 w-4" />,
 };
 
 const QUICK_ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -267,11 +282,19 @@ interface ExecutedAction {
   success: boolean;
 }
 
+interface ChatAttachment {
+  url: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
 interface ChatMsg {
   id: number;
   role: "user" | "assistant";
   content: string;
   createdAt: number;
+  attachments?: ChatAttachment[];
   actionsTaken?: Array<{ tool: string; success: boolean; summary: string }> | null;
   toolCalls?: Array<{ name: string; args: Record<string, unknown>; result: unknown }> | null;
 }
@@ -930,7 +953,8 @@ export default function ChatPage() {
         try {
           const formData = new FormData();
           formData.append('audio', audioBlob, `recording.${mimeType.includes('webm') ? 'webm' : 'm4a'}`);
-          const uploadRes = await fetch('/api/voice/upload', { method: 'POST', body: formData, credentials: 'include' });
+          const csrfTk = document.cookie.split('; ').find(c => c.startsWith('csrf_token='))?.split('=')[1] || '';
+          const uploadRes = await fetch('/api/voice/upload', { method: 'POST', body: formData, credentials: 'include', headers: csrfTk ? { 'x-csrf-token': csrfTk } : {} });
           if (!uploadRes.ok) {
             const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
             throw new Error(err.error || 'Failed to upload audio');
@@ -1126,18 +1150,58 @@ export default function ChatPage() {
 
     setShowHelp(false);
 
-    // Optimistic user message
-    const tempId = -Date.now();
-    const userMsg: ChatMsg = { id: tempId, role: "user", content: messageText, createdAt: Date.now() };
-    setLocalMessages((prev) => [...prev, userMsg]);
+    // Capture files before clearing state
+    const filesToUpload = [...selectedFiles];
     setInput("");
     setSelectedFiles([]);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    // Upload files FIRST so we can show them in the optimistic message
+    const uploadedAttachments: ChatAttachment[] = [];
+    if (filesToUpload.length > 0) {
+      setIsLoading(true);
+      setLoadingPhase("Uploading files...");
+      for (const file of filesToUpload) {
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          // Read CSRF token from cookie and send as header
+          const csrfToken = document.cookie.split('; ').find(c => c.startsWith('csrf_token='))?.split('=')[1] || '';
+          const uploadRes = await fetch('/api/chat/upload', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+            headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+          });
+          if (uploadRes.ok) {
+            const { url, mimeType, size } = await uploadRes.json();
+            uploadedAttachments.push({ url, name: file.name, mimeType: mimeType || file.type, size: size || file.size });
+          } else {
+            const errData = await uploadRes.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('Upload failed:', uploadRes.status, errData);
+            toast.error(`Upload failed (${uploadRes.status}): ${errData.error || 'Server error'}`);
+          }
+        } catch (e) {
+          console.error('File upload failed:', e);
+          toast.error(`Failed to upload ${file.name}`);
+        }
+      }
+    }
+
+    // Build the optimistic user message WITH attachment info
+    const tempId = -Date.now();
+    const userMsg: ChatMsg = {
+      id: tempId,
+      role: "user",
+      content: messageText,
+      createdAt: Date.now(),
+      attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+    };
+    setLocalMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
     setLoadingPhase("Thinking...");
     setStreamEvents([{ type: 'thinking', message: 'Processing your request...', timestamp: Date.now() }]);
     setBuildLog([]);
-
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     // Pre-create conversation if this is a new chat, so we can connect SSE before sending
     let convIdForStream = activeConversationId;
@@ -1186,29 +1250,20 @@ export default function ChatPage() {
     }
 
     try {
-      // Upload files and append their URLs to the message
+      // Build final message with attachment URLs for the AI
       let finalMessage = messageText;
-      if (selectedFiles.length > 0) {
-        const uploadedUrls: string[] = [];
-        for (const file of selectedFiles) {
-          try {
-            const formData = new FormData();
-            formData.append('file', file);
-            const uploadRes = await fetch('/api/chat/upload', {
-              method: 'POST',
-              body: formData,
-              credentials: 'include',
-            });
-            if (uploadRes.ok) {
-              const { url } = await uploadRes.json();
-              uploadedUrls.push(`[Attached file: ${file.name}](${url})`);
-            }
-          } catch (e) {
-            console.error('File upload failed:', e);
+      if (uploadedAttachments.length > 0) {
+        const attachmentLines = uploadedAttachments.map(a => {
+          if (a.mimeType.startsWith('image/')) {
+            return `[Attached image: ${a.name}](${a.url})`;
           }
-        }
-        if (uploadedUrls.length > 0) {
-          finalMessage += '\n\n' + uploadedUrls.join('\n');
+          return `[Attached file: ${a.name}](${a.url})`;
+        });
+        finalMessage += '\n\n' + attachmentLines.join('\n');
+        const hasImages = uploadedAttachments.some(a => a.mimeType.startsWith('image/'));
+        if (hasImages) {
+          finalMessage += '\n\nI have attached image(s) above. Please analyze them using the read_uploaded_file tool.';
+        } else {
           finalMessage += '\n\nPlease read the attached file(s) using the read_uploaded_file tool to see their contents.';
         }
       }
@@ -1648,7 +1703,31 @@ export default function ChatPage() {
                               </div>
                             </>
                           ) : (
-                            <p className="whitespace-pre-wrap break-words overflow-hidden">{msg.content}</p>
+                            <>
+                              {/* Show attached images inline in user message */}
+                              {msg.attachments && msg.attachments.length > 0 && (
+                                <div className="mb-2 space-y-2">
+                                  {msg.attachments.filter(a => a.mimeType.startsWith('image/')).map((att, ai) => (
+                                    <div key={ai} className="rounded-lg overflow-hidden border border-white/10">
+                                      <img
+                                        src={att.url}
+                                        alt={att.name}
+                                        className="max-w-full max-h-[300px] object-contain rounded-lg"
+                                        loading="lazy"
+                                      />
+                                    </div>
+                                  ))}
+                                  {msg.attachments.filter(a => !a.mimeType.startsWith('image/')).map((att, ai) => (
+                                    <div key={ai} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/10 text-xs">
+                                      <Paperclip className="h-3 w-3 shrink-0" />
+                                      <a href={att.url} target="_blank" rel="noopener noreferrer" className="underline truncate">{att.name}</a>
+                                      <span className="text-white/60 shrink-0">({Math.round(att.size / 1024)}KB)</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <p className="whitespace-pre-wrap break-words overflow-hidden">{msg.content}</p>
+                            </>
                           )}
                         </div>
                         {/* Action buttons below assistant messages */}
@@ -1755,7 +1834,8 @@ export default function ChatPage() {
                             onClick={async () => {
                               try {
                                 if (activeConversationId) {
-                                  await fetch(`/api/chat/abort/${activeConversationId}`, { method: 'POST' });
+                                  const csrfTkn = document.cookie.split('; ').find(c => c.startsWith('csrf_token='))?.split('=')[1] || '';
+                                   await fetch(`/api/chat/abort/${activeConversationId}`, { method: 'POST', credentials: 'include', headers: csrfTkn ? { 'x-csrf-token': csrfTkn } : {} });
                                 }
                                 if (eventSourceRef.current) {
                                   eventSourceRef.current.close();
@@ -1827,15 +1907,33 @@ export default function ChatPage() {
           {selectedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2 p-2 bg-muted/30 rounded-lg">
               {selectedFiles.map((file, index) => (
-                <div key={index} className="flex items-center gap-1 bg-background px-2 py-1 rounded-md border border-border/50">
-                  <Paperclip className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs truncate max-w-[100px] sm:max-w-[120px]">{file.name}</span>
-                  <button
-                    onClick={() => setSelectedFiles(selectedFiles.filter((_, i) => i !== index))}
-                    className="text-muted-foreground hover:text-red-500 transition-colors ml-1"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
+                <div key={index} className="relative group">
+                  {file.type.startsWith('image/') ? (
+                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden border border-border/50 bg-background">
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={file.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        onClick={() => setSelectedFiles(selectedFiles.filter((_, i) => i !== index))}
+                        className="absolute top-0.5 right-0.5 bg-black/70 rounded-full p-0.5 text-white hover:bg-red-500 transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 bg-background px-2 py-1 rounded-md border border-border/50">
+                      <Paperclip className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs truncate max-w-[100px] sm:max-w-[120px]">{file.name}</span>
+                      <button
+                        onClick={() => setSelectedFiles(selectedFiles.filter((_, i) => i !== index))}
+                        className="text-muted-foreground hover:text-red-500 transition-colors ml-1"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1977,6 +2075,15 @@ export default function ChatPage() {
             <button onClick={() => handleSend('/help')} className="text-primary hover:underline cursor-pointer">/help</button>
             {' · Conversations saved automatically · Powered by AI'}
           </p>
+          <div className="flex justify-center mt-2">
+            <img
+              src="/Madebyleego.png"
+              alt="Created by Leego"
+              className="h-16 w-16 object-contain opacity-100 brightness-110 transition-all duration-300 drop-shadow-[0_0_14px_rgba(0,255,50,0.8)] hover:drop-shadow-[0_0_22px_rgba(0,255,50,1)] hover:brightness-125 animate-pulse"
+              style={{ filter: 'drop-shadow(0 0 10px rgba(0, 255, 50, 0.7)) drop-shadow(0 0 20px rgba(0, 255, 50, 0.4)) drop-shadow(0 0 40px rgba(0, 255, 50, 0.2))' }}
+              loading="lazy"
+            />
+          </div>
         </div>
       </div>
       {/* Token Input Panel */}
@@ -2135,14 +2242,36 @@ export default function ChatPage() {
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {file.url && (
-                      <a
-                        href={file.url}
-                        download={file.name}
-                        className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Download"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                      </a>
+              <button
+                onClick={async () => {
+                  try {
+                    // Create a blob with correct MIME type and force correct filename
+                    const blob = new Blob([file.url ? '' : ''], { type: 'application/octet-stream' });
+                    // Try fetching from S3 directly first
+                    const s3Res = await fetch(file.url, { mode: 'cors' }).catch(() => null);
+                    if (s3Res && s3Res.ok) {
+                      const fileBlob = await s3Res.blob();
+                      saveAs(new Blob([fileBlob], { type: 'application/octet-stream' }), file.name);
+                    } else {
+                      // S3 CORS blocked — use server-side zip endpoint for this file
+                      const zipRes = await fetch('/api/project-files/download-zip?all=true', { credentials: 'include' });
+                      if (zipRes.ok) {
+                        const zipBlob = await zipRes.blob();
+                        saveAs(zipBlob, 'project-files.zip');
+                        toast.info('Downloaded all files as zip');
+                      } else {
+                        toast.error('Download failed');
+                      }
+                    }
+                  } catch {
+                    toast.error('Download failed');
+                  }
+                }}
+                className="p-1.5 rounded-lg hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                title="Download"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </button>
                     )}
                     {file.url && (
                       <a
@@ -2162,16 +2291,24 @@ export default function ChatPage() {
           </div>
           <div className="border-t border-border p-3 space-y-2">
             <Button
-              onClick={() => {
-                createdFiles.forEach(f => {
-                  if (f.url) {
-                    const a = document.createElement('a');
-                    a.href = f.url;
-                    a.download = f.name;
-                    a.click();
+              onClick={async () => {
+                try {
+                  toast.info('Preparing zip file...');
+                  // Use server-side zip endpoint — avoids CORS, preserves filenames
+                  const res = await fetch('/api/project-files/download-zip?all=true', {
+                    credentials: 'include',
+                  });
+                  if (res.ok) {
+                    const blob = await res.blob();
+                    saveAs(blob, 'project-files.zip');
+                    toast.success(`Downloaded ${createdFiles.length} files as project-files.zip`);
+                  } else {
+                    const err = await res.json().catch(() => ({ error: 'Download failed' }));
+                    toast.error(err.error || 'Download failed');
                   }
-                });
-                toast.success('Downloading all files...');
+                } catch (err) {
+                  toast.error('Download failed — please try again');
+                }
               }}
               variant="outline"
               size="sm"
