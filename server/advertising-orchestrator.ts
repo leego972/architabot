@@ -56,6 +56,7 @@ import { eq, desc, and, gte, sql, count } from "drizzle-orm";
 import { runTikTokContentPipeline, getTikTokContentStats, isTikTokContentConfigured } from "./tiktok-content-service";
 import { createLogger } from "./_core/logger.js";
 import { getErrorMessage } from "./_core/errors.js";
+import { generateShortFormVideo, generateMarketingVideo, generateSocialClip, isVideoGenerationAvailable } from "./_core/videoGeneration";
 const log = createLogger("AdvertisingOrchestrator");
 
 // ============================================
@@ -1647,11 +1648,48 @@ Return JSON: { "hook": "...", "script": "...", "visualDirections": ["..."], "has
       } as any);
     }
 
+    // Generate actual video file using Pollinations (free)
+    let videoUrl: string | null = null;
+    if (isVideoGenerationAvailable()) {
+      try {
+        log.info(`Generating actual video for ${platform} script: "${video.hook}"`);
+        const videoResult = await generateShortFormVideo(
+          video.hook,
+          video.script?.substring(0, 200) || video.hook
+        );
+        videoUrl = videoResult.url;
+        log.info(`Video generated: ${videoUrl} (${videoResult.model}, ${videoResult.duration}s)`);
+
+        // Store video reference alongside the script
+        if (db) {
+          await db.insert(marketingContent).values({
+            channel: "content_seo" as any,
+            contentType: "video" as any,
+            title: `[VIDEO] ${video.hook}`,
+            body: videoUrl,
+            platform: platform.toLowerCase().replace(/\s+/g, "_"),
+            status: "approved",
+            metadata: { 
+              platform: video.platform, 
+              hashtags: video.hashtags, 
+              model: videoResult.model,
+              duration: videoResult.duration,
+              aspectRatio: videoResult.aspectRatio,
+              scriptId: video.hook,
+            },
+          } as any);
+        }
+      } catch (videoErr: unknown) {
+        log.warn(`Video file generation failed (script still saved): ${getErrorMessage(videoErr)}`);
+      }
+    }
+
+    const videoNote = videoUrl ? ` + video generated: ${videoUrl}` : " (script only, video gen unavailable)";
     return {
       channel,
       action: "generate_video_script",
       status: "success",
-      details: `Generated ${platform} script: "${video.hook}" (${video.estimatedDuration})`,
+      details: `Generated ${platform} script: "${video.hook}" (${video.estimatedDuration})${videoNote}`,
       cost: 0,
     };
   } catch (err: unknown) {
@@ -1660,6 +1698,76 @@ Return JSON: { "hook": "...", "script": "...", "visualDirections": ["..."], "has
       action: "generate_video_script",
       status: "failed",
       details: `Video script generation failed: ${getErrorMessage(err)}`,
+      cost: 0,
+    };
+  }
+}
+
+// ============================================
+// VIDEO AD GENERATION (Pollinations.ai - FREE)
+// ============================================
+
+/**
+ * Generate a marketing video ad for social media campaigns.
+ * Uses Pollinations.ai free tier — zero cost.
+ */
+async function generateVideoAd(): Promise<AdvertisingAction> {
+  try {
+    if (!isVideoGenerationAvailable()) {
+      return {
+        channel: "social_organic" as FreeChannel,
+        action: "generate_video_ad",
+        status: "skipped",
+        details: "Video generation not available",
+        cost: 0,
+      };
+    }
+
+    const pillar = CONTENT_PILLARS[Math.floor(Math.random() * CONTENT_PILLARS.length)];
+    const topic = pillar.blogTopics[Math.floor(Math.random() * pillar.blogTopics.length)];
+    const platforms = ["tiktok", "youtube", "linkedin", "twitter"] as const;
+    const platform = platforms[Math.floor(Math.random() * platforms.length)];
+
+    log.info(`Generating ${platform} video ad about: ${topic}`);
+
+    const videoResult = await generateSocialClip(
+      `${pillar.pillar}: ${topic}`,
+      platform
+    );
+
+    // Store in content queue
+    const db = await getDb();
+    if (db) {
+      await db.insert(marketingContent).values({
+        channel: "content_seo" as any,
+        contentType: "video" as any,
+        title: `[AD] ${topic}`,
+        body: videoResult.url,
+        platform,
+        status: "approved",
+        metadata: {
+          pillar: pillar.pillar,
+          model: videoResult.model,
+          duration: videoResult.duration,
+          aspectRatio: videoResult.aspectRatio,
+          type: "video_ad",
+        },
+      } as any);
+    }
+
+    return {
+      channel: (platform === "tiktok" ? "tiktok_organic" : platform === "youtube" ? "youtube_shorts" : "social_organic") as FreeChannel,
+      action: "generate_video_ad",
+      status: "success",
+      details: `Generated ${platform} video ad: "${topic}" (${videoResult.model}, ${videoResult.duration}s) → ${videoResult.url}`,
+      cost: 0,
+    };
+  } catch (err: unknown) {
+    return {
+      channel: "social_organic" as FreeChannel,
+      action: "generate_video_ad",
+      status: "failed",
+      details: `Video ad generation failed: ${getErrorMessage(err)}`,
       cost: 0,
     };
   }
@@ -2308,6 +2416,14 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
       actions.push(videoAction);
     } catch (err: unknown) {
       errors.push(`Video Scripts: ${getErrorMessage(err)}`);
+    }
+
+    // Generate video ads using Pollinations.ai (FREE)
+    try {
+      const videoAdAction = await generateVideoAd();
+      actions.push(videoAdAction);
+    } catch (err: unknown) {
+      errors.push(`Video Ads: ${getErrorMessage(err)}`);
     }
   }
 

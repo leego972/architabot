@@ -23,6 +23,14 @@ import {
   queryCreatorInfo,
   getPostStatus,
 } from "./tiktok-content-service";
+import {
+  generateVideo,
+  generateShortFormVideo,
+  generateMarketingVideo,
+  generateSocialClip,
+  getVideoGenerationStatus,
+  type GenerateVideoOptions,
+} from "./_core/videoGeneration";
 import { getDb } from "./db";
 import {
   marketingContent,
@@ -209,6 +217,80 @@ export const advertisingRouter = router({
   /**
    * Get budget breakdown and utilization
    */
+  /**
+   * Get video generation status and availability
+   */
+  getVideoStatus: adminProcedure.query(async () => {
+    return getVideoGenerationStatus();
+  }),
+
+  /**
+   * Generate a video from a text prompt
+   */
+  generateVideo: adminProcedure
+    .input(
+      z.object({
+        prompt: z.string().min(5).max(1000),
+        duration: z.number().min(1).max(8).default(4),
+        aspectRatio: z.enum(["16:9", "9:16", "1:1"]).default("16:9"),
+        model: z.enum(["seedance", "grok-video"]).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const result = await generateVideo({
+        prompt: input.prompt,
+        duration: input.duration,
+        aspectRatio: input.aspectRatio,
+        model: input.model,
+      });
+      return result;
+    }),
+
+  /**
+   * Generate a short-form vertical video (TikTok/YouTube Shorts)
+   */
+  generateShortVideo: adminProcedure
+    .input(
+      z.object({
+        hook: z.string().min(3).max(200),
+        scriptSummary: z.string().min(3).max(500),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const result = await generateShortFormVideo(input.hook, input.scriptSummary);
+      return result;
+    }),
+
+  /**
+   * Generate a marketing/ad video
+   */
+  generateAdVideo: adminProcedure
+    .input(
+      z.object({
+        topic: z.string().min(3).max(300),
+        cta: z.string().min(3).max(200),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const result = await generateMarketingVideo(input.topic, input.cta);
+      return result;
+    }),
+
+  /**
+   * Generate a social media clip for a specific platform
+   */
+  generateSocialClip: adminProcedure
+    .input(
+      z.object({
+        feature: z.string().min(3).max(300),
+        platform: z.enum(["tiktok", "youtube", "linkedin", "twitter", "instagram"]),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const result = await generateSocialClip(input.feature, input.platform);
+      return result;
+    }),
+
   getBudgetBreakdown: adminProcedure.query(async () => {
     const overview = getStrategyOverview();
     const performance = await getPerformanceMetrics(30);

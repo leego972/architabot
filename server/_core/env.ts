@@ -90,4 +90,6 @@ export const ENV = {
   whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN ?? "",
   whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? "",
   whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? "",
+  // Pollinations.ai - Free AI Video Generation
+  pollinationsApiKey: process.env.POLLINATIONS_API_KEY ?? "sk_KZ0EBVOHXycDd8YnvEZAvLDGnvhK33SP",
 };

@@ -1708,7 +1708,9 @@ var init_env = __esm({
       // WhatsApp Business Cloud API
       whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN ?? "",
       whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? "",
-      whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? ""
+      whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? "",
+      // Pollinations.ai - Free AI Video Generation
+      pollinationsApiKey: process.env.POLLINATIONS_API_KEY ?? "sk_KZ0EBVOHXycDd8YnvEZAvLDGnvhK33SP"
     };
   }
 });
@@ -6726,9 +6728,9 @@ async function appendBuildLog(projectId, entry) {
   const db = await getDb();
   if (!db) return;
   const [project] = await db.select({ buildLog: replicateProjects.buildLog }).from(replicateProjects).where(eq20(replicateProjects.id, projectId));
-  const log52 = project?.buildLog ?? [];
-  log52.push(entry);
-  await db.update(replicateProjects).set({ buildLog: log52 }).where(eq20(replicateProjects.id, projectId));
+  const log53 = project?.buildLog ?? [];
+  log53.push(entry);
+  await db.update(replicateProjects).set({ buildLog: log53 }).where(eq20(replicateProjects.id, projectId));
 }
 var init_replicate_engine = __esm({
   "server/replicate-engine.ts"() {
@@ -8818,7 +8820,7 @@ import { eq as eq52, sql as sql28 } from "drizzle-orm";
 async function seedBlogPosts() {
   const db = await getDb();
   if (!db) {
-    log50.info("[BlogSeed] DB not available, skipping");
+    log51.info("[BlogSeed] DB not available, skipping");
     return 0;
   }
   const posts = blog_seed_data_default;
@@ -8855,7 +8857,7 @@ async function seedBlogPosts() {
       inserted++;
     } catch (err) {
       if (err?.code === "ER_DUP_ENTRY") continue;
-      log50.error(`[BlogSeed] Failed to insert "${post.slug}":`, { error: getErrorMessage(err) });
+      log51.error(`[BlogSeed] Failed to insert "${post.slug}":`, { error: getErrorMessage(err) });
     }
   }
   if (inserted > 0) {
@@ -8881,7 +8883,7 @@ async function seedBlogPosts() {
   }
   return inserted;
 }
-var log50;
+var log51;
 var init_blog_seed = __esm({
   "server/blog-seed.ts"() {
     "use strict";
@@ -8890,7 +8892,7 @@ var init_blog_seed = __esm({
     init_blog_seed_data();
     init_logger();
     init_errors();
-    log50 = createLogger("BlogSeed");
+    log51 = createLogger("BlogSeed");
   }
 });
 
@@ -14588,20 +14590,20 @@ function auditLogsToCsv(logs) {
     }
     return str;
   }
-  const rows = logs.map((log52) => {
-    const timestamp2 = log52.createdAt instanceof Date ? log52.createdAt.toISOString() : String(log52.createdAt);
-    const details = log52.details && typeof log52.details === "object" ? JSON.stringify(log52.details) : "";
+  const rows = logs.map((log53) => {
+    const timestamp2 = log53.createdAt instanceof Date ? log53.createdAt.toISOString() : String(log53.createdAt);
+    const details = log53.details && typeof log53.details === "object" ? JSON.stringify(log53.details) : "";
     return [
-      log52.id,
+      log53.id,
       timestamp2,
-      log52.userId,
-      escapeField(log52.userName),
-      escapeField(log52.userEmail),
-      escapeField(log52.action),
-      escapeField(log52.resource),
-      escapeField(log52.resourceId),
+      log53.userId,
+      escapeField(log53.userName),
+      escapeField(log53.userEmail),
+      escapeField(log53.action),
+      escapeField(log53.resource),
+      escapeField(log53.resourceId),
       escapeField(details),
-      escapeField(log52.ipAddress)
+      escapeField(log53.ipAddress)
     ].join(",");
   });
   return [header, ...rows].join("\n");
@@ -28007,9 +28009,9 @@ function registerV5ApiRoutes(app) {
       const limit = Math.min(parseInt(req.query.limit) || 1e3, 1e4);
       const result = await queryAuditLogs2({ limit, offset: 0 });
       const header = "ID,Timestamp,User,Action,Resource,Details";
-      const rows = result.logs.map((log52) => {
-        const details = typeof log52.details === "object" ? JSON.stringify(log52.details).replace(/"/g, '""') : log52.details || "";
-        return `${log52.id},${log52.createdAt},"${log52.userName || ""}","${log52.action}","${log52.resource || ""}","${details}"`;
+      const rows = result.logs.map((log53) => {
+        const details = typeof log53.details === "object" ? JSON.stringify(log53.details).replace(/"/g, '""') : log53.details || "";
+        return `${log53.id},${log53.createdAt},"${log53.userName || ""}","${log53.action}","${log53.resource || ""}","${details}"`;
       });
       const csv = [header, ...rows].join("\n");
       res.setHeader("Content-Type", "text/csv");
@@ -39922,7 +39924,7 @@ var log37 = createLogger("SeoEngine");
 var SITE_URL = "https://www.archibaldtitan.com";
 var SITE_NAME = "Archibald Titan";
 var SITE_DESCRIPTION = "The World's Most Advanced Local AI Agent. Autonomously retrieve API keys and credentials from 15+ providers. AES-256 encrypted vault, stealth browser, CAPTCHA solving, and residential proxy support.";
-var SITE_LOGO = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663339631904/sLzpMdFCYCLKTLES.png";
+var SITE_LOGO = "/logos/at-icon-256.png";
 var SITE_TWITTER = "@ArchibaldTitan";
 var SITE_CONTACT_EMAIL = "security@archibaldtitan.com";
 var SUPPORTED_LOCALES = [
@@ -42895,7 +42897,138 @@ async function getTikTokContentStats() {
 // server/advertising-orchestrator.ts
 init_logger();
 init_errors();
-var log39 = createLogger("AdvertisingOrchestrator");
+
+// server/_core/videoGeneration.ts
+init_storage();
+init_env();
+init_logger();
+var log39 = createLogger("VideoGeneration");
+var RESOLUTION_MAP = {
+  "16:9": { width: 848, height: 480 },
+  "9:16": { width: 480, height: 848 },
+  "1:1": { width: 480, height: 480 }
+};
+async function generateWithModel(model, options) {
+  const duration = Math.min(Math.max(options.duration || 4, 1), 8);
+  const aspectRatio = options.aspectRatio || "16:9";
+  const resolution = RESOLUTION_MAP[aspectRatio];
+  const encodedPrompt = encodeURIComponent(options.prompt);
+  const params = new URLSearchParams();
+  params.set("model", model);
+  params.set("duration", String(duration));
+  params.set("width", String(resolution.width));
+  params.set("height", String(resolution.height));
+  if (options.seed !== void 0) {
+    params.set("seed", String(options.seed));
+  }
+  const url = `https://gen.pollinations.ai/video/${encodedPrompt}?${params.toString()}`;
+  log39.info(`Requesting video from Pollinations (model: ${model}, ${resolution.width}x${resolution.height}, ${duration}s)`);
+  const headers = {};
+  const apiKey = ENV.pollinationsApiKey;
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+  const resp = await fetch(url, {
+    method: "GET",
+    headers,
+    signal: AbortSignal.timeout(3e5)
+    // 5 minute timeout — video gen is slow
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "Unknown error");
+    throw new Error(`Pollinations ${model} failed (${resp.status}): ${errText}`);
+  }
+  const contentType = resp.headers.get("content-type") || "";
+  if (contentType.includes("video") || contentType.includes("octet-stream")) {
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    if (buffer.length < 1e3) {
+      throw new Error(`Pollinations ${model} returned too-small response (${buffer.length} bytes)`);
+    }
+    return buffer;
+  }
+  if (contentType.includes("json")) {
+    const data = await resp.json();
+    const videoUrl = data.url || data.video_url || data.output;
+    if (videoUrl) {
+      log39.info(`Pollinations ${model} returned URL, downloading...`);
+      const downloadResp = await fetch(videoUrl, { signal: AbortSignal.timeout(12e4) });
+      if (!downloadResp.ok) throw new Error(`Failed to download video from ${videoUrl}`);
+      return Buffer.from(await downloadResp.arrayBuffer());
+    }
+    throw new Error(`Pollinations ${model} returned JSON without video URL`);
+  }
+  if (resp.url && resp.url !== url) {
+    log39.info(`Pollinations ${model} redirected, downloading from: ${resp.url}`);
+    const downloadResp = await fetch(resp.url, { signal: AbortSignal.timeout(12e4) });
+    if (!downloadResp.ok) throw new Error(`Failed to download redirected video`);
+    return Buffer.from(await downloadResp.arrayBuffer());
+  }
+  throw new Error(`Pollinations ${model} returned unexpected content-type: ${contentType}`);
+}
+async function generateVideo(options) {
+  const modelsToTry = options.model ? [options.model] : ["seedance", "grok-video"];
+  const duration = Math.min(Math.max(options.duration || 4, 1), 8);
+  const aspectRatio = options.aspectRatio || "16:9";
+  let lastError = null;
+  for (const model of modelsToTry) {
+    try {
+      log39.info(`Attempting video generation with ${model}...`);
+      const videoBuffer = await generateWithModel(model, options);
+      const filename = `videos/pollinations-${model}-${Date.now()}.mp4`;
+      const { url } = await storagePut(filename, videoBuffer, "video/mp4");
+      log39.info(`Video generated successfully with ${model} (${videoBuffer.length} bytes) \u2192 ${url}`);
+      return {
+        url,
+        model,
+        duration,
+        aspectRatio
+      };
+    } catch (err) {
+      lastError = err;
+      log39.warn(`Model ${model} failed: ${err.message}`);
+    }
+  }
+  throw new Error(`Video generation failed with all models. Last error: ${lastError?.message || "Unknown"}`);
+}
+async function generateShortFormVideo(hook, scriptSummary) {
+  const prompt = `Cinematic cybersecurity themed short video. Scene: ${hook}. ${scriptSummary}. Dark futuristic aesthetic with neon blue and green accents, digital particles, holographic interfaces. Professional quality, dramatic lighting.`;
+  return generateVideo({
+    prompt,
+    duration: 5,
+    aspectRatio: "9:16"
+  });
+}
+async function generateMarketingVideo(topic, cta) {
+  const prompt = `Professional cybersecurity marketing video about ${topic}. Sleek dark UI with glowing elements, data streams, shield icons, lock animations. Modern tech aesthetic. Call to action: ${cta}. Archibald Titan branding. High quality, cinematic.`;
+  return generateVideo({
+    prompt,
+    duration: 6,
+    aspectRatio: "16:9"
+  });
+}
+async function generateSocialClip(feature, platform) {
+  const isVertical = ["tiktok", "youtube", "instagram"].includes(platform);
+  const prompt = `Dynamic tech product showcase video for ${feature}. Cybersecurity theme with dark background, neon accents, floating UI elements, encrypted data visualization. Fast-paced, engaging, modern. Professional quality for ${platform}.`;
+  return generateVideo({
+    prompt,
+    duration: isVertical ? 5 : 4,
+    aspectRatio: isVertical ? "9:16" : "16:9"
+  });
+}
+function isVideoGenerationAvailable() {
+  return true;
+}
+function getVideoGenerationStatus() {
+  return {
+    available: true,
+    provider: "Pollinations.ai (Free)",
+    hasApiKey: !!ENV.pollinationsApiKey,
+    models: ["seedance", "grok-video"]
+  };
+}
+
+// server/advertising-orchestrator.ts
+var log40 = createLogger("AdvertisingOrchestrator");
 var MONTHLY_BUDGET_AUD = 500;
 var GOOGLE_ADS_ALLOCATION = 500;
 var CONTENT_PILLARS = [
@@ -44068,8 +44201,23 @@ async function publishToExpandedChannels() {
         ],
         response_format: { type: "json_schema", json_schema: { name: "telegram_msg", strict: true, schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false } } }
       });
-      const msg = JSON.parse(response.choices[0].message.content || "{}");
-      const result = await telegramAdapter.sendMessage({ text: msg.text, parseMode: "Markdown" });
+      const raw = response.choices[0].message.content || "{}";
+      let telegramText = "";
+      try {
+        const parsed = JSON.parse(raw);
+        telegramText = parsed.text ?? raw;
+        if (typeof telegramText === "string" && telegramText.startsWith("{")) {
+          try {
+            const inner = JSON.parse(telegramText);
+            telegramText = inner.text ?? telegramText;
+          } catch {
+          }
+        }
+      } catch {
+        const match = raw.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        telegramText = match ? match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"') : raw;
+      }
+      const result = await telegramAdapter.sendMessage({ text: telegramText, parseMode: "Markdown" });
       actions.push({ channel: "telegram_channel", action: "send_broadcast", status: result.success ? "success" : "failed", details: result.success ? `Broadcast to Telegram` : `Telegram failed: ${result.error}`, cost: 0 });
     } catch (err) {
       actions.push({ channel: "telegram_channel", action: "send_broadcast", status: "failed", details: `Telegram: ${getErrorMessage(err)}`, cost: 0 });
@@ -44243,11 +44391,44 @@ Return JSON: { "hook": "...", "script": "...", "visualDirections": ["..."], "has
         metadata: { platform: video.platform, hashtags: video.hashtags, duration: video.estimatedDuration }
       });
     }
+    let videoUrl = null;
+    if (isVideoGenerationAvailable()) {
+      try {
+        log40.info(`Generating actual video for ${platform} script: "${video.hook}"`);
+        const videoResult = await generateShortFormVideo(
+          video.hook,
+          video.script?.substring(0, 200) || video.hook
+        );
+        videoUrl = videoResult.url;
+        log40.info(`Video generated: ${videoUrl} (${videoResult.model}, ${videoResult.duration}s)`);
+        if (db) {
+          await db.insert(marketingContent).values({
+            channel: "content_seo",
+            contentType: "video",
+            title: `[VIDEO] ${video.hook}`,
+            body: videoUrl,
+            platform: platform.toLowerCase().replace(/\s+/g, "_"),
+            status: "approved",
+            metadata: {
+              platform: video.platform,
+              hashtags: video.hashtags,
+              model: videoResult.model,
+              duration: videoResult.duration,
+              aspectRatio: videoResult.aspectRatio,
+              scriptId: video.hook
+            }
+          });
+        }
+      } catch (videoErr) {
+        log40.warn(`Video file generation failed (script still saved): ${getErrorMessage(videoErr)}`);
+      }
+    }
+    const videoNote = videoUrl ? ` + video generated: ${videoUrl}` : " (script only, video gen unavailable)";
     return {
       channel,
       action: "generate_video_script",
       status: "success",
-      details: `Generated ${platform} script: "${video.hook}" (${video.estimatedDuration})`,
+      details: `Generated ${platform} script: "${video.hook}" (${video.estimatedDuration})${videoNote}`,
       cost: 0
     };
   } catch (err) {
@@ -44256,6 +44437,61 @@ Return JSON: { "hook": "...", "script": "...", "visualDirections": ["..."], "has
       action: "generate_video_script",
       status: "failed",
       details: `Video script generation failed: ${getErrorMessage(err)}`,
+      cost: 0
+    };
+  }
+}
+async function generateVideoAd() {
+  try {
+    if (!isVideoGenerationAvailable()) {
+      return {
+        channel: "social_organic",
+        action: "generate_video_ad",
+        status: "skipped",
+        details: "Video generation not available",
+        cost: 0
+      };
+    }
+    const pillar = CONTENT_PILLARS[Math.floor(Math.random() * CONTENT_PILLARS.length)];
+    const topic = pillar.blogTopics[Math.floor(Math.random() * pillar.blogTopics.length)];
+    const platforms = ["tiktok", "youtube", "linkedin", "twitter"];
+    const platform = platforms[Math.floor(Math.random() * platforms.length)];
+    log40.info(`Generating ${platform} video ad about: ${topic}`);
+    const videoResult = await generateSocialClip(
+      `${pillar.pillar}: ${topic}`,
+      platform
+    );
+    const db = await getDb();
+    if (db) {
+      await db.insert(marketingContent).values({
+        channel: "content_seo",
+        contentType: "video",
+        title: `[AD] ${topic}`,
+        body: videoResult.url,
+        platform,
+        status: "approved",
+        metadata: {
+          pillar: pillar.pillar,
+          model: videoResult.model,
+          duration: videoResult.duration,
+          aspectRatio: videoResult.aspectRatio,
+          type: "video_ad"
+        }
+      });
+    }
+    return {
+      channel: platform === "tiktok" ? "tiktok_organic" : platform === "youtube" ? "youtube_shorts" : "social_organic",
+      action: "generate_video_ad",
+      status: "success",
+      details: `Generated ${platform} video ad: "${topic}" (${videoResult.model}, ${videoResult.duration}s) \u2192 ${videoResult.url}`,
+      cost: 0
+    };
+  } catch (err) {
+    return {
+      channel: "social_organic",
+      action: "generate_video_ad",
+      status: "failed",
+      details: `Video ad generation failed: ${getErrorMessage(err)}`,
       cost: 0
     };
   }
@@ -44363,7 +44599,7 @@ function shouldSkipChannel(channel) {
   if (!perf || perf.totalAttempts < 5) return false;
   const successRate = perf.successes / perf.totalAttempts;
   if (perf.totalAttempts >= 10 && successRate < 0.1) {
-    log39.info(`[AdvertisingOrchestrator] Throttling channel ${channel}: ${Math.round(successRate * 100)}% success rate`);
+    log40.info(`[AdvertisingOrchestrator] Throttling channel ${channel}: ${Math.round(successRate * 100)}% success rate`);
     return true;
   }
   if (successRate < 0.3 && Math.random() > 0.5) {
@@ -44522,7 +44758,7 @@ async function runAdvertisingCycle() {
   const errors = [];
   const now = /* @__PURE__ */ new Date();
   const dayOfWeek = now.getDay();
-  log39.info("[AdvertisingOrchestrator] Starting autonomous advertising cycle v2 (with intelligence layer)...");
+  log40.info("[AdvertisingOrchestrator] Starting autonomous advertising cycle v2 (with intelligence layer)...");
   try {
     const healthAction = await monitorCampaignHealth();
     actions.push(healthAction);
@@ -44551,7 +44787,7 @@ async function runAdvertisingCycle() {
       recordChannelPerformance("blog_content", false, Date.now() - t0);
     }
   }
-  if ([2, 4, 6].includes(dayOfWeek)) {
+  if ([3, 5].includes(dayOfWeek)) {
     const t0 = Date.now();
     try {
       const recycleAction = await recycleTopContent();
@@ -44587,7 +44823,7 @@ async function runAdvertisingCycle() {
       recordChannelPerformance("community_engagement", false, Date.now() - t0);
     }
   }
-  if ([2, 4].includes(dayOfWeek)) {
+  if (dayOfWeek === 3) {
     try {
       const emailAction = await generateEmailNurture();
       actions.push(emailAction);
@@ -44603,7 +44839,7 @@ async function runAdvertisingCycle() {
       errors.push(`Outreach: ${getErrorMessage(err)}`);
     }
   }
-  if ([3, 6].includes(dayOfWeek)) {
+  if ([3, 5].includes(dayOfWeek)) {
     try {
       const affiliateAction = await optimizeAffiliateNetwork();
       actions.push(affiliateAction);
@@ -44620,7 +44856,7 @@ async function runAdvertisingCycle() {
   } catch (err) {
     errors.push(`Expanded Channels: ${getErrorMessage(err)}`);
   }
-  if ([1, 3, 5, 6].includes(dayOfWeek) && !shouldSkipChannel("hackforums")) {
+  if (!shouldSkipChannel("hackforums")) {
     const t0 = Date.now();
     try {
       const hackerAction = await generateHackerForumContent();
@@ -44631,7 +44867,7 @@ async function runAdvertisingCycle() {
       recordChannelPerformance("hackforums", false, Date.now() - t0);
     }
   }
-  if ([2, 4, 6].includes(dayOfWeek)) {
+  if ([3, 5].includes(dayOfWeek)) {
     try {
       const tiktokResult = await runTikTokContentPipeline();
       actions.push({
@@ -44649,6 +44885,12 @@ async function runAdvertisingCycle() {
       actions.push(videoAction);
     } catch (err) {
       errors.push(`Video Scripts: ${getErrorMessage(err)}`);
+    }
+    try {
+      const videoAdAction = await generateVideoAd();
+      actions.push(videoAdAction);
+    } catch (err) {
+      errors.push(`Video Ads: ${getErrorMessage(err)}`);
     }
   }
   try {
@@ -44694,7 +44936,7 @@ async function runAdvertisingCycle() {
       });
     }
   } catch (err) {
-    log39.error("[AdvertisingOrchestrator] Failed to log cycle:", { error: String(getErrorMessage(err)) });
+    log40.error("[AdvertisingOrchestrator] Failed to log cycle:", { error: String(getErrorMessage(err)) });
   }
   const hackerForumChannels = ["hackforums", "0x00sec", "nullbyte", "hackthebox_community", "tryhackme_community", "owasp_community", "offensive_security", "ctftime", "breachforums_alt"];
   const expandedApiChannels = ["devto_crosspost", "medium_republish", "hashnode_crosspost", "discord_community", "mastodon_infosec", "telegram_channel", "whatsapp_broadcast"];
@@ -44743,7 +44985,7 @@ Active A/B tests: ${getActiveABTests().length}${errors.length > 0 ? "\n\nErrors:
     });
   } catch {
   }
-  log39.info(`[AdvertisingOrchestrator] Cycle complete: ${successCount} success, ${failCount} failed, ${duration}ms`);
+  log40.info(`[AdvertisingOrchestrator] Cycle complete: ${successCount} success, ${failCount} failed, ${duration}ms`);
   const nextRun = /* @__PURE__ */ new Date();
   nextRun.setDate(nextRun.getDate() + 1);
   nextRun.setHours(9, 0, 0, 0);
@@ -44757,17 +44999,26 @@ Active A/B tests: ${getActiveABTests().length}${errors.length > 0 ? "\n\nErrors:
   };
 }
 var advertisingInterval = null;
+var ADVERTISING_RUN_DAYS = [1, 3, 5];
 function startAdvertisingScheduler() {
-  log39.info("[AdvertisingOrchestrator] Starting autonomous advertising scheduler...");
-  log39.info("[AdvertisingOrchestrator] Skipping startup cycle (cost optimization). Next run in 24h.");
+  log40.info("[AdvertisingOrchestrator] Starting autonomous advertising scheduler (Mon/Wed/Fri)...");
+  log40.info("[AdvertisingOrchestrator] Skipping startup cycle (cost optimization). Checking every 4h for run days.");
+  let lastRunDate = "";
   advertisingInterval = setInterval(async () => {
     try {
-      log39.info("[AdvertisingOrchestrator] Running scheduled advertising cycle...");
-      await runAdvertisingCycle();
+      const now = /* @__PURE__ */ new Date();
+      const dayOfWeek = now.getDay();
+      const hour = now.getHours();
+      const todayStr = now.toISOString().slice(0, 10);
+      if (ADVERTISING_RUN_DAYS.includes(dayOfWeek) && hour >= 8 && hour <= 10 && lastRunDate !== todayStr) {
+        lastRunDate = todayStr;
+        log40.info(`[AdvertisingOrchestrator] Running scheduled advertising cycle (${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dayOfWeek]})...`);
+        await runAdvertisingCycle();
+      }
     } catch (err) {
-      log39.error("[AdvertisingOrchestrator] Scheduled cycle failed:", { error: String(getErrorMessage(err)) });
+      log40.error("[AdvertisingOrchestrator] Scheduled cycle failed:", { error: String(getErrorMessage(err)) });
     }
-  }, 24 * 60 * 60 * 1e3);
+  }, 4 * 60 * 60 * 1e3);
 }
 function getStrategyOverview() {
   const totalMonthlyBudget = MONTHLY_BUDGET_AUD;
@@ -44795,20 +45046,21 @@ function getStrategyOverview() {
       ...platform === "reddit" ? { subreddits: config.subreddits } : {}
     })),
     schedule: {
-      seoOptimization: "Daily",
+      advertisingCycle: "Mon/Wed/Fri (3x per week, 8-10 AM server time)",
+      seoOptimization: "Every cycle",
       blogPosts: "Mon/Wed/Fri",
-      socialMedia: "Daily (2-3 posts)",
-      communityEngagement: "Daily",
-      emailNurture: "Tue/Thu",
-      backlinkOutreach: "Monday",
-      affiliateOptimization: "Wed/Sat",
-      expandedChannels: "Daily (Dev.to, Medium, Hashnode, Discord, Mastodon, Telegram)",
-      hackerForums: "Mon/Wed/Fri/Sat (HackForums, 0x00sec, HTB, TryHackMe, OWASP, etc.)",
-      tiktokContent: "Tue/Thu/Sat (auto-generate & post carousels from blog content)",
-      videoScripts: "Tue/Thu/Sat (YouTube Shorts scripts)",
-      contentQueue: "Daily (Quora, Skool, IndieHackers, Pinterest, HN, LinkedIn, Slack)",
+      socialMedia: "Every cycle (2-3 posts)",
+      communityEngagement: "Every cycle",
+      emailNurture: "Wed only",
+      backlinkOutreach: "Monday only",
+      affiliateOptimization: "Wed/Fri",
+      expandedChannels: "Every cycle (Dev.to, Medium, Hashnode, Discord, Mastodon, Telegram)",
+      hackerForums: "Mon/Wed/Fri (HackForums, 0x00sec, HTB, TryHackMe, OWASP, etc.)",
+      tiktokContent: "Wed/Fri (auto-generate & post carousels from blog content)",
+      videoScripts: "Wed/Fri (YouTube Shorts scripts)",
+      contentQueue: "Every cycle (Quora, Skool, IndieHackers, Pinterest, HN, LinkedIn, Slack)",
       whatsappBroadcast: "Monday (weekly security tip)",
-      marketingEngineCycle: "Daily"
+      marketingEngineCycle: "Every cycle"
     }
   };
 }
@@ -45013,6 +45265,67 @@ var advertisingRouter = router({
   /**
    * Get budget breakdown and utilization
    */
+  /**
+   * Get video generation status and availability
+   */
+  getVideoStatus: adminProcedure.query(async () => {
+    return getVideoGenerationStatus();
+  }),
+  /**
+   * Generate a video from a text prompt
+   */
+  generateVideo: adminProcedure.input(
+    z38.object({
+      prompt: z38.string().min(5).max(1e3),
+      duration: z38.number().min(1).max(8).default(4),
+      aspectRatio: z38.enum(["16:9", "9:16", "1:1"]).default("16:9"),
+      model: z38.enum(["seedance", "grok-video"]).optional()
+    })
+  ).mutation(async ({ input }) => {
+    const result = await generateVideo({
+      prompt: input.prompt,
+      duration: input.duration,
+      aspectRatio: input.aspectRatio,
+      model: input.model
+    });
+    return result;
+  }),
+  /**
+   * Generate a short-form vertical video (TikTok/YouTube Shorts)
+   */
+  generateShortVideo: adminProcedure.input(
+    z38.object({
+      hook: z38.string().min(3).max(200),
+      scriptSummary: z38.string().min(3).max(500)
+    })
+  ).mutation(async ({ input }) => {
+    const result = await generateShortFormVideo(input.hook, input.scriptSummary);
+    return result;
+  }),
+  /**
+   * Generate a marketing/ad video
+   */
+  generateAdVideo: adminProcedure.input(
+    z38.object({
+      topic: z38.string().min(3).max(300),
+      cta: z38.string().min(3).max(200)
+    })
+  ).mutation(async ({ input }) => {
+    const result = await generateMarketingVideo(input.topic, input.cta);
+    return result;
+  }),
+  /**
+   * Generate a social media clip for a specific platform
+   */
+  generateSocialClip: adminProcedure.input(
+    z38.object({
+      feature: z38.string().min(3).max(300),
+      platform: z38.enum(["tiktok", "youtube", "linkedin", "twitter", "instagram"])
+    })
+  ).mutation(async ({ input }) => {
+    const result = await generateSocialClip(input.feature, input.platform);
+    return result;
+  }),
   getBudgetBreakdown: adminProcedure.query(async () => {
     const overview = getStrategyOverview();
     const performance = await getPerformanceMetrics(30);
@@ -45048,7 +45361,7 @@ init_logger();
 init_errors();
 import { eq as eq48 } from "drizzle-orm";
 import crypto14 from "crypto";
-var log40 = createLogger("MarketplaceSeed");
+var log41 = createLogger("MarketplaceSeed");
 function generateUid() {
   return crypto14.randomBytes(16).toString("hex");
 }
@@ -45838,7 +46151,7 @@ async function seedMarketplaceWithMerchants() {
         });
       }
     } catch (e) {
-      log40.warn(`[Marketplace Seed] Failed to create merchant "${bot.name}":`, { error: String(getErrorMessage(e)) });
+      log41.warn(`[Marketplace Seed] Failed to create merchant "${bot.name}":`, { error: String(getErrorMessage(e)) });
     }
   }
   const errors = [];
@@ -45885,7 +46198,7 @@ async function seedMarketplaceWithMerchants() {
       errors.push(`${mod.title}: ${getErrorMessage(e)?.substring(0, 150)}`);
     }
   }
-  log40.info(`[Marketplace Seed] Created ${merchantsCreated} merchants, ${listingsCreated} listings, ${skipped} skipped, ${errors.length} errors`);
+  log41.info(`[Marketplace Seed] Created ${merchantsCreated} merchants, ${listingsCreated} listings, ${skipped} skipped, ${errors.length} errors`);
   return { merchants: merchantsCreated, listings: listingsCreated, skipped, attempted, errors: errors.slice(0, 10), merchantMap: Object.fromEntries(merchantUserIds) };
 }
 
@@ -45894,7 +46207,7 @@ init_db();
 import { sql as sql27 } from "drizzle-orm";
 init_logger();
 init_errors();
-var log41 = createLogger("MarketplaceRouter");
+var log42 = createLogger("MarketplaceRouter");
 var SELLER_ANNUAL_FEE_USD = 1200;
 var SELLER_ANNUAL_FEE_CREDITS = 1200;
 var PLATFORM_COMMISSION_RATE = 0.08;
@@ -45956,7 +46269,7 @@ Tags: ${tags}`
       };
     }
   } catch (e) {
-    log41.warn("[Marketplace] AI review failed, defaulting to pending:", { error: String(e) });
+    log42.warn("[Marketplace] AI review failed, defaulting to pending:", { error: String(e) });
   }
   return { riskCategory: "safe", reviewNotes: "AI review unavailable \u2014 pending manual review", autoApprove: false };
 }
@@ -46806,7 +47119,7 @@ var marketplaceRouter = router({
         });
         stripeConnectAccountId = account.id;
       } catch (err) {
-        log41.error("[Payout] Stripe Connect account creation failed:", { error: String(getErrorMessage(err)) });
+        log42.error("[Payout] Stripe Connect account creation failed:", { error: String(getErrorMessage(err)) });
         throw new TRPCError28({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create Stripe Connect account: " + getErrorMessage(err) });
       }
     }
@@ -46842,7 +47155,7 @@ var marketplaceRouter = router({
         });
         onboardingUrl = accountLink.url;
       } catch (err) {
-        log41.warn("[Payout] Stripe onboarding link failed:", { error: String(getErrorMessage(err)) });
+        log42.warn("[Payout] Stripe onboarding link failed:", { error: String(getErrorMessage(err)) });
       }
     }
     return {
@@ -46983,14 +47296,14 @@ var marketplaceRouter = router({
       try {
         await database.execute(sql27.raw(ddl));
       } catch (e) {
-        log41.warn("[Seed] Table DDL:", { error: String(getErrorMessage(e)?.substring(0, 100)) });
+        log42.warn("[Seed] Table DDL:", { error: String(getErrorMessage(e)?.substring(0, 100)) });
       }
     }
     try {
       const result = await seedMarketplaceWithMerchants();
       return result;
     } catch (e) {
-      log41.error("[Marketplace] Seed failed:", { error: String(getErrorMessage(e)) });
+      log42.error("[Marketplace] Seed failed:", { error: String(getErrorMessage(e)) });
       throw new TRPCError28({ code: "INTERNAL_SERVER_ERROR", message: "Seed failed: " + getErrorMessage(e) });
     }
   })
@@ -47089,11 +47402,11 @@ import express from "express";
 import fs5 from "fs";
 import path5 from "path";
 init_logger();
-var log42 = createLogger("Static");
+var log43 = createLogger("Static");
 function serveStatic(app) {
   const distPath = process.env.NODE_ENV === "development" ? path5.resolve(import.meta.dirname, "../..", "dist", "public") : path5.resolve(import.meta.dirname, "public");
   if (!fs5.existsSync(distPath)) {
-    log42.error(`Could not find the build directory: ${distPath}, make sure to build the client first`);
+    log43.error(`Could not find the build directory: ${distPath}, make sure to build the client first`);
   }
   app.use(
     express.static(distPath, {
@@ -47133,7 +47446,7 @@ init_env();
 
 // server/email-service.ts
 init_logger();
-var log43 = createLogger("EmailService");
+var log44 = createLogger("EmailService");
 function wrapInTemplate(title, bodyHtml) {
   return `<!DOCTYPE html>
 <html>
@@ -47216,10 +47529,10 @@ This link expires in 1 hour.
 
 Please forward this to the user or they can use the link directly if they have access to the app.`
     });
-    log43.info(`[Email Service] Password reset email queued for ${email}`);
+    log44.info(`[Email Service] Password reset email queued for ${email}`);
     return true;
   } catch (error) {
-    log43.error(`[Email Service] Failed to send password reset email to ${email}:`, { error: String(error) });
+    log44.error(`[Email Service] Failed to send password reset email to ${email}:`, { error: String(error) });
     return false;
   }
 }
@@ -47258,17 +47571,17 @@ Verification link: ${verifyUrl}
 
 This link expires in 24 hours.`
     });
-    log43.info(`[Email Service] Verification email queued for ${email}`);
+    log44.info(`[Email Service] Verification email queued for ${email}`);
     return true;
   } catch (error) {
-    log43.error(`[Email Service] Failed to send verification email to ${email}:`, { error: String(error) });
+    log44.error(`[Email Service] Failed to send verification email to ${email}:`, { error: String(error) });
     return false;
   }
 }
 
 // server/email-auth-router.ts
 init_logger();
-var log44 = createLogger("EmailAuthRouter");
+var log45 = createLogger("EmailAuthRouter");
 var SALT_ROUNDS = 12;
 var MIN_PASSWORD_LENGTH = 8;
 var MAX_PASSWORD_LENGTH = 128;
@@ -47378,7 +47691,7 @@ function registerEmailAuthRoutes(app) {
         const existingUsers = await db.select({ id: users.id }).from(users).limit(1);
         if (existingUsers.length === 0) {
           role = "admin";
-          log44.info(`[EmailAuth] First user auto-promoted to admin: ${normalizedEmail}`);
+          log45.info(`[EmailAuth] First user auto-promoted to admin: ${normalizedEmail}`);
         }
       }
       const verificationToken = crypto15.randomBytes(48).toString("hex");
@@ -47412,7 +47725,7 @@ function registerEmailAuthRoutes(app) {
           linkedAt: /* @__PURE__ */ new Date(),
           lastUsedAt: /* @__PURE__ */ new Date()
         }).catch(() => {
-          log44.warn("[Email Auth] Failed to auto-link email provider");
+          log45.warn("[Email Auth] Failed to auto-link email provider");
         });
       }
       const baseUrl = req.headers.origin || getPublicOrigin(req);
@@ -47422,7 +47735,7 @@ function registerEmailAuthRoutes(app) {
         name?.trim() || normalizedEmail.split("@")[0],
         verifyUrl
       ).catch(() => {
-        log44.warn("[Email Auth] Failed to send verification email");
+        log45.warn("[Email Auth] Failed to send verification email");
       });
       return res.json({
         success: true,
@@ -47436,7 +47749,7 @@ function registerEmailAuthRoutes(app) {
         } : null
       });
     } catch (error) {
-      log44.error("[Email Auth] Registration failed:", { error: String(error) });
+      log45.error("[Email Auth] Registration failed:", { error: String(error) });
       return res.status(500).json({ error: "Registration failed. Please try again." });
     }
   });
@@ -47475,9 +47788,9 @@ function registerEmailAuthRoutes(app) {
         user.name || user.email,
         resetUrl
       ).catch(() => {
-        log44.warn("[Password Reset] Failed to send email");
+        log45.warn("[Password Reset] Failed to send email");
       });
-      log44.info(`[Password Reset] Token generated for ${user.email}: ${resetUrl}`);
+      log45.info(`[Password Reset] Token generated for ${user.email}: ${resetUrl}`);
       return res.json({
         success: true,
         message: "If an account with that email exists, a password reset link has been sent.",
@@ -47486,7 +47799,7 @@ function registerEmailAuthRoutes(app) {
         resetUrl
       });
     } catch (error) {
-      log44.error("[Password Reset] Request failed:", { error: String(error) });
+      log45.error("[Password Reset] Request failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to process password reset request. Please try again." });
     }
   });
@@ -47522,7 +47835,7 @@ function registerEmailAuthRoutes(app) {
         email: userResult[0]?.email || "your account"
       });
     } catch (error) {
-      log44.error("[Password Reset] Token verification failed:", { error: String(error) });
+      log45.error("[Password Reset] Token verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to verify token", valid: false });
     }
   });
@@ -47559,13 +47872,13 @@ function registerEmailAuthRoutes(app) {
       const passwordHash = await bcrypt3.hash(password, SALT_ROUNDS);
       await db.update(users).set({ passwordHash, updatedAt: /* @__PURE__ */ new Date() }).where(eq49(users.id, resetToken.userId));
       await db.update(passwordResetTokens).set({ usedAt: /* @__PURE__ */ new Date() }).where(eq49(passwordResetTokens.id, resetToken.id));
-      log44.info(`[Password Reset] Password successfully reset for userId: ${resetToken.userId}`);
+      log45.info(`[Password Reset] Password successfully reset for userId: ${resetToken.userId}`);
       return res.json({
         success: true,
         message: "Your password has been reset successfully. You can now sign in with your new password."
       });
     } catch (error) {
-      log44.error("[Password Reset] Reset failed:", { error: String(error) });
+      log45.error("[Password Reset] Reset failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to reset password. Please try again." });
     }
   });
@@ -47627,7 +47940,7 @@ function registerEmailAuthRoutes(app) {
       const loginUpdate = { lastSignedIn: /* @__PURE__ */ new Date() };
       if (user.role !== "admin" && (ENV.ownerEmails && ENV.ownerEmails.includes(normalizedEmail) || user.openId === ENV.ownerOpenId || user.id === 1)) {
         loginUpdate.role = "admin";
-        log44.info(`[EmailAuth] Auto-promoted user to admin on login: ${normalizedEmail}`);
+        log45.info(`[EmailAuth] Auto-promoted user to admin on login: ${normalizedEmail}`);
       }
       await db.update(users).set(loginUpdate).where(eq49(users.id, user.id));
       const sessionToken = await sdk.createSessionToken(user.openId, {
@@ -47654,7 +47967,7 @@ function registerEmailAuthRoutes(app) {
         }
       });
     } catch (error) {
-      log44.error("[Email Auth] Login failed:", { error: String(error) });
+      log45.error("[Email Auth] Login failed:", { error: String(error) });
       return res.status(500).json({ error: "Login failed. Please try again." });
     }
   });
@@ -47699,7 +48012,7 @@ function registerEmailAuthRoutes(app) {
       await db.update(users).set({ passwordHash, updatedAt: /* @__PURE__ */ new Date() }).where(eq49(users.id, user.id));
       return res.json({ success: true, message: "Password changed successfully" });
     } catch (error) {
-      log44.error("[Email Auth] Change password failed:", { error: String(error) });
+      log45.error("[Email Auth] Change password failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to change password. Please try again." });
     }
   });
@@ -47739,7 +48052,7 @@ function registerEmailAuthRoutes(app) {
       await db.update(users).set({ passwordHash, updatedAt: /* @__PURE__ */ new Date() }).where(eq49(users.id, sessionUser.id));
       return res.json({ success: true, message: "Password set successfully. You can now use it to log in to the desktop app." });
     } catch (error) {
-      log44.error("[Email Auth] Set password failed:", { error: String(error) });
+      log45.error("[Email Auth] Set password failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to set password. Please try again." });
     }
   });
@@ -47784,7 +48097,7 @@ function registerEmailAuthRoutes(app) {
       const updated = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role }).from(users).where(eq49(users.id, sessionUser.id)).limit(1);
       return res.json({ success: true, user: updated[0] || null });
     } catch (error) {
-      log44.error("[Email Auth] Update profile failed:", { error: String(error) });
+      log45.error("[Email Auth] Update profile failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to update profile. Please try again." });
     }
   });
@@ -47815,7 +48128,7 @@ function registerEmailAuthRoutes(app) {
         emailVerificationExpires: null,
         updatedAt: /* @__PURE__ */ new Date()
       }).where(eq49(users.id, user.id));
-      log44.info(`[Email Auth] Email verified for userId: ${user.id}, email: ${user.email}`);
+      log45.info(`[Email Auth] Email verified for userId: ${user.id}, email: ${user.email}`);
       await notifyOwner({
         title: `New Verified User: ${user.name || user.email}`,
         content: `${user.name || user.email} (${user.email}) has verified their email and is now an active user.`
@@ -47826,7 +48139,7 @@ function registerEmailAuthRoutes(app) {
         message: "Your email has been verified successfully! You can now access all features."
       });
     } catch (error) {
-      log44.error("[Email Auth] Email verification failed:", { error: String(error) });
+      log45.error("[Email Auth] Email verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Verification failed. Please try again.", verified: false });
     }
   });
@@ -47860,11 +48173,11 @@ function registerEmailAuthRoutes(app) {
         user.name || normalizedEmail.split("@")[0],
         verifyUrl
       ).catch(() => {
-        log44.warn("[Email Auth] Failed to resend verification email");
+        log45.warn("[Email Auth] Failed to resend verification email");
       });
       return res.json({ success: true, message: "If an account exists with that email, a verification link has been sent." });
     } catch (error) {
-      log44.error("[Email Auth] Resend verification failed:", { error: String(error) });
+      log45.error("[Email Auth] Resend verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Failed to resend verification. Please try again." });
     }
   });
@@ -47948,7 +48261,7 @@ function registerEmailAuthRoutes(app) {
         }
       });
     } catch (error) {
-      log44.error("[Email Auth] 2FA verification failed:", { error: String(error) });
+      log45.error("[Email Auth] 2FA verification failed:", { error: String(error) });
       return res.status(500).json({ error: "Two-factor verification failed. Please try again." });
     }
   });
@@ -47961,7 +48274,7 @@ import crypto16 from "crypto";
 import { eq as eq50, and as and40 } from "drizzle-orm";
 init_env();
 init_logger();
-var log45 = createLogger("SocialAuthRouter");
+var log46 = createLogger("SocialAuthRouter");
 var MANUS_ORIGIN = "https://archibaldtitan.com";
 function getOAuthCallbackOrigin() {
   if (ENV.publicUrl) return ENV.publicUrl.replace(/\/$/, "");
@@ -48059,7 +48372,7 @@ async function findOrCreateOAuthUser(opts) {
       const updateFields = { lastSignedIn: /* @__PURE__ */ new Date() };
       if (user[0].role !== "admin" && shouldBeAdmin(user[0].openId, user[0].email, user[0].id)) {
         updateFields.role = "admin";
-        log45.info(`[Auth] Auto-promoted existing user to admin on login: ${user[0].email || user[0].openId}`);
+        log46.info(`[Auth] Auto-promoted existing user to admin on login: ${user[0].email || user[0].openId}`);
       }
       await db.update(users).set(updateFields).where(eq50(users.id, user[0].id));
       const effectiveRole = updateFields.role || user[0].role;
@@ -48082,7 +48395,7 @@ async function findOrCreateOAuthUser(opts) {
       const updateFields = { lastSignedIn: /* @__PURE__ */ new Date() };
       if (existingUser[0].role !== "admin" && shouldBeAdmin(existingUser[0].openId, existingUser[0].email, existingUser[0].id)) {
         updateFields.role = "admin";
-        log45.info(`[Auth] Auto-promoted existing user to admin on login: ${existingUser[0].email || existingUser[0].openId}`);
+        log46.info(`[Auth] Auto-promoted existing user to admin on login: ${existingUser[0].email || existingUser[0].openId}`);
       }
       await db.update(users).set(updateFields).where(eq50(users.id, existingUser[0].id));
       return { userId: existingUser[0].id, openId: existingUser[0].openId, name: existingUser[0].name || "", isNew: false };
@@ -48098,7 +48411,7 @@ async function findOrCreateOAuthUser(opts) {
     const existingUsers = await db.select({ id: users.id }).from(users).limit(1);
     if (existingUsers.length === 0) {
       role = "admin";
-      log45.info(`[Auth] First user auto-promoted to admin: ${opts.email || openId}`);
+      log46.info(`[Auth] First user auto-promoted to admin: ${opts.email || openId}`);
     }
   }
   const displayName = opts.name || (opts.email ? opts.email.split("@")[0] : "User");
@@ -48130,18 +48443,18 @@ async function issueSessionAndRedirect(req, res, result, returnPath, logPrefix, 
   const publicOrigin = getPublicOrigin2();
   const callbackOrigin = getOAuthCallbackOrigin();
   const isCrossDomain = callbackOrigin !== publicOrigin;
-  log45.info(`[Auth] publicOrigin=${publicOrigin}, callbackOrigin=${callbackOrigin}, isCrossDomain=${isCrossDomain}`);
+  log46.info(`[Auth] publicOrigin=${publicOrigin}, callbackOrigin=${callbackOrigin}, isCrossDomain=${isCrossDomain}`);
   if (isCrossDomain) {
     const oneTimeToken = crypto16.randomBytes(32).toString("hex");
     pendingTokens.set(oneTimeToken, { sessionToken, returnPath, expiresAt: Date.now() + 2 * 60 * 1e3 });
-    log45.info(`${logPrefix} ${logDetail} \u2192 user ${result.userId} (${result.isNew ? "new" : "existing"}) [cross-domain token issued]`);
+    log46.info(`${logPrefix} ${logDetail} \u2192 user ${result.userId} (${result.isNew ? "new" : "existing"}) [cross-domain token issued]`);
     return res.redirect(302, `${publicOrigin}/api/auth/token-exchange?token=${oneTimeToken}&returnPath=${encodeURIComponent(returnPath)}`);
   } else {
     const cookieOptions = getSessionCookieOptions(req);
-    log45.info(`[Auth] Cookie options: ${JSON.stringify(cookieOptions)}, cookieName=${COOKIE_NAME}, tokenLength=${sessionToken.length}`);
-    log45.info(`[Auth] req.protocol=${req.protocol}, x-forwarded-proto=${req.headers["x-forwarded-proto"]}, hostname=${req.hostname}`);
+    log46.info(`[Auth] Cookie options: ${JSON.stringify(cookieOptions)}, cookieName=${COOKIE_NAME}, tokenLength=${sessionToken.length}`);
+    log46.info(`[Auth] req.protocol=${req.protocol}, x-forwarded-proto=${req.headers["x-forwarded-proto"]}, hostname=${req.hostname}`);
     res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-    log45.info(`${logPrefix} ${logDetail} \u2192 user ${result.userId} (${result.isNew ? "new" : "existing"}) \u2192 redirecting to ${publicOrigin}${returnPath}`);
+    log46.info(`${logPrefix} ${logDetail} \u2192 user ${result.userId} (${result.isNew ? "new" : "existing"}) \u2192 redirecting to ${publicOrigin}${returnPath}`);
     return res.redirect(302, `${publicOrigin}${returnPath}`);
   }
 }
@@ -48152,17 +48465,17 @@ function registerSocialAuthRoutes(app) {
     if (!token) return res.status(400).send("Missing token parameter");
     const pending = pendingTokens.get(token);
     if (!pending) {
-      log45.warn("[Token Exchange] Invalid or expired token");
+      log46.warn("[Token Exchange] Invalid or expired token");
       return res.redirect("/login?error=" + encodeURIComponent("Login session expired. Please try again."));
     }
     pendingTokens.delete(token);
     if (Date.now() > pending.expiresAt) {
-      log45.warn("[Token Exchange] Token expired");
+      log46.warn("[Token Exchange] Token expired");
       return res.redirect("/login?error=" + encodeURIComponent("Login session expired. Please try again."));
     }
     const cookieOptions = getSessionCookieOptions(req);
     res.cookie(COOKIE_NAME, pending.sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-    log45.info(`[Token Exchange] Session cookie set, redirecting to ${returnPath}`);
+    log46.info(`[Token Exchange] Session cookie set, redirecting to ${returnPath}`);
     return res.redirect(302, returnPath);
   });
   app.get("/api/auth/github", (req, res) => {
@@ -48201,7 +48514,7 @@ function registerSocialAuthRoutes(app) {
       });
       await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `GitHub login: ${ghUser.login} (${ghUser.email})`);
     } catch (error) {
-      log45.error("[Social Auth] GitHub callback failed:", { error: String(error) });
+      log46.error("[Social Auth] GitHub callback failed:", { error: String(error) });
       const publicOrigin = getPublicOrigin2();
       res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("GitHub login failed. Please try again.")}`);
     }
@@ -48245,7 +48558,7 @@ function registerSocialAuthRoutes(app) {
       });
       await issueSessionAndRedirect(req, res, result, pending.returnPath, "[Social Auth]", `Google login: ${googleUser.email}`);
     } catch (error) {
-      log45.error("[Social Auth] Google callback failed:", { error: String(error) });
+      log46.error("[Social Auth] Google callback failed:", { error: String(error) });
       const publicOrigin = getPublicOrigin2();
       res.redirect(`${publicOrigin}/login?error=${encodeURIComponent("Google login failed. Please try again.")}`);
     }
@@ -48258,7 +48571,7 @@ init_schema();
 init_logger();
 init_errors();
 import { eq as eq51 } from "drizzle-orm";
-var log46 = createLogger("BinancePayWebhook");
+var log47 = createLogger("BinancePayWebhook");
 function registerBinancePayWebhook(app) {
   app.post(
     "/api/webhooks/binance-pay",
@@ -48282,7 +48595,7 @@ function registerBinancePayWebhook(app) {
     async (req, res) => {
       try {
         if (!isBinancePayConfigured()) {
-          log46.warn("[BinancePay Webhook] Received webhook but Binance Pay not configured");
+          log47.warn("[BinancePay Webhook] Received webhook but Binance Pay not configured");
           res.json({ returnCode: "SUCCESS", returnMessage: null });
           return;
         }
@@ -48291,29 +48604,29 @@ function registerBinancePayWebhook(app) {
         const signature = req.headers["binancepay-signature"];
         const rawBody = req.rawBody || JSON.stringify(req.body);
         if (!timestamp2 || !nonce || !signature) {
-          log46.error("[BinancePay Webhook] Missing signature headers");
+          log47.error("[BinancePay Webhook] Missing signature headers");
           res.status(400).json({ returnCode: "FAIL", returnMessage: "Missing headers" });
           return;
         }
         const isValid = verifyWebhookSignature(timestamp2, nonce, rawBody, signature);
         if (!isValid) {
-          log46.error("[BinancePay Webhook] Invalid signature");
+          log47.error("[BinancePay Webhook] Invalid signature");
           res.status(401).json({ returnCode: "FAIL", returnMessage: "Invalid signature" });
           return;
         }
         const payload = req.body;
         const { bizType, bizStatus, data } = parseWebhookData(payload);
-        log46.info(`[BinancePay Webhook] Received: bizType=${bizType}, bizStatus=${bizStatus}`);
+        log47.info(`[BinancePay Webhook] Received: bizType=${bizType}, bizStatus=${bizStatus}`);
         if (bizType === "PAY" && bizStatus === "PAY_SUCCESS") {
           const merchantTradeNo = data.merchantTradeNo;
           if (!merchantTradeNo) {
-            log46.error("[BinancePay Webhook] No merchantTradeNo in webhook data");
+            log47.error("[BinancePay Webhook] No merchantTradeNo in webhook data");
             res.json({ returnCode: "SUCCESS", returnMessage: null });
             return;
           }
           const db = await getDb();
           if (!db) {
-            log46.error("[BinancePay Webhook] Database not available");
+            log47.error("[BinancePay Webhook] Database not available");
             res.json({ returnCode: "SUCCESS", returnMessage: null });
             return;
           }
@@ -48335,7 +48648,7 @@ function registerBinancePayWebhook(app) {
                 currentAmount: Math.round(newAmount),
                 backerCount: newBackers
               }).where(eq51(crowdfundingCampaigns2.id, payment.campaignId));
-              log46.info(`[BinancePay Webhook] Campaign #${payment.campaignId} updated: +$${payment.creatorAmount}, backers=${newBackers}`);
+              log47.info(`[BinancePay Webhook] Campaign #${payment.campaignId} updated: +$${payment.creatorAmount}, backers=${newBackers}`);
             }
             try {
               const { platformRevenue: platformRevenue2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
@@ -48348,10 +48661,10 @@ function registerBinancePayWebhook(app) {
                 description: `Platform fee from crypto contribution to campaign #${payment.campaignId}`
               });
             } catch (err) {
-              log46.error("[BinancePay Webhook] Failed to record revenue:", { error: String(err) });
+              log47.error("[BinancePay Webhook] Failed to record revenue:", { error: String(err) });
             }
           }
-          log46.info(`[BinancePay Webhook] Payment ${merchantTradeNo} completed successfully`);
+          log47.info(`[BinancePay Webhook] Payment ${merchantTradeNo} completed successfully`);
         } else if (bizType === "PAY" && bizStatus === "PAY_CLOSED") {
           const merchantTradeNo = data.merchantTradeNo;
           if (merchantTradeNo) {
@@ -48360,16 +48673,16 @@ function registerBinancePayWebhook(app) {
               await db.update(cryptoPayments).set({ status: "expired", webhookData: JSON.stringify(data) }).where(eq51(cryptoPayments.merchantTradeNo, merchantTradeNo));
             }
           }
-          log46.info(`[BinancePay Webhook] Payment closed/expired`);
+          log47.info(`[BinancePay Webhook] Payment closed/expired`);
         }
         res.json({ returnCode: "SUCCESS", returnMessage: null });
       } catch (err) {
-        log46.error("[BinancePay Webhook] Error:", { error: String(getErrorMessage(err)) });
+        log47.error("[BinancePay Webhook] Error:", { error: String(getErrorMessage(err)) });
         res.json({ returnCode: "SUCCESS", returnMessage: null });
       }
     }
   );
-  log46.info("[BinancePay] Webhook registered at /api/webhooks/binance-pay");
+  log47.info("[BinancePay] Webhook registered at /api/webhooks/binance-pay");
 }
 
 // server/marketplace-files.ts
@@ -48378,7 +48691,7 @@ init_db();
 init_logger();
 init_errors();
 import crypto17 from "crypto";
-var log47 = createLogger("MarketplaceFiles");
+var log48 = createLogger("MarketplaceFiles");
 var MAX_MARKETPLACE_FILE_SIZE = 100 * 1024 * 1024;
 var ALLOWED_EXTENSIONS2 = {
   ".zip": "application/zip",
@@ -48482,7 +48795,7 @@ function registerMarketplaceFileRoutes(app) {
             }
           }
         } catch (antiResaleErr) {
-          log47.warn("[Marketplace] Anti-resale check warning (non-fatal):", { error: getErrorMessage(antiResaleErr) });
+          log48.warn("[Marketplace] Anti-resale check warning (non-fatal):", { error: getErrorMessage(antiResaleErr) });
         }
       }
       const hash = crypto17.randomBytes(8).toString("hex");
@@ -48494,9 +48807,9 @@ function registerMarketplaceFileRoutes(app) {
       try {
         const backupKey = `backups/users/${user.id}/marketplace/${listing.uid}/${timestamp2}-${sanitizedName}`;
         await storagePut(backupKey, result.fileBuffer, mimeType);
-        log47.info(`[Marketplace] Backup stored: ${backupKey}`);
+        log48.info(`[Marketplace] Backup stored: ${backupKey}`);
       } catch (backupErr) {
-        log47.warn(`[Marketplace] Backup failed (non-fatal): ${getErrorMessage(backupErr)}`);
+        log48.warn(`[Marketplace] Backup failed (non-fatal): ${getErrorMessage(backupErr)}`);
       }
       await updateListing(result.listingId, {
         fileUrl: url,
@@ -48513,7 +48826,7 @@ function registerMarketplaceFileRoutes(app) {
         url
       });
     } catch (err) {
-      log47.error("[Marketplace Upload Error]", { error: String(err) });
+      log48.error("[Marketplace Upload Error]", { error: String(err) });
       return res.status(500).json({ error: getErrorMessage(err) || "Upload failed" });
     }
   });
@@ -48575,11 +48888,11 @@ function registerMarketplaceFileRoutes(app) {
         downloadsRemaining: purchase.maxDownloads - purchase.downloadCount - 1
       });
     } catch (err) {
-      log47.error("[Marketplace Download Error]", { error: String(err) });
+      log48.error("[Marketplace Download Error]", { error: String(err) });
       return res.status(500).json({ error: getErrorMessage(err) || "Download failed" });
     }
   });
-  log47.info("[Marketplace] File upload/download routes registered");
+  log48.info("[Marketplace] File upload/download routes registered");
 }
 
 // server/bundle-sync.ts
@@ -48587,7 +48900,7 @@ init_logger();
 import path6 from "path";
 import fs6 from "fs";
 import crypto18 from "crypto";
-var log48 = createLogger("BundleSync");
+var log49 = createLogger("BundleSync");
 var cachedManifest = null;
 var cachedTarball = null;
 function computeBundleHash(distPath) {
@@ -48629,7 +48942,7 @@ function getManifest() {
     buildTime: stat.mtime.toISOString()
   };
   cachedTarball = null;
-  log48.info("Bundle manifest updated", {
+  log49.info("Bundle manifest updated", {
     version: cachedManifest.version,
     hash: cachedManifest.hash
   });
@@ -48656,12 +48969,12 @@ async function generateTarball() {
     if (cachedManifest) {
       cachedManifest.size = cachedTarball.length;
     }
-    log48.info("Bundle tarball generated", {
+    log49.info("Bundle tarball generated", {
       size: `${(cachedTarball.length / 1024 / 1024).toFixed(1)}MB`
     });
     return cachedTarball;
   } catch (err) {
-    log48.error("Failed to generate bundle tarball", {
+    log49.error("Failed to generate bundle tarball", {
       error: String(err)
     });
     return null;
@@ -48694,14 +49007,14 @@ function registerBundleSyncRoutes(app) {
         res.set("X-Bundle-Hash", manifest?.hash || "unknown");
         res.send(tarball);
       } catch (err) {
-        log48.error("Failed to serve bundle tarball", {
+        log49.error("Failed to serve bundle tarball", {
           error: String(err)
         });
         res.status(500).send("Failed to generate bundle");
       }
     }
   );
-  log48.info("Bundle sync routes registered");
+  log49.info("Bundle sync routes registered");
 }
 
 // server/_core/index.ts
@@ -48711,7 +49024,7 @@ import cookieParser from "cookie-parser";
 // server/_core/csrf.ts
 init_logger();
 import { randomBytes as randomBytes4 } from "crypto";
-var log49 = createLogger("CSRF");
+var log50 = createLogger("CSRF");
 var CSRF_COOKIE = "csrf_token";
 var CSRF_HEADER = "x-csrf-token";
 var TOKEN_LENGTH = 32;
@@ -48760,7 +49073,7 @@ function csrfValidationMiddleware(req, res, next) {
   const cookieToken = req.cookies?.[CSRF_COOKIE];
   const headerToken = req.headers[CSRF_HEADER];
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {
-    log49.warn("CSRF validation failed", {
+    log50.warn("CSRF validation failed", {
       path: req.path,
       hasCookie: !!cookieToken,
       hasHeader: !!headerToken,
@@ -48775,7 +49088,7 @@ function csrfValidationMiddleware(req, res, next) {
 init_correlation();
 init_logger();
 init_errors();
-var log51 = createLogger("Startup");
+var log52 = createLogger("Startup");
 function isPortAvailable(port) {
   return new Promise((resolve3) => {
     const server = net.createServer();
@@ -48812,7 +49125,8 @@ async function startServer() {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob: https: http:",
-      "connect-src 'self' https://api.stripe.com https://*.google-analytics.com https://*.analytics.google.com wss: ws:",
+      "connect-src 'self' https://api.stripe.com https://*.google-analytics.com https://*.analytics.google.com https://files.manuscdn.com wss: ws:",
+      "media-src 'self' https://files.manuscdn.com blob: data:",
       "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
       "object-src 'none'",
       "base-uri 'self'",
@@ -48944,7 +49258,7 @@ async function startServer() {
     serveStatic(app);
   }
   app.use((err, _req, res, _next) => {
-    log51.error("Unhandled Express error", { error: err.message, stack: err.stack });
+    log52.error("Unhandled Express error", { error: err.message, stack: err.stack });
     const isProd3 = process.env.NODE_ENV === "production";
     res.status(500).json({
       error: isProd3 ? "Internal server error" : err.message,
@@ -48959,16 +49273,16 @@ async function startServer() {
       connectTimeout: 3e4
     });
     try {
-      log51.info("Running database migrations...");
+      log52.info("Running database migrations...");
       const migrationDb = drizzle2(pool);
       const __filename = fileURLToPath(import.meta.url);
       const __dirname = path7.dirname(__filename);
       const migrationsFolder = process.env.NODE_ENV === "production" ? path7.resolve(__dirname, "..", "drizzle") : path7.resolve(__dirname, "..", "..", "drizzle");
-      log51.debug("Migrations folder", { path: migrationsFolder });
+      log52.debug("Migrations folder", { path: migrationsFolder });
       await migrate(migrationDb, { migrationsFolder });
-      log51.info("Database migrations completed");
+      log52.info("Database migrations completed");
     } catch (migErr) {
-      log51.warn("Drizzle migration warning (continuing with raw SQL)", { error: getErrorMessage(migErr)?.substring(0, 200) });
+      log52.warn("Drizzle migration warning (continuing with raw SQL)", { error: getErrorMessage(migErr)?.substring(0, 200) });
     }
     try {
       const missingColumns = [
@@ -49004,10 +49318,10 @@ async function startServer() {
       for (const sql29 of missingColumns) {
         try {
           await pool.promise().query(sql29);
-          log51.debug("Added column", { column: sql29.split("`")[3] });
+          log52.debug("Added column", { column: sql29.split("`")[3] });
         } catch (e) {
           if (!getErrorMessage(e)?.includes("Duplicate column")) {
-            log51.warn("Column fix warning", { error: getErrorMessage(e) });
+            log52.warn("Column fix warning", { error: getErrorMessage(e) });
           }
         }
       }
@@ -49015,9 +49329,9 @@ async function startServer() {
         await pool.promise().query(
           "ALTER TABLE `crowdfundingCampaigns` MODIFY COLUMN `source` enum('internal','kickstarter','indiegogo','gofundme','other') DEFAULT 'internal' NOT NULL"
         );
-        log51.debug("Ensured source column is ENUM type");
+        log52.debug("Ensured source column is ENUM type");
       } catch (e) {
-        log51.warn("Source column fix", { error: getErrorMessage(e)?.substring(0, 100) });
+        log52.warn("Source column fix", { error: getErrorMessage(e)?.substring(0, 100) });
       }
       const createTables = [
         `CREATE TABLE IF NOT EXISTS \`marketplace_listings\` (\`id\` int AUTO_INCREMENT NOT NULL, \`uid\` varchar(64) NOT NULL, \`sellerId\` int NOT NULL, \`title\` varchar(256) NOT NULL, \`slug\` varchar(300) NOT NULL, \`description\` text NOT NULL, \`longDescription\` text, \`category\` enum('agents','modules','blueprints','artifacts','exploits','templates','datasets','other') NOT NULL DEFAULT 'modules', \`riskCategory\` enum('safe','low_risk','medium_risk','high_risk') NOT NULL DEFAULT 'safe', \`reviewStatus\` enum('pending_review','approved','rejected','flagged') NOT NULL DEFAULT 'pending_review', \`reviewNotes\` text, \`status\` enum('draft','active','paused','sold_out','removed') NOT NULL DEFAULT 'draft', \`priceCredits\` int NOT NULL, \`priceUsd\` int NOT NULL DEFAULT 0, \`currency\` varchar(8) NOT NULL DEFAULT 'USD', \`fileUrl\` text, \`fileSize\` int, \`fileType\` varchar(64), \`previewUrl\` text, \`thumbnailUrl\` text, \`demoUrl\` text, \`tags\` text, \`language\` varchar(64), \`license\` varchar(64) DEFAULT 'MIT', \`version\` varchar(32) DEFAULT '1.0.0', \`totalSales\` int NOT NULL DEFAULT 0, \`totalRevenue\` int NOT NULL DEFAULT 0, \`viewCount\` int NOT NULL DEFAULT 0, \`downloadCount\` int NOT NULL DEFAULT 0, \`avgRating\` int NOT NULL DEFAULT 0, \`ratingCount\` int NOT NULL DEFAULT 0, \`featured\` boolean NOT NULL DEFAULT false, \`createdAt\` timestamp NOT NULL DEFAULT (now()), \`updatedAt\` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT \`marketplace_listings_id\` PRIMARY KEY(\`id\`), CONSTRAINT \`marketplace_listings_uid_unique\` UNIQUE(\`uid\`), CONSTRAINT \`marketplace_listings_slug_unique\` UNIQUE(\`slug\`))`,
@@ -49032,30 +49346,30 @@ async function startServer() {
         try {
           await pool.promise().query(ddl);
         } catch (e) {
-          log51.warn("Table creation warning", { error: getErrorMessage(e)?.substring(0, 100) });
+          log52.warn("Table creation warning", { error: getErrorMessage(e)?.substring(0, 100) });
         }
       }
-      log51.info("All tables ensured");
+      log52.info("All tables ensured");
     } catch (err) {
-      log51.error("Raw SQL migration failed", { error: getErrorMessage(err) });
+      log52.error("Raw SQL migration failed", { error: getErrorMessage(err) });
     }
     try {
       await pool.promise().end();
     } catch (_) {
     }
   } else {
-    log51.warn("No DATABASE_URL - skipping migrations");
+    log52.warn("No DATABASE_URL - skipping migrations");
   }
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
   if (port !== preferredPort) {
-    log51.info(`Port ${preferredPort} busy, using ${port} instead`);
+    log52.info(`Port ${preferredPort} busy, using ${port} instead`);
   }
   server.timeout = 6e5;
   server.keepAliveTimeout = 62e4;
   server.headersTimeout = 63e4;
   server.listen(port, () => {
-    log51.info(`Server running on http://localhost:${port}/`);
+    log52.info(`Server running on http://localhost:${port}/`);
     scheduleMonthlyRefill();
     setTimeout(async () => {
       try {
@@ -49075,7 +49389,7 @@ async function startServer() {
             inArray2(users4.email, ENV2.ownerEmails)
           ).catch(() => {
           });
-          log51.info("Admin auto-promotion", { emails: ENV2.ownerEmails });
+          log52.info("Admin auto-promotion", { emails: ENV2.ownerEmails });
         }
         if (ENV2.ownerOpenId) {
           await db.update(users4).set({ role: "admin" }).where(
@@ -49084,17 +49398,17 @@ async function startServer() {
           });
         }
       } catch (err) {
-        log51.error("Admin auto-promotion failed", { error: String(err) });
+        log52.error("Admin auto-promotion failed", { error: String(err) });
       }
     }, 3e3);
     setTimeout(async () => {
       try {
         const { seedAffiliatePrograms: seedAffiliatePrograms2 } = await Promise.resolve().then(() => (init_affiliate_engine(), affiliate_engine_exports));
         const count5 = await seedAffiliatePrograms2();
-        if (count5 > 0) log51.info(`Auto-seeded ${count5} affiliate programs`);
-        else log51.debug("Affiliate programs already seeded");
+        if (count5 > 0) log52.info(`Auto-seeded ${count5} affiliate programs`);
+        else log52.debug("Affiliate programs already seeded");
       } catch (err) {
-        log51.error("Affiliate seed failed", { error: String(err) });
+        log52.error("Affiliate seed failed", { error: String(err) });
       }
     }, 5e3);
     setTimeout(async () => {
@@ -49104,7 +49418,7 @@ async function startServer() {
         const { sql: sql29 } = await import("drizzle-orm");
         const db = await getDb2();
         if (!db) {
-          log51.warn("Release seed skipped: DB not available");
+          log52.warn("Release seed skipped: DB not available");
           return;
         }
         const existing = await db.select({ count: sql29`count(*)` }).from(releases2);
@@ -49121,22 +49435,22 @@ async function startServer() {
             isPrerelease: 0,
             downloadCount: 0
           });
-          log51.info("Auto-seeded v8.1.0 release");
+          log52.info("Auto-seeded v8.1.0 release");
         } else {
-          log51.debug(`Releases already exist (${existing[0].count} found)`);
+          log52.debug(`Releases already exist (${existing[0].count} found)`);
         }
       } catch (err) {
-        log51.error("Release seed failed", { error: String(err) });
+        log52.error("Release seed failed", { error: String(err) });
       }
     }, 6e3);
     setTimeout(async () => {
       try {
         const { seedBlogPosts: seedBlogPosts2 } = await Promise.resolve().then(() => (init_blog_seed(), blog_seed_exports));
         const count5 = await seedBlogPosts2();
-        if (count5 > 0) log51.info(`Auto-seeded ${count5} blog posts`);
-        else log51.debug("Blog posts already seeded");
+        if (count5 > 0) log52.info(`Auto-seeded ${count5} blog posts`);
+        else log52.debug("Blog posts already seeded");
       } catch (err) {
-        log51.error("Blog seed failed", { error: String(err) });
+        log52.error("Blog seed failed", { error: String(err) });
       }
     }, 8e3);
     startScheduledDiscovery();
@@ -49148,46 +49462,46 @@ function scheduleMonthlyRefill() {
   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1e3;
   setTimeout(async () => {
     try {
-      log51.info("Running startup credit refill check...");
+      log52.info("Running startup credit refill check...");
       const result = await processAllMonthlyRefills();
-      log51.info("Startup refill complete", { processed: result.processed, refilled: result.refilled, errors: result.errors });
+      log52.info("Startup refill complete", { processed: result.processed, refilled: result.refilled, errors: result.errors });
     } catch (err) {
-      log51.error("Startup refill failed", { error: getErrorMessage(err) });
+      log52.error("Startup refill failed", { error: getErrorMessage(err) });
     }
   }, 3e4);
   setInterval(async () => {
     try {
-      log51.info("Running scheduled credit refill...");
+      log52.info("Running scheduled credit refill...");
       const result = await processAllMonthlyRefills();
-      log51.info("Scheduled refill complete", { processed: result.processed, refilled: result.refilled, errors: result.errors });
+      log52.info("Scheduled refill complete", { processed: result.processed, refilled: result.refilled, errors: result.errors });
     } catch (err) {
-      log51.error("Scheduled refill failed", { error: getErrorMessage(err) });
+      log52.error("Scheduled refill failed", { error: getErrorMessage(err) });
     }
   }, TWENTY_FOUR_HOURS);
 }
-startServer().catch((err) => log51.error("Server startup failed", { error: String(err) }));
+startServer().catch((err) => log52.error("Server startup failed", { error: String(err) }));
 var isShuttingDown = false;
 function gracefulShutdown(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  log51.info(`Received ${signal}. Starting graceful shutdown...`);
+  log52.info(`Received ${signal}. Starting graceful shutdown...`);
   const SHUTDOWN_TIMEOUT = 15e3;
   const forceExit = setTimeout(() => {
-    log51.error("Graceful shutdown timed out. Forcing exit.");
+    log52.error("Graceful shutdown timed out. Forcing exit.");
     process.exit(1);
   }, SHUTDOWN_TIMEOUT);
   forceExit.unref();
   setTimeout(() => {
-    log51.info("Graceful shutdown complete.");
+    log52.info("Graceful shutdown complete.");
     process.exit(0);
   }, 3e3);
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("unhandledRejection", (reason) => {
-  log51.error("Unhandled promise rejection", { error: String(reason) });
+  log52.error("Unhandled promise rejection", { error: String(reason) });
 });
 process.on("uncaughtException", (err) => {
-  log51.error("Uncaught exception", { error: err.message, stack: err.stack });
+  log52.error("Uncaught exception", { error: err.message, stack: err.stack });
   process.exit(1);
 });
