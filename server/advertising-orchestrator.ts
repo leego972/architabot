@@ -57,6 +57,7 @@ import { runTikTokContentPipeline, getTikTokContentStats, isTikTokContentConfigu
 import { createLogger } from "./_core/logger.js";
 import { getErrorMessage } from "./_core/errors.js";
 import { generateShortFormVideo, generateMarketingVideo, generateSocialClip, isVideoGenerationAvailable } from "./_core/videoGeneration";
+import { generateImage } from "./_core/imageGeneration";
 const log = createLogger("AdvertisingOrchestrator");
 
 // ============================================
@@ -803,6 +804,18 @@ Return as JSON: { "title": "...", "metaDescription": "...", "content": "...(mark
       categoryId = newCat.insertId;
     }
 
+    // Generate a featured image for the blog post
+    let featuredImageUrl: string | undefined;
+    try {
+      const imgResult = await generateImage({
+        prompt: `Professional blog header image for cybersecurity article about "${topic}". Modern, clean, tech-themed with subtle Archibald Titan branding. Dark blue and gold color scheme, abstract digital security visualization. 16:9 aspect ratio.`,
+      });
+      featuredImageUrl = imgResult.url;
+      log.info(`Generated featured image for blog: ${featuredImageUrl}`);
+    } catch (imgErr) {
+      log.warn(`Failed to generate blog featured image: ${getErrorMessage(imgErr)}`);
+    }
+
     // Insert the blog post
     await db.insert(blogPosts).values({
       title: post.title,
@@ -815,6 +828,7 @@ Return as JSON: { "title": "...", "metaDescription": "...", "content": "...(mark
       metaTitle: post.title,
       metaDescription: post.metaDescription,
       focusKeyword: targetKeyword,
+      featuredImage: featuredImageUrl || null,
       publishedAt: new Date(),
     } as any);
 
@@ -822,7 +836,7 @@ Return as JSON: { "title": "...", "metaDescription": "...", "content": "...(mark
       channel: "blog_content",
       action: "generate_blog_post",
       status: "success",
-      details: `Published: "${post.title}" targeting "${targetKeyword}"`,
+      details: `Published: "${post.title}" targeting "${targetKeyword}"${featuredImageUrl ? " [with image]" : ""}`,
       cost: 0,
     };
   } catch (err: unknown) {
@@ -857,7 +871,32 @@ async function generateSocialContent(): Promise<AdvertisingAction[]> {
         includeImage: false,
       });
 
+      // Generate an image for the tweet
+      let tweetImageUrl: string | undefined;
+      try {
+        const imgResult = await generateImage({
+          prompt: `Eye-catching social media graphic for Twitter about ${pillar.pillar}. ${angle}. Modern cybersecurity theme, dark background with neon accents. Bold text overlay style. Square format, visually striking.`,
+        });
+        tweetImageUrl = imgResult.url;
+      } catch { /* Image generation is optional */ }
+
       const tweetText = `${content.headline}\n\n${content.body}\n\n${content.hashtags.map((h: string) => `#${h.replace(/^#/, "")}`).join(" ")}`.substring(0, 280);
+
+      // Store image URL in marketing content for manual posting with image
+      if (tweetImageUrl) {
+        const db = await getDb();
+        if (db) {
+          await db.insert(marketingContent).values({
+            channel: "content_seo" as any,
+            contentType: "social_post" as any,
+            title: content.headline,
+            body: tweetText,
+            platform: "twitter",
+            status: "approved",
+            metadata: { imageUrl: tweetImageUrl, type: "tweet_with_image" },
+          } as any);
+        }
+      }
 
       const result = await xAdapter.postTweet({ text: tweetText });
 
@@ -930,11 +969,38 @@ async function generateSocialContent(): Promise<AdvertisingAction[]> {
         includeImage: false,
       });
 
+      // Generate a professional image for LinkedIn
+      let linkedinImageUrl: string | undefined;
+      try {
+        const imgResult = await generateImage({
+          prompt: `Professional LinkedIn post image about cybersecurity and developer security. Clean, corporate design with blue tones. Shows a shield or lock icon with digital elements. Suitable for thought leadership content. 1200x627 aspect ratio.`,
+        });
+        linkedinImageUrl = imgResult.url;
+      } catch { /* Image generation is optional */ }
+
+      // Store in content queue with image
+      const db = await getDb();
+      if (db) {
+        await db.insert(marketingContent).values({
+          channel: "content_seo" as any,
+          contentType: "social_post" as any,
+          title: content.headline,
+          body: content.body,
+          platform: "linkedin",
+          status: "approved",
+          metadata: {
+            imageUrl: linkedinImageUrl,
+            hashtags: content.hashtags,
+            type: "linkedin_thought_leadership",
+          },
+        } as any);
+      }
+
       actions.push({
         channel: "social_organic",
         action: "linkedin_post",
         status: "success",
-        details: `Generated LinkedIn post: "${content.headline}" (queued for publishing)`,
+        details: `Generated LinkedIn post: "${content.headline}"${linkedinImageUrl ? " [with image]" : ""} (queued for publishing)`,
         cost: 0,
       });
     } catch (err: unknown) {
@@ -1774,6 +1840,70 @@ async function generateVideoAd(): Promise<AdvertisingAction> {
 }
 
 // ============================================
+// IMAGE AD GENERATION
+// ============================================
+
+/**
+ * Generate promotional images for social media, ads, and marketing.
+ * Creates platform-optimized images using DALL-E 3 / Forge.
+ */
+async function generateImageAds(): Promise<AdvertisingAction> {
+  try {
+    const pillar = CONTENT_PILLARS[Math.floor(Math.random() * CONTENT_PILLARS.length)];
+    const topic = pillar.blogTopics[Math.floor(Math.random() * pillar.blogTopics.length)];
+
+    const imageStyles = [
+      { name: "Social Banner", prompt: `Professional social media banner ad for Archibald Titan credential management platform. Topic: "${topic}". Dark navy and gold color scheme, modern cybersecurity aesthetic, shield/lock iconography, bold headline text overlay. 1200x628 pixels, eye-catching and shareable.` },
+      { name: "Instagram Square", prompt: `Instagram-optimized square promotional image for Archibald Titan. Topic: "${topic}". Sleek dark theme with glowing blue/gold accents, futuristic security visualization, clean typography. Professional SaaS product aesthetic. 1080x1080 pixels.` },
+      { name: "Story/Reel Cover", prompt: `Vertical story/reel cover image for Archibald Titan cybersecurity platform. Topic: "${topic}". Dynamic composition, dark background with neon security elements, bold call-to-action text. Mobile-optimized, visually striking. 1080x1920 pixels.` },
+      { name: "Product Feature", prompt: `Product feature highlight image for Archibald Titan. Showcase: "${topic}". Clean UI mockup style with dark theme, showing a dashboard or security interface. Professional, trustworthy, enterprise-grade look. Subtle glow effects.` },
+      { name: "Infographic Header", prompt: `Infographic header image about "${topic}" for cybersecurity content. Archibald Titan branding. Data visualization style with icons, charts, and security symbols. Dark blue gradient background, gold accent colors. Professional and informative.` },
+    ];
+
+    const style = imageStyles[Math.floor(Math.random() * imageStyles.length)];
+
+    log.info(`Generating ${style.name} image ad about: ${topic}`);
+
+    const imgResult = await generateImage({ prompt: style.prompt });
+
+    // Store in marketing content DB
+    const db = await getDb();
+    if (db) {
+      await db.insert(marketingContent).values({
+        channel: "content_seo" as any,
+        contentType: "image" as any,
+        title: `[IMAGE AD] ${style.name}: ${topic}`,
+        body: style.prompt,
+        platform: "multi_platform",
+        status: "approved",
+        metadata: {
+          pillar: pillar.pillar,
+          imageUrl: imgResult.url,
+          imageStyle: style.name,
+          type: "image_ad",
+        },
+      } as any);
+    }
+
+    return {
+      channel: "social_organic" as FreeChannel,
+      action: "generate_image_ad",
+      status: "success",
+      details: `Generated ${style.name} image: "${topic}" → ${imgResult.url}`,
+      cost: 0,
+    };
+  } catch (err: unknown) {
+    return {
+      channel: "social_organic" as FreeChannel,
+      action: "generate_image_ad",
+      status: "failed",
+      details: `Image ad generation failed: ${getErrorMessage(err)}`,
+      cost: 0,
+    };
+  }
+}
+
+// ============================================
 // CONTENT QUEUE FOR MANUAL-POST CHANNELS
 // ============================================
 
@@ -2427,7 +2557,15 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     }
   }
 
-  // 11. Content Queue Generation for manual-post channels (daily)
+  // 11. Generate promotional images for social media and ads
+  try {
+    const imageAdAction = await generateImageAds();
+    actions.push(imageAdAction);
+  } catch (err: unknown) {
+    errors.push(`Image Ads: ${getErrorMessage(err)}`);
+  }
+
+  // 12. Content Queue Generation for manual-post channels (daily)
   try {
     const queueAction = await generateContentQueueItems();
     actions.push(queueAction);
@@ -2435,7 +2573,7 @@ export async function runAdvertisingCycle(): Promise<AdvertisingCycleResult> {
     errors.push(`Content Queue: ${getErrorMessage(err)}`);
   }
 
-  // 12. Trigger Marketing Engine cycle (handles paid campaigns + social publishing)
+  // 13. Trigger Marketing Engine cycle (handles paid campaigns + social publishing)
   try {
     const marketingResult = await runMarketingCycle();
     actions.push({
